@@ -1,28 +1,18 @@
 import numpy as np
 import cartopy.crs as ccrs
 from datetime import datetime, timezone
+import pandas as pd
+import os
 
-# --- Геомагнитный экватор (дипольное приближение, IGRF ~2025) ---
-# Наклон диполя ~11.3°
-DIPOLE_TILT_DEG = 11.3
-DIPOLE_LON_DEG = -72.7  # долгота северного магнитного полюса
-
-
-def geomagnetic_equator(n_points: int = 360):
+def geomagnetic_equator():
     """
-    Возвращает lat, lon геомагнитного экватора (MLAT = 0)
+    Возвращает lat, lon геомагнитного экватора
     """
-    lons = np.linspace(-180, 180, n_points)
+    file_path = os.path.join('files', 'EQ2.txt')
+    headers = ['lat', 'lon']
+    df = pd.read_csv(file_path, delim_whitespace=True, header=None, names=headers)
 
-    # дипольная аппроксимация
-    lats = np.degrees(
-        np.arctan(
-            np.tan(np.deg2rad(DIPOLE_TILT_DEG)) *
-            np.sin(np.deg2rad(lons - DIPOLE_LON_DEG))
-        )
-    )
-
-    return lats, lons
+    return df['lat'], df['lon']
 
 
 def get_subsolar_latlon(time: datetime | None = None):
