@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 from app.visualization.aurora_map_plotter import AuroraMapPlotter
+from app.visualization.plot_settings import set_plt_def_params
 from app.pipeline.observation_pipeline import (
     collect_observation_links,
     parse_and_save_observations
@@ -9,6 +10,8 @@ from app.pipeline.observation_pipeline import (
 
 
 if __name__ == "__main__":
+    set_plt_def_params()
+    
     dates = ["2025/11/12", "2025/11/13"]
     h5_path = os.path.join("files", "spaceweather_observations.h5")
     csv_path =  os.path.join("files", "aurora_data.csv")
