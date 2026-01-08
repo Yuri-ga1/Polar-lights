@@ -1,5 +1,9 @@
 import matplotlib.pyplot as plt
 
+# --- Константы ---
+POINT_RADIUS = 2
+
+# --- Глобальные параметры графиков ---
 DPI = 300
 FONT_SIZE = 16
 TITLE_FONT_SIZE = 18

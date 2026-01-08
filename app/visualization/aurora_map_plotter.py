@@ -1,15 +1,18 @@
 import pandas as pd
-import matplotlib.pyplot as plt
+from datetime import datetime
+
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from datetime import datetime
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Wedge
 
 from app.visualization.geo_utils import (
     geomagnetic_equator,
     solar_terminator
 )
-
 from app.visualization.color_utils import get_dominant_color
+from app.visualization.plot_settings import POINT_RADIUS
 
 class AuroraMapPlotter:
     def __init__(
@@ -25,6 +28,34 @@ class AuroraMapPlotter:
         self.show_terminator = show_terminator
 
         self.df = pd.read_csv(csv_path)
+
+    class MulticolorPatch(object):
+        def __init__(self, colors):
+            self.colors = colors
+
+    class MulticolorPatchHandler(object):
+        def legend_artist(self, legend, orig_handle, fontsize, handlebox):
+            width, height = handlebox.width, handlebox.height
+            cx, cy = width/2 - handlebox.xdescent, height/2 - handlebox.ydescent
+            radius = min(width, height) / 2
+            n = len(orig_handle.colors)
+            angle_per_sector = 360 / n
+            wedges = []
+
+            for i, c in enumerate(orig_handle.colors):
+                wedge = Wedge(
+                    (cx, cy),
+                    radius,
+                    i * angle_per_sector,
+                    (i + 1) * angle_per_sector,
+                    facecolor=c,
+                    edgecolor='black',
+                    linewidth=0.5
+                )
+                wedges.append(wedge)
+                handlebox.add_artist(wedge)
+
+            return wedges
 
     def plot(self, time: datetime | None = None):
         """
@@ -63,22 +94,54 @@ class AuroraMapPlotter:
             )
 
         # --- 4. Точки наблюдений ---
-        if "colors" in self.df.columns:
-            plot_colors = self.df["colors"].apply(get_dominant_color)
-        else:
-            plot_colors = "black"
+        for _, row in self.df.iterrows():
+            x, y = row["lon"], row["lat"]
+            colors = row.get("colors", [])
+            if isinstance(colors, str):
+                colors = [c.strip() for c in colors.split(";")]
+            if not colors:
+                colors = ["black"]
 
-        ax.scatter(
-            self.df["lon"],
-            self.df["lat"],
-            c=plot_colors,
-            s=10,
-            transform=ccrs.PlateCarree(),
-            label="Observations"
+            colors_count = len(colors)
+            angle_per_sector = 360 / colors_count
+
+            for i, color in enumerate(colors):
+                wedge = Wedge(
+                    (x, y),
+                    POINT_RADIUS,
+                    i * angle_per_sector,
+                    (i + 1) * angle_per_sector,
+                    facecolor=get_dominant_color(color),
+                    transform=ccrs.PlateCarree()
+                )
+                ax.add_patch(wedge)
+
+        # --- Легенда для точек наблюдения ---
+        handles, labels = ax.get_legend_handles_labels()
+
+        colors_series = self.df["colors"].dropna().apply(lambda s: s.split(";") if isinstance(s, str) else s)
+
+        legend_colors = max(colors_series, key=len)
+        legend_colors = legend_colors[:7]
+
+        # создаем объект для многокрасочной легенды
+        auroras_patch = self.MulticolorPatch(legend_colors)
+
+        # добавляем в handles и labels
+        handles.append(auroras_patch)
+        labels.append("Auroras")
+
+        # создаем легенду с кастомным handler
+        ax.legend(
+            handles=handles,
+            labels=labels,
+            loc="lower left",
+            handler_map={self.MulticolorPatch: self.MulticolorPatchHandler()},
+            handlelength=1.5,
+            handleheight=1.5,
         )
 
-        ax.legend(loc="lower left")
-        plt.title("12-13 November 2025 observations")
+        plt.title("12-13 November 2025 auroras")
         if self.save_path is None:
             plt.show()
         plt.savefig(self.save_path)
