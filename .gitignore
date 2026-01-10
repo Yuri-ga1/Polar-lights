@@ -181,4 +181,5 @@ cython_debug/
 .cursorindexingignore
 
 #Custom
-files/
+files/*
+!files/EQ2.txt
