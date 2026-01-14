@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 from app.visualization.aurora_map_plotter import AuroraMapPlotter
 from app.visualization.plot_settings import set_plt_def_params
@@ -7,6 +7,7 @@ from app.pipeline.observation_pipeline import (
     collect_observation_links,
     parse_and_save_observations
 )
+from app.pipeline.omniweb_pipeline import download_omniweb_day
 
 
 if __name__ == "__main__":
@@ -18,6 +19,12 @@ if __name__ == "__main__":
 
     collect_observation_links(dates, h5_path)
     parse_and_save_observations(h5_path, csv_path)
+
+    omniweb_dir = os.path.join("files", "omniweb")
+    download_omniweb_day(
+        day=date(2025, 11, 12),
+        output_dir=omniweb_dir,
+    )
 
     save_path = os.path.join('files', 'obs_map.png')
     plotter = AuroraMapPlotter(
