@@ -1,32 +1,13 @@
-import os
-from datetime import datetime
+from datetime import date
+from pathlib import Path
 
-from app.visualization.aurora_map_plotter import AuroraMapPlotter
-from app.visualization.plot_settings import set_plt_def_params
-from app.pipeline.observation_pipeline import (
-    collect_observation_links,
-    parse_and_save_observations
-)
+from app.pipeline.spaceweather_pipeline import download_spaceweather_day
 
 
 if __name__ == "__main__":
-    set_plt_def_params()
-    
-    dates = ["2025/11/12", "2025/11/13"]
-    h5_path = os.path.join("files", "spaceweather_observations.h5")
-    csv_path =  os.path.join("files", "aurora_data.csv")
+    target_date = date(2025, 11, 12)
+    base_dir = Path("files") / "spaceweather"
+    paths = download_spaceweather_day(target_date, base_dir)
 
-    collect_observation_links(dates, h5_path)
-    parse_and_save_observations(h5_path, csv_path)
-
-    save_path = os.path.join('files', 'obs_map.png')
-    plotter = AuroraMapPlotter(
-        csv_path=csv_path,
-        save_path=save_path,
-        show_geomagnetic_equator=True,
-        show_terminator=True
-    )
-
-    plotter.plot(
-        time=datetime(2025, 11, 12, 2, 0)
-    )
+    for key, path in paths.items():
+        print(f"{key}: {path}")
