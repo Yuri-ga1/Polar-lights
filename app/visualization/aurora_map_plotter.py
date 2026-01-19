@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Wedge
 
 from app.visualization.geo_utils import (
-    geomagnetic_equator,
+    geomagnetic_lines,
     solar_terminator
 )
 from app.visualization.color_utils import get_dominant_color
@@ -81,17 +81,16 @@ class AuroraMapPlotter:
                 alpha=0.35
             )
 
-        # --- 3. Геомагнитный полюс ---
+        # --- 3. Геомагнитный экватор ---
         if self.show_geomagnetic_equator:
-            lats, lons = geomagnetic_equator()
-            ax.plot(
-                lons,
-                lats,
-                transform=ccrs.PlateCarree(),
-                linewidth=1.5,
-                color='orange',
-                label="Geomagnetic equator"
+            cs0, cs30 = geomagnetic_lines(
+                ax=ax,
+                date=time,
+                color="orange",
             )
+            # Чтобы появились подписи в легенде (contour сам по себе их не дает)
+            ax.plot([], [], color="orange", linewidth=2.0, label="Geomagnetic equator (0°)")
+            ax.plot([], [], color="orange", linestyle="--", linewidth=1.2, label="Geomagnetic ±30°")
 
         # --- 4. Точки наблюдений ---
         for _, row in self.df.iterrows():
@@ -140,8 +139,8 @@ class AuroraMapPlotter:
             handlelength=1.5,
             handleheight=1.5,
         )
-
-        plt.title("12-13 November 2025 auroras")
+        
+        plt.title(f"{time.strftime("%d %B %Y")} auroras")
         if self.save_path is None:
             plt.show()
         plt.savefig(self.save_path)

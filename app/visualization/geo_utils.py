@@ -1,18 +1,72 @@
 import numpy as np
 import cartopy.crs as ccrs
 from datetime import datetime, timezone
-import pandas as pd
-import os
+import ppigrf
 
-def geomagnetic_equator():
+def _dip_latitude(Be, Bn, Bu):
     """
-    Возвращает lat, lon геомагнитного экватора
+    Geomagnetic dip latitude:
+    λ = arctan(Z / (2H))
     """
-    file_path = os.path.join('files', 'EQ2.txt')
-    headers = ['lat', 'lon']
-    df = pd.read_csv(file_path, delim_whitespace=True, header=None, names=headers)
+    Z = -Bu
+    H = np.sqrt(Bn**2 + Be**2)
+    return np.degrees(np.arctan2(Z, 2.0 * H))
 
-    return df['lat'], df['lon']
+
+def geomagnetic_lines(
+    ax,
+    date: datetime,
+    levels: list = [-30, 30],
+    height_km: float = 0.0,
+    lon_step: float = 1.0,
+    lat_step: float = 0.5,
+    pole_margin_deg: float = 0.5,
+    color: str = "orange",
+):
+    """
+    Draw ONLY geomagnetic equator (0°) and ±30° dip-latitude isolines on given axes.
+    Returns contour sets (for legend if needed).
+    """
+
+    lon = np.arange(-180, 181, lon_step)
+
+    # IMPORTANT: exclude exact poles to avoid divisions by zero inside IGRF code
+    lat = np.arange(-90.0 + pole_margin_deg, 90.0 - pole_margin_deg + 1e-9, lat_step)
+
+    Lon, Lat = np.meshgrid(lon, lat)
+
+    # ppigrf returns (Be, Bn, Bu) in nT, often (1, Ny, Nx)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        Be, Bn, Bu = ppigrf.igrf(Lon, Lat, height_km, date)
+
+    if Be.ndim == 3 and Be.shape[0] == 1:
+        Be, Bn, Bu = Be[0], Bn[0], Bu[0]
+
+    dip = _dip_latitude(Be, Bn, Bu)
+
+    # Replace non-finite values so contour can work robustly
+    dip = np.where(np.isfinite(dip), dip, np.nan)
+
+    # --- 0° (equator) ---
+    cs0 = ax.contour(
+        lon, lat, dip,
+        levels=[0],
+        linewidths=2.0,
+        colors=[color],
+        transform=ccrs.PlateCarree(),
+    )
+
+    # --- ±30° ---
+    cs30 = ax.contour(
+        lon, lat, dip,
+        levels=levels,
+        linewidths=1.2,
+        linestyles="--",
+        colors=[color],
+        transform=ccrs.PlateCarree(),
+    )
+
+    return cs0, cs30
 
 
 def get_subsolar_latlon(time: datetime | None = None):

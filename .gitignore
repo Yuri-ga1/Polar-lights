@@ -182,4 +182,4 @@ cython_debug/
 
 #Custom
 files/*
-!files/EQ2.txt
+# !files/EQ2.txt
