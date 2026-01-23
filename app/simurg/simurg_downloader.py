@@ -45,10 +45,10 @@ class _BaseDownloader:
         if end_date:
             end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
         else:
-            end_dt = start_date + timedelta(days=1)
+            end_dt = start_date + timedelta(days=1) - timedelta(minutes=1)
         return self._to_simurg_date(start_date), self._to_simurg_date(end_dt)
 
-    def download(self, date_str: str, end_date: Optional[str] = None, **kwargs: Any) -> str:
+    def download(self, date_str: str, end_date: Optional[str] = None) -> str:
         """Запускает формирование запроса и скачивает результат.
 
         :param date_str: начальная дата (формат ``YYYY-MM-DD``)
@@ -57,12 +57,11 @@ class _BaseDownloader:
         :returns: путь к результату
         """
         start_iso, end_iso = self._make_time_range(date_str, end_date)
-        query_id = self.client.create_query(
+        query_id = self.client.create_or_reuse_query_id(
             start_time=start_iso,
             end_time=end_iso,
             method=self._method,
             args_params=self._args,
-            **kwargs,
         )
         file_path = self.client.wait_and_download(query_id, dest_dir=self.out_dir)
         return file_path

@@ -2,31 +2,23 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import requests
 
-
 class SimurgClient:
-    """Базовый клиент для работы с SIMuRG API.
-
-    Предоставляет методы для создания запроса, проверки его статуса и
-    скачивания результата.  Конечные точки API по умолчанию заданы
-    значениями, актуальными на момент разработки, но могут быть
-    изменены через параметры конструктора.
-    
-    :param polling_interval: интервал в секундах между опросами
-    """
+    """Базовый клиент для работы с SIMuRG API."""
 
     def __init__(
         self,
         email: str,
-        base_url: str = "https://simurg.iszf.irk.ru/api",
+        base_url: str = "https://simurg.iszf.irk.ru",
         polling_interval: int = 60,
         timeout: int = 30,
         verify: bool = True
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.api_url = f'{base_url.rstrip("/")}/api'
+        self.download_url = f"{base_url.rstrip("/")}/ufiles"
         self.timeout = timeout
         self.polling_interval = polling_interval
         self.verify = verify
@@ -39,100 +31,107 @@ class SimurgClient:
         method: str,
         args_params: Dict[str, Any],
     ) -> str:
-        """Создаёт запрос к SIMuRG для получения данных.
-
-        :param start_time: строка ISO 8601 (например, "2025-11-12T00:00:00")
-        :param end_time:   строка ISO 8601 (конец интервала)
-        :param method: тип продукта (``"gim"``, ``"create_map"``, ``"adjusted_tec"``, ``"keogram"``)
-        :param args_params: словарь дополнительных параметров для API
-        :returns: идентификатор запроса, возвращённый сервером
-        :raises RuntimeError: при ошибке HTTP или отсутствия идентификатора
-        """
-        url = f"{self.base_url}"
-        payload: Dict[str, Any] = {"method": method,
-                                   "args": {
-                                       "email": self.email,
-                                       "begin": start_time,
-                                       "end": end_time,
-                                    }
-                                }
-        # дополнительные параметры
+        """Создаёт запрос к SIMuRG для получения данных и возвращает query_id."""
+        print('Create new request')
+        url = f"{self.api_url}"
+        payload: Dict[str, Any] = {
+            "method": method,
+            "args": {
+                "email": self.email,
+                "begin": start_time,
+                "end": end_time,
+            },
+        }
         payload["args"].update(args_params)
 
         try:
             resp = requests.post(url, json=payload, timeout=self.timeout, verify=self.verify)
         except Exception as exc:
             raise RuntimeError(f"Ошибка соединения с {url}: {exc}") from exc
-        
+
         if resp.status_code != 200:
             raise RuntimeError(
-                f"Сервер вернул код {resp.status_code} при создании запроса. Ответ: {resp.text}. Url: {url}"
+                f"Сервер вернул код {resp.status_code} при создании запроса. "
+                f"Ответ: {resp.text}. Url: {url}"
             )
-        
-        data = resp.json()
-        query_id = data.get("id") or data.get("query_id")
+
+        query_id = self.get_query_id()
         if not query_id:
-            raise RuntimeError(
-                f"Не удалось получить идентификатор запроса из ответа: {data}"
-            )
+            raise RuntimeError(f"Не удалось получить идентификатор запроса из ответа")
+        
+        print(f'id of new request is {query_id}')
+        return query_id
+    
+    def get_query_id(self):
+        req = self.checking_by_mail()
+        data = req[-1]
+        query_id = data.get("id")
         return str(query_id)
 
-    def check_status(self, query_id: str) -> Dict[str, Any]:
-        """Проверяет статус запроса.
-
-        :param query_id: идентификатор запроса
-        :returns: JSON-ответ со статусом.  Обычно поле ``status`` содержит
-          строку ``pending``, ``running`` или ``done``.  В случае
-          завершения может присутствовать ссылка ``result_url`` или
-          другая информация о файле.
-        :raises RuntimeError: при ошибке соединения или HTTP-статусе != 200
-        """
-        url = f"{self.base_url}"
+    def checking_by_mail(self) -> List[Dict[str, Any]]:
+        """Возвращает список всех запросов по email (method=check)."""
+        url = f"{self.api_url}"
         try:
-            resp = requests.post(url, timeout=self.timeout, verify=self.verify,
-                                 json={
-                                     'method': 'check',
-                                     'args':{'email': self.email}
-                                    })
-            queries = resp.json()
-            query = next(
-                (q for q in queries if q["id"] == query_id),
-                None
+            resp = requests.post(
+                url,
+                verify=self.verify,
+                timeout=self.timeout,
+                json={"method": "check", "args": {"email": self.email}},
             )
-            if query is None:
-                return {
-                    "status": "not_found"
-                }
+        except Exception as exc:
+            raise RuntimeError(f"Ошибка соединения с {url}: {exc}") from exc
 
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Сервер вернул код {resp.status_code} при check. Ответ: {resp.text}. Url: {url}"
+            )
+
+        data = resp.json()
+        if not isinstance(data, list):
+            raise RuntimeError(f"Ожидался список запросов, пришло: {data}")
+
+        return data
+
+    def check_status(self, query_id: str) -> Dict[str, Any]:
+        """Проверяет статус запроса по его id (через method=check по email)."""
+        url = f"{self.api_url}"
+        try:
+            resp = requests.post(
+                url,
+                timeout=self.timeout,
+                verify=self.verify,
+                json={"method": "check", "args": {"email": self.email}},
+            )
         except Exception as exc:
             raise RuntimeError(f"Ошибка запроса статуса {url}: {exc}") from exc
+
         if resp.status_code != 200:
             raise RuntimeError(
                 f"Сервер вернул код {resp.status_code} при запросе статуса. Ответ: {resp.text}"
             )
+
+        queries = resp.json()
+        query = next((q for q in queries if q.get("id") == query_id), None)
+        if query is None:
+            return {"status": "not_found"}
+
         return query
 
     def download_result(self, url: str, dest_dir: str = ".") -> str:
-        """Скачивает результат запроса.
-
-        :param url: ссылка для скачивания
-        :param dest_dir: директория для сохранения файла
-        :returns: путь к сохранённому файлу
-        :raises RuntimeError: при ошибке загрузки или отсутствии файла
-        """
+        """Скачивает результат запроса."""
+        print(f'Downloading results from {url}')
         r = requests.get(url, timeout=self.timeout, verify=self.verify)
 
         if r.status_code != 200:
-            raise RuntimeError(
-                f"Не удалось скачать по result_url {url}: {r.status_code}"
-            )
-        
+            raise RuntimeError(f"Не удалось скачать по result_url {url}: {r.status_code}")
+
         os.makedirs(dest_dir, exist_ok=True)
         filename = os.path.basename(url)
         file_path = os.path.join(dest_dir, filename)
 
         with open(file_path, "wb") as f:
             f.write(r.content)
+
         return file_path
 
     def wait_and_download(
@@ -141,35 +140,118 @@ class SimurgClient:
         dest_dir: str = ".",
         max_attempts: int = 40,
     ) -> str:
-        """Ожидает завершения запроса и скачивает результат.
-
-        Периодически опрашивает статус запроса.  Если статус
-        становится ``done``, скачивает файл и возвращает путь.  В
-        случае превышения количества попыток или отказа сервера
-        возбуждает исключение.
-
-        :param query_id: идентификатор запроса
-        :param dest_dir: директория для сохранения
-        :param max_attempts: максимальное число попыток опроса
-        :returns: путь к результату
-        """
-        for attempt in range(max_attempts):
+        """Ожидает завершения запроса и скачивает результат."""
+        for _ in range(max_attempts):
             status_data = self.check_status(query_id)
             status = status_data.get("status")
 
             if status == "done":
-                result_url = status_data['paths']['data']
-
-                if result_url:
-                    full_result_url = f'{self.base_url}/{result_url}'
+                result_path = (status_data.get("paths") or {}).get("data")
+                if result_path:
+                    full_result_url = f"{self.download_url}/{str(result_path).lstrip('/')}"
                     return self.download_result(full_result_url, dest_dir)
-                
-            elif status in {'new', 'prepared', 'processed', 'plot'}:
-                time.sleep(self.polling_interval)
-            else:
                 raise RuntimeError(
-                    f"Запрос {query_id} имеет неожиданный статус: {status_data}"
+                    f"Запрос {query_id} завершён (done), но paths.data отсутствует: {status_data}"
                 )
-        raise RuntimeError(
-            f"Превышено количество попыток ожидания выполнения запроса {query_id}"
-        )
+
+            if status in {"new", "prepared", "processed", "plot"}:
+                time.sleep(self.polling_interval)
+                continue
+
+            raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
+
+        raise RuntimeError(f"Превышено количество попыток ожидания выполнения запроса {query_id}")
+
+    # -----------------------------
+    # Reuse/create helper
+    # -----------------------------
+
+    @staticmethod
+    def _norm_dt(s: Optional[str]) -> Optional[str]:
+        """Normalize datetime string to 'YYYY-MM-DD HH:MM' for matching."""
+        if s is None:
+            return None
+        s = str(s).strip().replace("T", " ")
+        return s[:16] if len(s) >= 16 else s
+
+    @classmethod
+    def _payload_match(
+        cls,
+        server_query: Dict[str, Any],
+        payload_method: str,
+        payload_args: Dict[str, Any],
+    ) -> bool:
+        """Check if server query equals our payload (method + args subset)."""
+
+        server_type = str(server_query.get("type") or "").lower()
+        payload_type = str(payload_method).lower()
+        if not (server_type == 'map' and payload_type == 'create_map') and server_type != payload_type:
+            return False
+
+        if cls._norm_dt(server_query.get("begin")) != cls._norm_dt(payload_args.get("begin")):
+            return False
+        if cls._norm_dt(server_query.get("end")) != cls._norm_dt(payload_args.get("end")):
+            print(cls._norm_dt(server_query.get("end")), cls._norm_dt(payload_args.get("end")))
+            return False
+
+        # coordinates: compare keys we send
+        pcoords = payload_args.get("coordinates")
+        if pcoords is not None:
+            scoords = server_query.get("coordinates")
+            if not isinstance(pcoords, dict) or not isinstance(scoords, dict):
+                print('2')
+                return False
+            for k, v in pcoords.items():
+                if scoords.get(k) != v:
+                    print('3')
+                    return False
+
+        # options: compare keys we send
+        popt = payload_args.get("options")
+        if popt is not None:
+            sopt = server_query.get("options")
+            if not isinstance(popt, dict) or not isinstance(sopt, dict):
+                print('4')
+                return False
+            for k, v in popt.items():
+                if sopt.get(k) != v:
+                    print('5')
+                    return False
+
+        return True
+
+    def create_or_reuse_query_id(
+        self,
+        start_time: str,
+        end_time: str,
+        method: str,
+        args_params: Dict[str, Any]
+    ) -> str:
+        """
+        1) Ищет уже созданный запрос с теми же параметрами (payload).
+           - Если нашёл (done/не done) -> возвращает его id.
+        2) Если не нашёл -> создаёт новый и возвращает новый id.
+        """
+        payload_args: Dict[str, Any] = {
+            "email": self.email,
+            "begin": start_time,
+            "end": end_time,
+        }
+        payload_args.update(args_params or {})
+
+        # Find existing
+        queries = self.checking_by_mail()
+        matched = [q for q in queries if self._payload_match(q, method, payload_args)]
+        print(f'Found {len(matched)} requests with same params')
+
+        if matched:
+            # Prefer done, else newest by created
+            done = [q for q in matched if q.get("status") == "done"]
+            chosen = done[0] if done else sorted(
+                matched, key=lambda q: str(q.get("created") or ""), reverse=True
+            )[0]
+            req_iq = str(chosen.get("id"))
+            print(f'Found created request with id: {req_iq}')
+            return req_iq
+
+        return self.create_query(start_time, end_time, method, payload_args)
