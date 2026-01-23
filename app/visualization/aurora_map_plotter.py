@@ -28,6 +28,7 @@ class AuroraMapPlotter:
         self.show_terminator = show_terminator
 
         self.df = pd.read_csv(csv_path)
+        self.df["date"] = pd.to_datetime(self.df["date"], errors="coerce")
 
     class MulticolorPatch(object):
         def __init__(self, colors):
@@ -57,10 +58,20 @@ class AuroraMapPlotter:
 
             return wedges
 
-    def plot(self, time: datetime | None = None):
+    def plot(self, time: datetime):
         """
         Строит карту мира с наблюдениями
         """
+        if time is None:
+            raise ValueError("time must not be None")
+
+        target_date = time.date()
+
+        # фильтрация по дате
+        df = self.df[self.df["date"].dt.date == target_date]
+        if df.empty:
+            raise ValueError(f"There is no data for date: {target_date}")
+
         proj = ccrs.PlateCarree()
         fig = plt.figure(figsize=(14, 7))
         ax = plt.axes(projection=proj)
@@ -93,10 +104,12 @@ class AuroraMapPlotter:
             ax.plot([], [], color="orange", linestyle="--", linewidth=1.2, label="Geomagnetic ±30°")
 
         # --- 4. Точки наблюдений ---
-        for _, row in self.df.iterrows():
+        for _, row in df.iterrows():
             x, y = row["lon"], row["lat"]
-            colors = row.get("colors", [])
-            if isinstance(colors, str):
+            colors = row.get("colors")
+            if pd.isna(colors):
+                colors = []
+            elif isinstance(colors, str):
                 colors = [c.strip() for c in colors.split(";")]
             if not colors:
                 colors = ["black"]
@@ -118,7 +131,7 @@ class AuroraMapPlotter:
         # --- Легенда для точек наблюдения ---
         handles, labels = ax.get_legend_handles_labels()
 
-        colors_series = self.df["colors"].dropna().apply(lambda s: s.split(";") if isinstance(s, str) else s)
+        colors_series = df["colors"].dropna().apply(lambda s: s.split(";") if isinstance(s, str) else s)
 
         legend_colors = max(colors_series, key=len)
         legend_colors = legend_colors[:7]
