@@ -76,3 +76,20 @@ def _build_ticks(lo: float, hi: float, step: float) -> list[float]:
         ticks.append(t)
         t += step
     return ticks
+
+def style_axes(ax):
+    for spine in ax.spines.values():
+        spine.set_color("gray")
+    ax.grid(True)
+
+def kp_colors(kp_values: pd.Series) -> list[str]:
+    colors: list[str] = []
+    for val in kp_values:
+        v = float(val)
+        if v < 3.5:
+            colors.append("green")
+        elif 3.5 <= v <= 4.5:
+            colors.append("yellow")
+        else:
+            colors.append("red")
+    return colors

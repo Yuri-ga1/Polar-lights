@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels
+from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels, style_axes
 
 
 def plot_ionosonde(df: pd.DataFrame) -> str:
@@ -49,10 +49,8 @@ def plot_ionosonde(df: pd.DataFrame) -> str:
         ax.set_yticks(yticks)
 
         ax.set_ylabel(ylabel, fontweight="bold")
-        ax.grid(True)
-
-        for spine in ax.spines.values():
-            spine.set_color("gray")
+        
+        style_axes(ax)
 
         ax.set_title(panel_letters[i], loc="left", x=0.0125, y=0.8, weight="bold")
 
