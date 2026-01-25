@@ -16,11 +16,25 @@ def set_plt_def_params():
     Устанавливает глобальные параметры matplotlib
     для всех графиков проекта.
     """
-    plt.rcParams['figure.dpi'] = DPI
-    plt.rcParams['savefig.dpi'] = DPI
-    plt.rcParams['font.size'] = FONT_SIZE
-    plt.rcParams['axes.titlesize'] = TITLE_FONT_SIZE
-    plt.rcParams['axes.labelsize'] = AXES_LABEL_SIZE
-    plt.rcParams['xtick.labelsize'] = TICKS_LABEL_SIZE
-    plt.rcParams['ytick.labelsize'] = TICKS_LABEL_SIZE - 1
-    plt.rcParams['legend.fontsize'] = LEGEND_SIZE
+    plt.style.use('seaborn-v0_8-whitegrid')
+    PLOTTING_PARAMS = {
+        'font.size': 30,
+        'figure.dpi': DPI,
+        #'font.family': 'serif',
+        #'font.family': 'monospace',
+        #'font.style': 'normal',
+        'font.weight': 'light',
+        'legend.frameon': True,
+        'font.variant' : 'small-caps',
+        'axes.titlesize' : 30,
+        'axes.labelsize' : 30,
+        'xtick.labelsize' : 28,
+        'ytick.labelsize' : 28,
+        'xtick.major.pad': 5,
+        'ytick.major.pad': 5,
+        'xtick.major.width' : 2.5,
+        'ytick.major.width' : 2.5,
+        'xtick.minor.width' : 2.5,
+        'ytick.minor.width' : 2.5,
+    }
+    plt.rcParams.update(PLOTTING_PARAMS)
