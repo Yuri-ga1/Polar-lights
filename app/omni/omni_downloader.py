@@ -13,12 +13,13 @@ class OmniDownloader:
 
     BASE_URL: str = "https://omniweb.gsfc.nasa.gov/cgi/nx1.cgi"
     OMNI_1MIN_VARS = {
-        "bx_gse": 14,          # nT
-        "by_gse": 15,          # nT
-        "bz_gse": 16,          # nT
-        "speed": 21,           # km/s
-        "flow_pressure": 27,   # nPa
-        "ae": 37,              # nT
+        "bx_gse": 14,           # nT
+        "by_gse": 15,           # nT
+        "bz_gse": 16,           # nT
+        "speed": 21,            # km/s
+        "flow_pressure": 27,    # nPa
+        "ae": 37,               # nT
+        "symh": 41              # nT
     }
 
     DEFAULT_VAR_IDS = tuple(OMNI_1MIN_VARS.values())
