@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
-import time
 from typing import Any, Dict, List, Optional
 
 import requests
+
 
 class SimurgClient:
     """Базовый клиент для работы с SIMuRG API."""
@@ -116,51 +115,6 @@ class SimurgClient:
             return {"status": "not_found"}
 
         return query
-
-    def download_result(self, url: str, dest_dir: str = ".") -> str:
-        """Скачивает результат запроса."""
-        print(f'Downloading results from {url}')
-        r = requests.get(url, timeout=self.timeout, verify=self.verify)
-
-        if r.status_code != 200:
-            raise RuntimeError(f"Не удалось скачать по result_url {url}: {r.status_code}")
-
-        os.makedirs(dest_dir, exist_ok=True)
-        filename = os.path.basename(url)
-        file_path = os.path.join(dest_dir, filename)
-
-        with open(file_path, "wb") as f:
-            f.write(r.content)
-
-        return file_path
-
-    def wait_and_download(
-        self,
-        query_id: str,
-        dest_dir: str = ".",
-        max_attempts: int = 40,
-    ) -> str:
-        """Ожидает завершения запроса и скачивает результат."""
-        for _ in range(max_attempts):
-            status_data = self.check_status(query_id)
-            status = status_data.get("status")
-
-            if status == "done":
-                result_path = (status_data.get("paths") or {}).get("data")
-                if result_path:
-                    full_result_url = f"{self.download_url}/{str(result_path).lstrip('/')}"
-                    return self.download_result(full_result_url, dest_dir)
-                raise RuntimeError(
-                    f"Запрос {query_id} завершён (done), но paths.data отсутствует: {status_data}"
-                )
-
-            if status in {"new", "prepared", "processed", "plot"}:
-                time.sleep(self.polling_interval)
-                continue
-
-            raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
-
-        raise RuntimeError(f"Превышено количество попыток ожидания выполнения запроса {query_id}")
 
     # -----------------------------
     # Reuse/create helper
