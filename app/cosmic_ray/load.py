@@ -7,7 +7,7 @@ def load_cosmic_ray_data(filepath: str) -> pd.DataFrame:
         filepath,
         sep=r"\s+",
         names=column_names,
-        skiprows=2,
+        skiprows=1,
         comment=";",
         engine="python"
     )

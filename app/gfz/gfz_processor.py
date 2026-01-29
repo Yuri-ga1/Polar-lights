@@ -77,8 +77,7 @@ class GfzProcessor:
     @staticmethod
     def _load_kp_file(filepath: str) -> pd.DataFrame:
         """
-        Парсинг kp2 (или совместимого) формата в DataFrame.
-        Основано на твоей функции load_kp(), но чуть более устойчиво к пробелам/битым строкам.
+        Парсинг kp (или совместимого) формата в DataFrame.
         """
         cols = [
             "year", "month", "day",
@@ -132,7 +131,6 @@ class GfzProcessor:
 
     def load(
         self,
-        *,
         date_str: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,

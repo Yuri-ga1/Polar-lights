@@ -18,7 +18,7 @@ def plot_cosmic_ray_variations(
     labels = panel_labels(labels_count)
     formatter = DateFormatter("%d")
 
-    fig, axes = plt.subplots(labels_count, 1, figsize=(18, 16), sharex=True)
+    fig, axes = plt.subplots(labels_count+1, 1, figsize=(18, 16), sharex=True)
 
     left = max(cr_df["DateTime"].min(), kp_df["DateTime"].min())
     right = min(cr_df["DateTime"].max(), kp_df["DateTime"].max())
