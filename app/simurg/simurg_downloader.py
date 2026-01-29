@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
+
+import requests
 
 from app.simurg.simurg_client import SimurgClient
 
@@ -13,8 +16,7 @@ __all__ = [
     "KeogramDownloader",
 ]
 
-
-class _BaseDownloader:
+class _SimurgDownloader:
     """Базовый класс-загрузчик для конкретного типа продукта.
 
     В подклассах следует определить атрибут ``product_type`` и при
@@ -63,17 +65,103 @@ class _BaseDownloader:
             method=self._method,
             args_params=self._args,
         )
-        file_path = self.client.wait_and_download(query_id, dest_dir=self.out_dir)
+        file_path = self._wait_and_download(query_id)
         return file_path
 
+    def _wait_and_download(self, query_id: str) -> str:
+        """Ожидает готовность и скачивает результат."""
+        while True:
+            status_data = self.client.check_status(query_id)
+            status = status_data.get("status")
 
-class GimDownloader(_BaseDownloader):
+            if status == "done":
+                result_path = (status_data.get("paths") or {}).get("data")
+                if result_path:
+                    full_result_url = (
+                        f"{self.client.download_url}/{str(result_path).lstrip('/')}"
+                    )
+                    return self._download_result(full_result_url)
+                raise RuntimeError(
+                    f"Запрос {query_id} завершён (done), но paths.data отсутствует: {status_data}"
+                )
+
+            if status in {"new", "prepared", "processed", "plot"}:
+                time.sleep(self.client.polling_interval)
+                continue
+
+            raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
+
+    def _download_result(
+        self,
+        url: str,
+        chunk_size: int = 1024 * 1024,
+    ) -> str:
+        """Скачивает файл с докачкой до полного получения."""
+        print(f"Downloading results from {url}")
+        filename = os.path.basename(url)
+        file_path = os.path.join(self.out_dir, filename)
+
+        def _extract_total_size(resp: requests.Response, offset: int) -> Optional[int]:
+            content_range = resp.headers.get("Content-Range")
+            if content_range and "/" in content_range:
+                total_str = content_range.split("/")[-1]
+                if total_str.isdigit():
+                    return int(total_str)
+            content_length = resp.headers.get("Content-Length")
+            if content_length and content_length.isdigit():
+                length = int(content_length)
+                if resp.status_code == 206:
+                    return offset + length
+                return length
+            return None
+
+        while True:
+            offset = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            headers = {"Range": f"bytes={offset}-"} if offset else {}
+
+            try:
+                resp = requests.get(
+                    url,
+                    timeout=self.client.timeout,
+                    verify=self.client.verify,
+                    headers=headers,
+                    stream=True,
+                )
+            except requests.RequestException:
+                time.sleep(self.client.polling_interval)
+                continue
+
+            if resp.status_code not in (200, 206):
+                raise RuntimeError(f"Не удалось скачать по result_url {url}: {resp.status_code}")
+
+            if resp.status_code == 200 and offset:
+                offset = 0
+                mode = "wb"
+            else:
+                mode = "ab" if offset else "wb"
+
+            total_size = _extract_total_size(resp, offset)
+            try:
+                with open(file_path, mode) as f:
+                    for chunk in resp.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+            except requests.RequestException:
+                time.sleep(self.client.polling_interval)
+                continue
+
+            final_size = os.path.getsize(file_path)
+            if total_size is None or final_size >= total_size:
+                return file_path
+
+
+class GimDownloader(_SimurgDownloader):
     """Загрузчик для глобальных ионосферных карт (GIM)."""
 
     _method = "/gimmap"
 
 
-class RotiDownloader(_BaseDownloader):
+class RotiDownloader(_SimurgDownloader):
     """Загрузчик для карт индекса ROTI."""
 
     _method = "create_map"
@@ -96,13 +184,13 @@ class RotiDownloader(_BaseDownloader):
 
 
 
-class AdjustedTecDownloader(_BaseDownloader):
+class AdjustedTecDownloader(_SimurgDownloader):
     """Загрузчик для «adjusted TEC» (откалиброванный TEC)."""
 
     _method = "adjusted_tec"
 
 
-class KeogramDownloader(_BaseDownloader):
+class KeogramDownloader(_SimurgDownloader):
     """Загрузчик для кеограмм.
 
     Кеограмма — это изображение, представляющее временную эволюцию
