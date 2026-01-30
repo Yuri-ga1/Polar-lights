@@ -84,7 +84,7 @@ class KyotoProcessor:
         for hour, dst in enumerate(hourly):
             rows.append(
                 {
-                    "DateTime": datetime(base_day.year, base_day.month, base_day.day, hour, 0, 0),
+                    "datetime": datetime(base_day.year, base_day.month, base_day.day, hour, 0, 0),
                     "date": base_day,
                     "hour": hour,
                     "dst": dst,
@@ -104,8 +104,8 @@ class KyotoProcessor:
         if df.empty:
             return df
 
-        df["DateTime"] = pd.to_datetime(df["DateTime"])
-        df = df.sort_values("DateTime").reset_index(drop=True)
+        df["datetime"] = pd.to_datetime(df["datetime"])
+        df = df.sort_values("datetime").reset_index(drop=True)
         return df
 
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
@@ -122,7 +122,7 @@ class KyotoProcessor:
                 return None
 
             # надёжная фильтрация по календарному дню
-            df = df[df["DateTime"].dt.date == d].reset_index(drop=True)
+            df = df[df["datetime"].dt.date == d].reset_index(drop=True)
             return None if df.empty else df
         except Exception:
             return None

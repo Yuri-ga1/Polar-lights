@@ -110,7 +110,7 @@ class GfzProcessor:
         df["hour"] = df["time1"].astype(float).astype(int)
         df["minute"] = ((df["time1"] - df["hour"]) * 60).round().astype(int)
 
-        df["DateTime"] = pd.to_datetime(
+        df["datetime"] = pd.to_datetime(
             dict(
                 year=df["year"],
                 month=df["month"],
@@ -123,8 +123,7 @@ class GfzProcessor:
 
         df = df.drop(columns=["hour", "minute"])
 
-        # выкидываем строки, где DateTime не удалось собрать
-        df = df.dropna(subset=["DateTime"]).reset_index(drop=True)
+        df = df.dropna(subset=["datetime"]).reset_index(drop=True)
         return df
 
     # ---------- public API ----------
