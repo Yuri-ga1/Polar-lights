@@ -17,6 +17,7 @@ class OmniDownloader:
         "by_gse": 15,           # nT
         "bz_gse": 16,           # nT
         "speed": 21,            # km/s
+        "proton_density": 25,   # n/cc
         "flow_pressure": 27,    # nPa
         "ae": 37,               # nT
         "symh": 41              # nT

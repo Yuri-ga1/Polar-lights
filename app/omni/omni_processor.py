@@ -76,6 +76,16 @@ class OmniProcessor:
         if not mapping:
             raise ValueError("Не удалось распарсить список параметров OMNI.")
         return mapping
+    
+    @staticmethod
+    def _normalize_column_name(name: str) -> str:
+        name = name.lower()
+        name = name.split(",")[0]
+        name = name.split("-")[0]
+        name = name.replace("/", "")
+        name = re.sub(r"\s+", " ", name)
+        return name.strip()
+
 
     @staticmethod
     def _parse_table(pre_text: str, param_map: Dict[int, str]) -> pd.DataFrame:
@@ -121,9 +131,12 @@ class OmniProcessor:
 
         # fill values → NaN
         for c in temp_cols:
+            s = df[c].astype(str).str.strip()
+            mask = s.str.match(r"^9+(\.9+)?$")
+
+            df.loc[mask, c] = pd.NA
             df[c] = pd.to_numeric(df[c], errors="coerce")
-            df.loc[df[c] >= 9999, c] = pd.NA
-            df.loc[df[c] == 99.99, c] = pd.NA
+
 
         # DateTime
         dt = (
@@ -140,6 +153,7 @@ class OmniProcessor:
             for idx in param_indices
         }
         df = df.rename(columns=rename_map)
+        df = df.rename(columns=OmniProcessor._normalize_column_name)
 
         return df
 
