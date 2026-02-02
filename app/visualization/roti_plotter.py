@@ -155,13 +155,21 @@ def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> No
             cmap=map_params.cmap,
         )
 
-        ax1.set_title(time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT\n")
+        ax1.set_title(
+            time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
+        )
         ax1.text(
             0.025,
             0.87,
             subplot_marks[axs_index],
             weight="bold",
             transform=ax1.transAxes,
+            bbox=dict(
+                facecolor="white",
+                edgecolor="none",
+                alpha=0.8,
+                boxstyle="round,pad=0.2",
+            ),
         )
 
         if (axs_index + 1) % ncols == 0:
