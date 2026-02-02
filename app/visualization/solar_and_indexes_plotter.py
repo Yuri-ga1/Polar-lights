@@ -167,19 +167,17 @@ def plot_sw_symh_dst_kp(
     ax.set_title(labels[2], loc="left", x=0.0125, y=0.80, weight="bold")
 
     # --- d) Kp (как в CR) ---
-    ax = axes[3]
+    ax = axes[-1]
     colors = kp_colors(kp_df["kp"])
     ax.bar(kp_df["datetime"], kp_df["kp"], color=colors, width=0.115)
 
+    ax.set_ylim(0, 9)
+    ax.set_yticks([0, 3, 6, 9])
     ax.set_ylabel("Kp", fontweight="bold")
     ax.set_xlabel("Day", fontweight="bold")
 
-    (yl, yh), yt = auto_ylim_and_ticks(kp_df["kp"], target_ticks=4)
-    ax.set_ylim(max(0, yl), yh)
-    ax.set_yticks(yt)
-
     _style_x(ax, xlim, day_ticks, formatter, show_xlabel=True)
-    ax.set_title(labels[3], loc="left", x=0.0125, y=0.75, weight="bold")
+    ax.set_title(labels[-1], loc="left", x=0.0125, y=0.75, weight="bold")
 
     # layout + save
     fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.97)

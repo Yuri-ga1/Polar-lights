@@ -122,7 +122,6 @@ class KyotoProcessor:
                 return None
 
             # надёжная фильтрация по календарному дню
-            df = df[df["datetime"].dt.date == d].reset_index(drop=True)
             return None if df.empty else df
         except Exception:
             return None

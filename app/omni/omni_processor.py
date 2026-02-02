@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime, date
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 
 import pandas as pd
 
@@ -26,12 +26,31 @@ class OmniProcessor:
     def _parse_date(s: str) -> date:
         return datetime.strptime(s, "%Y-%m-%d").date()
 
-    def _build_filename(self, date_str: str) -> str:
+    def _build_filename(self, date_str: str) -> Tuple[str, str]:
+        """
+        Возвращает два варианта имени файла:
+        1) omni_YYYYMMDD.txt
+        2) omni_YYYYMM.txt
+        """
         d = self._parse_date(date_str)
-        return f"omni_{d.strftime('%Y%m%d')}.txt"
+        with_day = f"omni_{d.strftime('%Y%m%d')}.txt"
+        without_day = f"omni_{d.strftime('%Y%m')}.txt"
+        return with_day, without_day
+
 
     def _full_path(self, filename: str) -> str:
         return os.path.join(self.folder_path, filename)
+    
+    def _pick_existing_file(self, filenames: Tuple[str, str]) -> Optional[str]:
+        """
+        Возвращает путь к первому существующему и непустому файлу (в порядке приоритета),
+        либо None.
+        """
+        for name in filenames:
+            path = self._full_path(name)
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                return path
+        return None
 
     # ---------- parsing ----------
 
@@ -158,8 +177,8 @@ class OmniProcessor:
         return df
 
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
-        filename = self._build_filename(date_str)
-        path = self._full_path(filename)
+        filenames = self._build_filename(date_str)
+        path = self._pick_existing_file(filenames)
 
         if not os.path.exists(path) or os.path.getsize(path) == 0:
             return None
