@@ -23,7 +23,7 @@ class BaseDownloader:
     def _download_result(
         self,
         url: str,
-        *,
+        filename: str = None,
         timeout: float = 60,
         verify: bool = True,
         polling_interval: float = 5,
@@ -31,7 +31,7 @@ class BaseDownloader:
     ) -> str:
         """Скачивает файл с докачкой до полного получения."""
         print(f"Downloading results from {url}")
-        filename = os.path.basename(url)
+        filename = os.path.basename(url) if filename is None else filename
         file_path = os.path.join(self.out_dir, filename)
 
         def _extract_total_size(resp: requests.Response, offset: int) -> Optional[int]:
