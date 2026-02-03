@@ -15,7 +15,7 @@ import matplotlib.ticker as mticker
 import numpy as np
 
 from app.visualization.geo_utils import solar_terminator, geomagnetic_lines
-from app.visualization.plot_utils import panel_labels
+from app.visualization.plot_utils import panel_labels, prepare_layout, add_panel_label, add_colorbar_right
 
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
 FIGSIZE_WIDTH = 18
@@ -42,35 +42,6 @@ class DataProducts(DataProduct, Enum):
 
 
 MapParams = namedtuple("MapParams", ["point_size", "point_marker", "cmap"], defaults=[10, "s", "jet"])
-
-
-def prepare_layout(
-    ax: plt.Axes,
-    lon_locator: Iterable[float],
-    lat_locator: Iterable[float],
-) -> None:
-    """Takes matplotlib axes and adds map formatting and landmarks."""
-    gl = ax.gridlines(
-        linewidth=2,
-        color="gray",
-        alpha=0.5,
-        draw_labels=True,
-        linestyle="--",
-    )
-    gl.top_labels = False
-    gl.right_labels = False
-    gl.xformatter = LONGITUDE_FORMATTER
-    gl.yformatter = LATITUDE_FORMATTER
-    if lon_locator:
-        gl.xlocator = mticker.FixedLocator(lon_locator)
-    if lat_locator:
-        gl.ylocator = mticker.FixedLocator(lat_locator)
-    ax.set_xlim(-180, 180)
-    ax.set_ylim(-90, 90)
-    ax.add_feature(feature.COASTLINE, linewidth=2.5)
-    ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)
-    ax.add_feature(feature.LAKES, alpha=0.5)
-    ax.add_feature(feature.RIVERS)
 
 
 def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> None:
@@ -158,32 +129,16 @@ def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> No
         ax1.set_title(
             time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
         )
-        ax1.text(
-            0.025,
-            0.87,
-            subplot_marks[axs_index],
-            weight="bold",
-            transform=ax1.transAxes,
-            bbox=dict(
-                facecolor="white",
-                edgecolor="none",
-                alpha=0.8,
-                boxstyle="round,pad=0.2",
-            ),
-        )
+        add_panel_label(ax=ax1, label=subplot_marks[axs_index])
 
         if (axs_index + 1) % ncols == 0:
-            cax = fig.add_axes(
-                [
-                    ax1.get_position().x1 + 0.01,
-                    ax1.get_position().y0,
-                    0.02,
-                    ax1.get_position().height,
-                ]
-            )
-            cbar = ax1.figure.colorbar(sctr, cax=cax)
             cbar_label = f"TECU/min"
-            cbar.ax.set_ylabel(cbar_label, rotation=-90, va="bottom")
+            add_colorbar_right(
+                fig=fig,
+                ax=ax1,
+                mappable=sctr,
+                label=cbar_label
+            )
 
     save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)

@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+from typing import Iterable
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import cartopy.crs as ccrs
+from cartopy import feature
+from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
+
 import math
 
 import pandas as pd
@@ -93,3 +103,66 @@ def kp_colors(kp_values: pd.Series) -> list[str]:
         else:
             colors.append("red")
     return colors
+
+
+def prepare_layout(
+    ax: plt.Axes,
+    lon_locator: Iterable[float] | None,
+    lat_locator: Iterable[float] | None,
+) -> None:
+    """add coastline/borders/gridlines and format map axes."""
+    gl = ax.gridlines(
+        linewidth=2,
+        color="gray",
+        alpha=0.5,
+        draw_labels=True,
+        linestyle="--",
+    )
+    gl.top_labels = False
+    gl.right_labels = False
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+
+    if lon_locator:
+        gl.xlocator = mticker.FixedLocator(list(lon_locator))
+    if lat_locator:
+        gl.ylocator = mticker.FixedLocator(list(lat_locator))
+
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-90, 90)
+
+    ax.add_feature(feature.COASTLINE, linewidth=2.5)
+    ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)
+    ax.add_feature(feature.LAKES, alpha=0.5)
+    ax.add_feature(feature.RIVERS)
+
+
+def add_panel_label(ax: plt.Axes, label: str) -> None:
+    """add subplot panel mark like 'a', 'b', ..."""
+    ax.text(
+        0.025,
+        0.87,
+        label,
+        weight="bold",
+        transform=ax.transAxes,
+        bbox=dict(
+            facecolor="white",
+            edgecolor="none",
+            alpha=0.8,
+            boxstyle="round,pad=0.2",
+        ),
+    )
+
+
+def add_colorbar_right(fig: plt.Figure, ax: plt.Axes, mappable, label: str) -> None:
+    """place a colorbar to the right of the axes."""
+    cax = fig.add_axes(
+        [
+            ax.get_position().x1 + 0.01,
+            ax.get_position().y0,
+            0.02,
+            ax.get_position().height,
+        ]
+    )
+    cbar = fig.colorbar(mappable, cax=cax)
+    cbar.ax.set_ylabel(label, rotation=-90, va="bottom")
