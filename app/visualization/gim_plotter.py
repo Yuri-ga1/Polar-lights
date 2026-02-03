@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 
-from app.visualization.geo_utils import solar_terminator
+from app.visualization.geo_utils import solar_terminator, geomagnetic_lines
 from app.visualization.plot_utils import panel_labels, prepare_layout, add_panel_label, add_colorbar_right
 
 
@@ -97,11 +97,11 @@ def plot_gim_maps(
 
         t = plot_times[idx]
 
-        solar_terminator(
-            ax,
-            time=datetime(t.year, t.month, t.day, t.hour, t.minute, t.second),
-            color="black",
-            alpha=0.1,
+        geomagnetic_lines(
+            ax=ax,
+            date=t.replace(tzinfo=None),
+            levels= [-50, -30, 30, 50],
+            color='black'
         )
 
         prepare_layout(ax, lon_locator, lat_locator)
@@ -123,7 +123,6 @@ def plot_gim_maps(
         ax.set_title(t.strftime(TIME_FORMAT_TITLE)[:-7] + " UT")
         add_panel_label(ax, marks[idx])
 
-        # Same pattern as ROTI: put colorbar on the right column
         if (idx + 1) % ncols == 0:
             add_colorbar_right(fig, ax, img, f"TEC, {GIM_TEC_LIMITS.units}")
 

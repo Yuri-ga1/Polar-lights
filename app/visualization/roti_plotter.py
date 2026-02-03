@@ -93,17 +93,19 @@ def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> No
             continue
 
         time = plot_times[axs_index]
+        native_time = time.replace(tzinfo=None)
         solar_terminator(
             ax1,
-            time=datetime(time.year, time.month, time.day, time.hour, time.minute, time.second),
+            time=native_time,
             color="black",
             alpha=0.1,
         )
-        # geomagnetic_lines(
-        #     ax=ax1,
-        #     date=time,
-        #     levels=[-60, -30, 0, 30, 60]
-        # )
+        geomagnetic_lines(
+            ax=ax1,
+            date=native_time,
+            levels=[-50, -30, 0, 30, 50],
+            color='black'
+        )
 
         arr = data[time]
         lats = arr["lat"]
