@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from app.base_downloader import BaseDownloader
+from app.base_classes.base_downloader import BaseDownloader
 from app.simurg.simurg_client import SimurgClient
 
 __all__ = [

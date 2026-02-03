@@ -6,7 +6,7 @@ from typing import Iterable, List, Optional, Tuple
 
 import requests
 
-from app.base_downloader import BaseDownloader
+from app.base_classes.base_downloader import BaseDownloader
 
 class OmniDownloader(BaseDownloader):
     """Класс для загрузки данных OMNI (1‑минутное разрешение)."""

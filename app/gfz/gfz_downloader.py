@@ -7,7 +7,7 @@ from typing import Optional
 
 import requests
 
-from app.base_downloader import BaseDownloader
+from app.base_classes.base_downloader import BaseDownloader
 
 
 @dataclass(frozen=True)
