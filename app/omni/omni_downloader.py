@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime, timedelta
 from typing import Iterable, List, Optional, Tuple
 
 import requests
 
+from app.base_downloader import BaseDownloader
 
-class OmniDownloader:
+class OmniDownloader(BaseDownloader):
     """Класс для загрузки данных OMNI (1‑минутное разрешение)."""
 
     BASE_URL: str = "https://omniweb.gsfc.nasa.gov/cgi/nx1.cgi"
@@ -26,8 +26,7 @@ class OmniDownloader:
     DEFAULT_VAR_IDS = tuple(OMNI_1MIN_VARS.values())
 
     def __init__(self, out_dir: str = ".") -> None:
-        self.out_dir = out_dir
-        os.makedirs(self.out_dir, exist_ok=True)
+        super().__init__(out_dir=out_dir)
 
     def _build_query(self, start_dt: datetime, end_dt: datetime,
                      var_ids: Iterable[int]) -> List[Tuple[str, str]]:
@@ -93,7 +92,4 @@ class OmniDownloader:
         if filename is None:
             filename = f"omni_{month_start.strftime('%Y%m')}.txt"
 
-        file_path = os.path.join(self.out_dir, filename)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(data_text)
-        return file_path
+        return self._write_text_file(filename, data_text)
