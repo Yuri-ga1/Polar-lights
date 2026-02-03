@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import os
 import calendar
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Optional
 
 import requests
+
+from app.base_downloader import BaseDownloader
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,7 @@ class DateRange:
     end: date
 
 
-class GfzDownloader:
+class GfzDownloader(BaseDownloader):
     """
     Загрузчик индекса Kp с GFZ по endpoint:
     https://kp.gfz.de/kpdata?startdate=YYYY-MM-DD&enddate=YYYY-MM-DD&format=kp2
@@ -28,8 +29,7 @@ class GfzDownloader:
     BASE_URL: str = "https://kp.gfz.de/kpdata"
 
     def __init__(self, out_dir: str = ".") -> None:
-        self.out_dir = out_dir
-        os.makedirs(self.out_dir, exist_ok=True)
+        super().__init__(out_dir=out_dir)
 
     @staticmethod
     def _parse_date(s: str) -> date:
@@ -100,8 +100,4 @@ class GfzDownloader:
 
         # --- Сохранение ---
         save_name = filename or default_name
-        file_path = os.path.join(self.out_dir, save_name)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(data_text)
-
-        return file_path
+        return self._write_text_file(save_name, data_text)

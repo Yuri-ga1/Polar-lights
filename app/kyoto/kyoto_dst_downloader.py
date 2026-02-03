@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Iterable, Optional
 
 import requests
 
+from app.base_downloader import BaseDownloader
 
-class KyotoDstDownloader:
+
+class KyotoDstDownloader(BaseDownloader):
     """Загружает месячный файл индекса Dst из WDC Kyoto."""
 
     DEFAULT_VERSIONS: tuple[str, ...] = ("dst_realtime", "dst_provisional", "dst_final")
 
     def __init__(self, out_dir: str = ".") -> None:
-        self.out_dir = out_dir
-        os.makedirs(self.out_dir, exist_ok=True)
+        super().__init__(out_dir=out_dir)
 
     def _build_urls(self, date: datetime, versions: Iterable[str]) -> list[str]:
         year_full = date.year
@@ -45,10 +45,7 @@ class KyotoDstDownloader:
                         save_name = f"dst_{date.strftime('%Y%m')}.for"
                     else:
                         save_name = filename
-                    file_path = os.path.join(self.out_dir, save_name)
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(data)
-                    return file_path
+                    return self._write_text_file(save_name, data)
             except Exception as exc:
                 last_exc = exc
                 continue
