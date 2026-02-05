@@ -39,17 +39,32 @@ class DataProducts(DataProduct, Enum):
         "roti",
         ColorLimits(0, 1, "TECU/min"),
     )
+    tec_adjusted = DataProduct(
+        "TEC Adjusted",
+        "tec_adjusted",
+        ColorLimits(0, 80, "TECU"),
+    )
 
 
 MapParams = namedtuple("MapParams", ["point_size", "point_marker", "cmap"], defaults=[10, "s", "jet"])
 
+def _resolve_product(product_type: str) -> DataProduct:
+    try:
+        return DataProducts[product_type].value
+    except KeyError as error:
+        supported = ", ".join(DataProducts.__members__.keys())
+        raise ValueError(f"Неизвестный тип продукта: {product_type}. Поддерживаются: {supported}") from error
 
-def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> None:
+def plot_map(
+    data: dict[datetime, np.ndarray],
+    plot_times: list[datetime],
+    product_type: str = "roti",
+) -> None:
     """
     Plotting data on globe (or part of globe).
     """
 
-    product = DataProducts.roti
+    product = _resolve_product(product_type)
     ncols = 2
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
@@ -134,7 +149,7 @@ def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> No
         add_panel_label(ax=ax1, label=subplot_marks[axs_index])
 
         if (axs_index + 1) % ncols == 0:
-            cbar_label = f"TECU/min"
+            cbar_label = product.color_limits.units
             add_colorbar_right(
                 fig=fig,
                 ax=ax1,
@@ -144,7 +159,7 @@ def plot_map(data: dict[datetime, np.ndarray], plot_times: list[datetime]) -> No
 
     save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "ROTI.png")
+    save_path = os.path.join(save_dir, f"{product.hdf_name.upper()}.png")
 
     fig.savefig(save_path)
     plt.close(fig)

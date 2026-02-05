@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from pathlib import Path
+from enum import Enum
 from typing import Dict, Optional, Union
 
 import h5py
@@ -9,6 +10,9 @@ from numpy.typing import NDArray
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
+class DataProduct(str, Enum):
+    ROTI = "roti"
+    TEC_ADJUSTED = "tec_adjusted"
 
 class SimurgProcessor:
     """
@@ -39,18 +43,39 @@ class SimurgProcessor:
             return value
         return datetime.strptime(value, "%Y-%m-%d").date()
 
-    def _find_file(self, target_date: date) -> Optional[Path]:
+    @classmethod
+    def _normalize_product(cls, product_type: str | "DataProduct") -> "DataProduct":
+        if isinstance(product_type, DataProduct):
+            return product_type
+        try:
+            return DataProduct(product_type)
+        except ValueError as error:
+            supported = ", ".join(p.value for p in DataProduct)
+            raise ValueError(f"Неизвестный тип продукта: {product_type}. Поддерживаются: {supported}") from error
+
+    def _find_file(
+        self,
+        target_date: date,
+        product_type: DataProduct,
+    ) -> Optional[Path]:
         if not self.folder_path.exists():
             return None
         year = target_date.year
         doy = target_date.timetuple().tm_yday
-        prefix = f"roti_{year}_{doy:03d}_-90_90_N_-180_180_E_"
+        prefix = f"{product_type.value}_{year}_{doy:03d}_-90_90_N_-180_180_E_"
         matches = sorted(self.folder_path.glob(f"{prefix}*.h5"))
         return matches[0] if matches else None
 
-    def load(self, date_value: Union[str, date, datetime]) -> Optional[Dict[datetime, NDArray]]:
+    def load(
+        self,
+        date_value: Union[str, date, datetime],
+        product_type: str | DataProduct = DataProduct.ROTI,
+    ) -> Optional[Dict[datetime, NDArray]]:
+        
         target_date = self._coerce_date(date_value)
-        file_path = self._find_file(target_date)
+        normalized_product = self._normalize_product(product_type)
+        file_path = self._find_file(target_date, normalized_product)
+
         if not file_path or not file_path.exists() or file_path.stat().st_size == 0:
             return None
 
