@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import os
 import re
-from datetime import datetime, date
 from typing import Optional, Dict, List, Tuple
 
 import pandas as pd
+from app.base_classes.base_processor import BaseProcessor
 
 
-class OmniProcessor:
+class OmniProcessor(BaseProcessor):
     """
     Локальный процессор OMNI-файлов, сохранённых OmniDownloader.
 
@@ -18,13 +17,7 @@ class OmniProcessor:
     """
 
     def __init__(self, folder_path: str) -> None:
-        self.folder_path = folder_path
-
-    # ---------- helpers ----------
-
-    @staticmethod
-    def _parse_date(s: str) -> date:
-        return datetime.strptime(s, "%Y-%m-%d").date()
+        super().__init__(folder_path)
 
     def _build_filename(self, date_str: str) -> Tuple[str, str]:
         """
@@ -38,9 +31,6 @@ class OmniProcessor:
         return with_day, without_day
 
 
-    def _full_path(self, filename: str) -> str:
-        return os.path.join(self.folder_path, filename)
-    
     def _pick_existing_file(self, filenames: Tuple[str, str]) -> Optional[str]:
         """
         Возвращает путь к первому существующему и непустому файлу (в порядке приоритета),
@@ -48,7 +38,7 @@ class OmniProcessor:
         """
         for name in filenames:
             path = self._full_path(name)
-            if os.path.exists(path) and os.path.getsize(path) > 0:
+            if self._is_non_empty_file(path):
                 return path
         return None
 
@@ -180,7 +170,7 @@ class OmniProcessor:
         filenames = self._build_filename(date_str)
         path = self._pick_existing_file(filenames)
 
-        if not os.path.exists(path) or os.path.getsize(path) == 0:
+        if not self._is_non_empty_file(path):
             return None
 
         try:

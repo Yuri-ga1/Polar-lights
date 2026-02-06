@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Optional, List, Dict
 
 import pandas as pd
+from app.base_classes.base_processor import BaseProcessor
 
 
-class KyotoProcessor:
+class KyotoProcessor(BaseProcessor):
     """
     Локальный процессор файлов Dst (Kyoto), сохранённых KyotoDstDownloader.
 
@@ -26,18 +26,11 @@ class KyotoProcessor:
     LINE_RE = re.compile(r"^DST(?P<yy>\d{2})(?P<mm>\d{2})\*(?P<dd>\d{2})")
 
     def __init__(self, folder_path: str) -> None:
-        self.folder_path = folder_path
-
-    @staticmethod
-    def _parse_date(s: str) -> date:
-        return datetime.strptime(s, "%Y-%m-%d").date()
+        super().__init__(folder_path)
 
     def _month_file_for_date(self, d: date) -> str:
         yyyymm = f"{d.year:04d}{d.month:02d}"
         return self.MONTH_FILE_PATTERN.format(yyyymm=yyyymm)
-
-    def _full_path(self, filename: str) -> str:
-        return os.path.join(self.folder_path, filename)
 
     @staticmethod
     def _yy_to_year(yy: int) -> int:
@@ -113,7 +106,7 @@ class KyotoProcessor:
         filename = self._month_file_for_date(d)
         path = self._full_path(filename)
 
-        if not os.path.exists(path) or os.path.getsize(path) == 0:
+        if not self._is_non_empty_file(path):
             return None
 
         try:

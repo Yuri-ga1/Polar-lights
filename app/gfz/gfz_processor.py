@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import calendar
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from typing import Optional
 
 import pandas as pd
+from app.base_classes.base_processor import BaseProcessor
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class DateRange:
     end: date
 
 
-class GfzProcessor:
+class GfzProcessor(BaseProcessor):
     """
     Локальный процессор GFZ-файлов (Kp/ap), сохранённых GfzDownloader.
 
@@ -31,13 +31,9 @@ class GfzProcessor:
     """
 
     def __init__(self, folder_path: str) -> None:
-        self.folder_path = folder_path
+        super().__init__(folder_path)
 
     # ---------- helpers ----------
-
-    @staticmethod
-    def _parse_date(s: str) -> date:
-        return datetime.strptime(s, "%Y-%m-%d").date()
 
     @staticmethod
     def _month_range(d: date) -> DateRange:
@@ -68,9 +64,6 @@ class GfzProcessor:
             raise ValueError("end_date не может быть раньше start_date.")
 
         return f"gfz_kp_{d1.strftime('%Y%m%d')}-{d2.strftime('%Y%m%d')}.txt"
-
-    def _full_path(self, filename: str) -> str:
-        return os.path.join(self.folder_path, filename)
 
     # ---------- parsing ----------
 
@@ -146,7 +139,7 @@ class GfzProcessor:
         )
         path = self._full_path(filename)
 
-        if not os.path.exists(path) or os.path.getsize(path) == 0:
+        if not self._is_non_empty_file(path):
             return None
 
         try:
