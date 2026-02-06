@@ -7,6 +7,7 @@ from typing import Dict, Optional, Union
 
 import h5py
 from numpy.typing import NDArray
+from app.base_classes.base_processor import BaseProcessor
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -14,7 +15,7 @@ class DataProduct(str, Enum):
     ROTI = "roti"
     TEC_ADJUSTED = "tec_adjusted"
 
-class SimurgProcessor:
+class SimurgProcessor(BaseProcessor):
     """
     Локальный процессор SIMuRG HDF5-файлов.
 
@@ -24,7 +25,7 @@ class SimurgProcessor:
     """
 
     def __init__(self, folder_path: str | Path) -> None:
-        self.folder_path = Path(folder_path)
+        super().__init__(folder_path)
 
     @staticmethod
     def _normalize_time(value: datetime) -> datetime:
@@ -76,7 +77,7 @@ class SimurgProcessor:
         normalized_product = self._normalize_product(product_type)
         file_path = self._find_file(target_date, normalized_product)
 
-        if not file_path or not file_path.exists() or file_path.stat().st_size == 0:
+        if not self._is_non_empty_file(file_path):
             return None
 
         data: Dict[datetime, NDArray] = {}

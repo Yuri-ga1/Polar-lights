@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import os
 import re
-from datetime import datetime, date
 from typing import Optional, Tuple
 
 import pandas as pd
+from app.base_classes.base_processor import BaseProcessor
 
 
-class NmdbProcessor:
+class NmdbProcessor(BaseProcessor):
     """
     Локальный процессор NMDB-файлов, сохранённых NmdbDownloader.
 
@@ -24,13 +23,9 @@ class NmdbProcessor:
     """
 
     def __init__(self, folder_path: str) -> None:
-        self.folder_path = folder_path
+        super().__init__(folder_path)
 
     # ---------- helpers ----------
-
-    @staticmethod
-    def _parse_date(s: str) -> date:
-        return datetime.strptime(s, "%Y-%m-%d").date()
 
     def _build_filename(self, date_str: str) -> Tuple[str, str, str]:
         """
@@ -48,9 +43,6 @@ class NmdbProcessor:
             "nmdb_*.txt",
         )
 
-    def _full_path(self, filename: str) -> str:
-        return os.path.join(self.folder_path, filename)
-
     def _pick_existing_file(self, patterns: Tuple[str, str, str]) -> Optional[str]:
         """
         Возвращает путь к первому существующему и непустому файлу (в порядке приоритета),
@@ -61,7 +53,7 @@ class NmdbProcessor:
         for pat in patterns:
             matches = sorted(glob.glob(self._full_path(pat)))
             for path in matches:
-                if os.path.exists(path) and os.path.getsize(path) > 0:
+                if self._is_non_empty_file(path):
                     return path
         return None
 
@@ -199,7 +191,7 @@ class NmdbProcessor:
         """
         patterns = self._build_filename(date_str)
         path = self._pick_existing_file(patterns)
-        if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
+        if not self._is_non_empty_file(path):
             return None
 
         try:

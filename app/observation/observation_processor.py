@@ -3,14 +3,16 @@ import os
 import csv
 from typing import Dict, Any, Optional
 from datetime import datetime
+from app.base_classes.base_processor import BaseProcessor
 
 
-class ObservationProcessor:
-    def __init__(self, save_path = None):
+class ObservationProcessor(BaseProcessor):
+    def __init__(self, save_path=None):
         """
         obs — результат ObservationParser.parse(url)
         """
-        self.save_path = save_path 
+        super().__init__(None)
+        self.save_path = save_path
         self.obs = {}
 
     # ---------- базовые утилиты ----------

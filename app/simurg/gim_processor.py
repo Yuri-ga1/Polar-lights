@@ -13,6 +13,7 @@ import traceback
 
 import numpy as np
 from numpy.typing import NDArray
+from app.base_classes.base_processor import BaseProcessor
 
 import ionex
 
@@ -27,7 +28,7 @@ class GimGrid:
     lon_grid: NDArray
 
 
-class GimProcessor:
+class GimProcessor(BaseProcessor):
     """
     Local processor for GIM/IONEX files (e.g. uqrg3160.25i).
 
@@ -39,7 +40,7 @@ class GimProcessor:
     """
 
     def __init__(self, folder_path: str | Path, gim_type: str = "uqrg") -> None:
-        self.folder_path = Path(folder_path)
+        super().__init__(folder_path)
         self.gim_type = gim_type.lower()
 
     # -------------------------
@@ -185,7 +186,7 @@ class GimProcessor:
         target_date = self._coerce_date(date_value)
         file_path = self._find_file(target_date)
 
-        if not file_path or not file_path.exists() or file_path.stat().st_size == 0:
+        if not self._is_non_empty_file(file_path):
             print(f"File does not exist or empty: {file_path}")
             return None
 
