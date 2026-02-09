@@ -20,8 +20,8 @@ def plot_cosmic_ray_variations(
 
     fig, axes = plt.subplots(labels_count+1, 1, figsize=(18, 16), sharex=True)
 
-    left = max(cr_df["DateTime"].min(), kp_df["DateTime"].min())
-    right = min(cr_df["DateTime"].max(), kp_df["DateTime"].max())
+    left = max(cr_df["datetime"].min(), kp_df["datetime"].min())
+    right = min(cr_df["datetime"].max(), kp_df["datetime"].max())
     xlim = (pd.to_datetime(left), pd.to_datetime(right))
 
     x_start = xlim[0].normalize()
@@ -31,7 +31,7 @@ def plot_cosmic_ray_variations(
 
     # --- Космические лучи ---
     for i, (ax, station) in enumerate(zip(axes[:-1], stations)):
-        ax.plot(cr_df["DateTime"], cr_df[station], color="black")
+        ax.plot(cr_df["datetime"], cr_df[station], color="black")
         ax.set_ylabel("Amplitude, %", fontweight="bold")
 
         (yl, yh), yt = auto_ylim_and_ticks(cr_df[station], target_ticks=5)

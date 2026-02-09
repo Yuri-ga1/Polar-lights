@@ -4,6 +4,7 @@ import re
 from typing import Optional, Tuple
 
 import pandas as pd
+import numpy as np
 from app.base_classes.base_processor import BaseProcessor
 
 
@@ -124,6 +125,53 @@ class NmdbProcessor(BaseProcessor):
 
         table_lines = [lines[header_idx]] + lines[data_idx:]
         return "\n".join(table_lines).strip()
+    
+    @staticmethod
+    def _to_amplitude(
+        df: pd.DataFrame,
+        baseline: str = "median",   # "mean" | "median" | "first"
+        absolute: bool = False,     # True -> |A(t)|
+    ) -> pd.DataFrame:
+        """
+        Превращает сырые значения станций в амплитуду вариаций по времени.
+
+        Возвращает df:
+        - datetime
+        - станции: амплитуда в % относительно baseline
+
+        baseline:
+          - "mean": x0 = среднее по периоду
+          - "median": x0 = медиана по периоду (устойчивее к выбросам)
+          - "first": x0 = первое непустое значение
+        absolute:
+          - если True -> берём модуль амплитуды
+        """
+        if df is None or df.empty:
+            return df
+
+        out = df.copy()
+        station_cols = [c for c in out.columns if c != "datetime"]
+
+        for c in station_cols:
+            out[c] = pd.to_numeric(out[c], errors="coerce").astype("float64")
+
+        if baseline == "mean":
+            x0 = out[station_cols].mean(skipna=True)
+        elif baseline == "median":
+            x0 = out[station_cols].median(skipna=True)
+        elif baseline == "first":
+            x0 = out[station_cols].apply(lambda s: s.dropna().iloc[0] if not s.dropna().empty else np.nan)
+        else:
+            raise ValueError("baseline must be one of: 'mean', 'median', 'first'")
+
+        x0 = x0.replace({0.0: np.nan})
+
+        amp = (out[station_cols].div(x0) - 1.0) * 100.0
+        if absolute:
+            amp = amp.abs()
+
+        out[station_cols] = amp
+        return out
 
     # ---------- parsing ----------
 
@@ -136,7 +184,7 @@ class NmdbProcessor(BaseProcessor):
         2025-11-01 00:00:00; null; 7.036; ...
 
         Возвращает DataFrame:
-        - DateTime (datetime64[ns])
+        - datetime (datetime64[ns])
         - далее колонки станций (float, NaN where null)
         """
         lines = [ln.rstrip() for ln in table_text.splitlines() if ln.strip()]
@@ -166,7 +214,7 @@ class NmdbProcessor(BaseProcessor):
             if len(values) < len(stations):
                 continue
 
-            row = {"DateTime": pd.to_datetime(ts, errors="coerce")}
+            row = {"datetime": pd.to_datetime(ts, errors="coerce")}
             for st, v in zip(stations, values[: len(stations)]):
                 vv = v.strip().lower()
                 if vv in ("null", "nan", ""):
@@ -179,7 +227,7 @@ class NmdbProcessor(BaseProcessor):
         if df.empty:
             return df
 
-        df = df.dropna(subset=["DateTime"]).sort_values("DateTime").reset_index(drop=True)
+        df = df.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
         return df
 
     # ---------- public ----------
@@ -205,7 +253,11 @@ class NmdbProcessor(BaseProcessor):
             table_text = self._keep_only_table(text)
 
             df = self._parse_table(table_text)
+            
+            if df.empty:
+                return None
 
-            return None if df.empty else df
+            df = self._to_amplitude(df, baseline="median", absolute=False)
+            return df
         except Exception:
             return None
