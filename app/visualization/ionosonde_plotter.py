@@ -12,10 +12,7 @@ def plot_ionosonde(df: pd.DataFrame) -> str:
     ΔfoF2 (MHz)
     ΔfoF2 (%)
     ΔhmF2 (km)
-    Оформление как в первом примере, но всё авто-подстраивается под данные.
     """
-    df = df.sort_values("UT").reset_index(drop=True)
-
     fig, axes = plt.subplots(
         nrows=3,
         ncols=1,
@@ -23,7 +20,8 @@ def plot_ionosonde(df: pd.DataFrame) -> str:
         sharex=True,
     )
 
-    x = df["UT"]
+    dt = pd.to_datetime(df["datetime"], errors="coerce")
+    x = (dt.dt.hour + dt.dt.minute / 60.0).reset_index(drop=True)
 
     series = [
         ("dfoF2", "ΔfoF2, MHz"),
@@ -34,26 +32,32 @@ def plot_ionosonde(df: pd.DataFrame) -> str:
     panel_letters = panel_labels(len(axes))
 
     for i, (ax, (col, ylabel)) in enumerate(zip(axes, series)):
-        y = df[col]
+        y = pd.to_numeric(df[col], errors="coerce").reset_index(drop=True)
 
         ax.plot(x, y, color="black")
 
-        idx_max = y.idxmax()
-        idx_min = y.idxmin()
+        y_nonan = y.dropna()
+        if y_nonan.empty:
+            ax.set_ylabel(ylabel, fontweight="bold")
+            style_axes(ax)
+            ax.set_title(panel_letters[i], loc="left", x=0.0125, y=0.8, weight="bold")
+            ax.tick_params(axis="x", labelbottom=True, pad=20)
+            continue
 
-        ax.scatter(x.loc[idx_max], y.loc[idx_max], color="red", s=175, zorder=5)
-        ax.scatter(x.loc[idx_min], y.loc[idx_min], color="blue", s=175, zorder=5)
+        idx_max = y_nonan.idxmax()
+        idx_min = y_nonan.idxmin()
 
-        (yl0, yl1), yticks = auto_ylim_and_ticks(y)
+        ax.scatter(x.iloc[idx_max], y.iloc[idx_max], color="red", s=175, zorder=5)
+        ax.scatter(x.iloc[idx_min], y.iloc[idx_min], color="blue", s=175, zorder=5)
+
+        (yl0, yl1), yticks = auto_ylim_and_ticks(y_nonan)
         ax.set_ylim(yl0, yl1)
         ax.set_yticks(yticks)
 
         ax.set_ylabel(ylabel, fontweight="bold")
-        
         style_axes(ax)
 
         ax.set_title(panel_letters[i], loc="left", x=0.0125, y=0.8, weight="bold")
-
         ax.tick_params(axis="x", labelbottom=True, pad=20)
 
     for ax in axes:
