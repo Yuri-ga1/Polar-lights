@@ -7,6 +7,10 @@ from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+
 
 class ObservationLinksFinder:
     """Scraper for SpaceWeatherLive observation links.
@@ -46,12 +50,13 @@ class ObservationLinksFinder:
         self,
         base_url: str = "https://www.spaceweatherlive.com",
         session: Optional[requests.Session] = None,
-        max_consecutive_errors: int = 50,
+        max_consecutive_errors: int = 200,
         timeout: float = 10.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_consecutive_errors = max_consecutive_errors
+
         if session is None:
             session = requests.Session()
             session.headers.update(
@@ -66,6 +71,14 @@ class ObservationLinksFinder:
             )
         self.session = session
 
+        chrome_options = Options()
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+
+        self.driver = webdriver.Chrome(options=chrome_options)
+
 
     @staticmethod
     def _human_date(date_str: str) -> str:
@@ -75,7 +88,13 @@ class ObservationLinksFinder:
         ensures the same format.  Leading zeros on the day are dropped.
         """
         dt = datetime.datetime.strptime(date_str, "%Y/%m/%d")
-        return dt.strftime("%-d %B %Y")
+        return dt.strftime("%d %B %Y")
+    
+    def close(self) -> None:
+        driver = getattr(self, "driver", None)
+        if driver is not None:
+            driver.quit()
+            self.driver = None
 
     def _get_raw_page(self, url: str) -> Optional[str]:
         """Return the text of ``url`` or ``None`` on errors.
@@ -92,16 +111,10 @@ class ObservationLinksFinder:
         return None
 
     def get_observation_count(self, date_str: str) -> Optional[int]:
-        """Attempt to extract the observation count from the daily page.
-
-        Some daily observation pages include a meta description such as
-        "111 observations were shared by aurora chasers for this day".  If
-        that string is present, the number of observations can be
-        determined without loading the JavaScript map.  This method
-        performs a standard HTTP GET to fetch the raw HTML and uses a
-        regex to search for that phrase.  If found, the integer count
-        is returned; otherwise ``None`` is returned.
-
+        """
+        Extract observation count from dynamically rendered page
+        (JavaScript must be executed).
+        
         Parameters
         ----------
         date_str : str
@@ -113,17 +126,34 @@ class ObservationLinksFinder:
             The number of observations for the specified date if
             discoverable, otherwise ``None``.
         """
+
         url = f"{self.base_url}/en/archive/{date_str}/observations.html"
-        html = self._get_raw_page(url)
+
+        try:
+            self.driver.get(url)
+
+            WebDriverWait(self.driver, 5).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+
+            html = self.driver.page_source
+
+        except Exception:
+            return None
+
         if not html:
             return None
+
         match = self.count_pattern.search(html)
         if match:
             try:
                 return int(match.group(1))
             except ValueError:
-                pass
+                return None
+
         return None
+
+
 
     def _page_matches_date(self, html: str, human_date: str) -> bool:
         """Return ``True`` if the observation page contains the target date.
@@ -169,7 +199,7 @@ class ObservationLinksFinder:
         human_date = self._human_date(date_str)
         observation_count = self.get_observation_count(date_str)
         links: List[str] = []
-        
+
         if observation_count and observation_count > 0:
             current_id = 0
             consecutive_errors = 0

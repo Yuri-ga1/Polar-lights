@@ -13,9 +13,12 @@ def collect_observation_links(date: str, h5_path: str):
     finder = ObservationLinksFinder()
     storage = ObservationHDF5Storage(h5_path)
 
-    links = finder.get_observation_links(date)
-    print(f"{date}: найдено {len(links)} наблюдений")
-    storage.save_links(date, links)
+    try:
+        links = finder.get_observation_links(date)
+        print(f"{date}: найдено {len(links)} наблюдений")
+        storage.save_links(date, links)
+    finally:
+        finder.close()
 
 def load_observations_from_csv(csv_path: str, date_iso: str) -> list[dict[str, str]]:
     if not os.path.isfile(csv_path):
