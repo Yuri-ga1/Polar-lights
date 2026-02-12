@@ -33,7 +33,7 @@ class ThreadSpec:
 
 
 def _build_simurg_client(config: MainPipelineConfig) -> SimurgClient | None:
-    email = config.simurg_email or os.getenv("SIMURG_EMAIL")
+    email = config.simurg_email or 'Storm_Plotter_Jupyter_Notebook@gmail.com'
     if not email:
         logger.warning("SIMURG email не задан. Потоки adjusted TEC и ROTI будут пропущены.")
         return None
@@ -109,5 +109,5 @@ def run_main_pipeline(config: MainPipelineConfig) -> None:
         thread.join()
 
     if exceptions:
-        details = "; ".join(f"{name}: {exc}" for name, exc in exceptions)
-        raise RuntimeError(f"Часть потоков завершилась с ошибками: {details}")
+        details = ";\n\t".join(f"{name}: {exc}" for name, exc in exceptions)
+        raise RuntimeError(f"Часть потоков завершилась с ошибками:\n\t{details}")
