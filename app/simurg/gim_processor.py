@@ -134,18 +134,19 @@ class GimProcessor(BaseProcessor):
 
         # Unix compress (.Z): typically 1f 9d or 1f a0
         if head[:2] in (b"\x1f\x9d", b"\x1f\xa0"):
-            import subprocess
+            try:
+                from unlzw3 import unlzw
+            except ImportError as e:
+                raise RuntimeError(
+                    f"File {path} is Unix .Z (compress), but 'unlzw3' is not installed. "
+                    f"Install it with: pip install unlzw3"
+                ) from e
 
-            p = subprocess.Popen(
-                ["uncompress", "-c", str(path)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if p.stdout is None:
-                raise RuntimeError("Failed to open subprocess stdout for uncompress")
-            return io.TextIOWrapper(p.stdout, encoding="utf-8", errors="ignore")
+            raw = path.read_bytes()
+            decompressed = unlzw(raw)
+            # IONEX is ASCII-ish text; utf-8 with ignore is ok
+            return io.StringIO(decompressed.decode("utf-8", errors="ignore"))
 
-        return open(path, "rt", encoding="utf-8", errors="ignore")
 
     # -------------------------
     # Parsing
