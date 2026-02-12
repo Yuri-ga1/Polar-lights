@@ -8,10 +8,8 @@ from app.base_classes.base_downloader import BaseDownloader
 from app.simurg.simurg_client import SimurgClient
 
 __all__ = [
-    "GimDownloader",
     "RotiDownloader",
     "AdjustedTecDownloader",
-    "KeogramDownloader",
 ]
 
 class _SimurgDownloader(BaseDownloader):
@@ -97,12 +95,6 @@ class _SimurgDownloader(BaseDownloader):
         )
 
 
-class GimDownloader(_SimurgDownloader):
-    """Загрузчик для глобальных ионосферных карт (GIM)."""
-
-    _method = "/gimmap"
-
-
 class RotiDownloader(_SimurgDownloader):
     """Загрузчик для карт индекса ROTI."""
 
@@ -129,19 +121,26 @@ class RotiDownloader(_SimurgDownloader):
 class AdjustedTecDownloader(_SimurgDownloader):
     """Загрузчик для «adjusted TEC» (откалиброванный TEC)."""
 
-    _method = "adjusted_tec"
+    _method = "create_map"
+    _args = {
+        "coordinates":{
+            "minlat": -90,
+            "maxlat": 90,
+            "minlon": -180,
+            "maxlon": 180
+        },
+        "options": {
+            "product_type": "tec_adjusted",
+            "format": "hdf5",
+            "subsolar": False,
+            "mageq": False,
+            "cutoff": 10,
+            "timestep": 300
 
+        },
+        "flags":{
+            "create_plots": False,
+            "create_movie": False
+        }
+    } 
 
-class KeogramDownloader(_SimurgDownloader):
-    """Загрузчик для кеограмм.
-
-    Кеограмма — это изображение, представляющее временную эволюцию
-    горизонтального среза ионосферного параметра по выбранной широте
-    или долготе.  В SIMuRG кеограммы могут формироваться по данным
-    ROTI, TEC или другим продуктам.  Для создания запроса
-    необходимо указать дополнительные параметры, такие как фиксированная
-    широта/долгота и тип параметра.  Эти параметры передаются в
-    ``download`` через ``kwargs``.
-    """
-
-    _method = "keogram"
