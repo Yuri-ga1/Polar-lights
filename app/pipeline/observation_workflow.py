@@ -50,7 +50,7 @@ def run_observation_workflow(
         )
     )
 
-    save_path = os.path.join(base_out_dir, "graphs", "obs_map.png")
+    save_path = os.path.join(base_out_dir, "graphs", "Observation_map.png")
     plotter = AuroraMapPlotter(
         csv_path=csv_path,
         save_path=save_path,
