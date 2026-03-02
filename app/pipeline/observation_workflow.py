@@ -50,6 +50,10 @@ def run_observation_workflow(
         )
     )
 
+    if not os.path.exists(csv_path):
+        print(f'File {csv_path} was not created because there is no observation')
+        return
+
     save_path = os.path.join(base_out_dir, "graphs", "Observation_map.png")
     plotter = AuroraMapPlotter(
         csv_path=csv_path,
@@ -61,5 +65,3 @@ def run_observation_workflow(
     plotter.plot(
         time=plot_time or datetime(2025, 11, 12, 2, 0),
     )
-
-    return observations
