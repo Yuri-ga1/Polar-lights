@@ -90,7 +90,7 @@ class _SimurgDownloader(BaseDownloader):
                     done_ids.append(query_id)
                     continue
 
-                in_progress_keywords = ("new", "prepared", "processed", "plot", "not_found")
+                in_progress_keywords = ("new", "prepared", "processed", "plot", "processing")
                 if not any(self.client.status_has_keyword(status, keyword) for keyword in in_progress_keywords):
                     raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
 
@@ -134,7 +134,19 @@ class RotiDownloader(_SimurgDownloader):
             "create_plots": False,
             "create_movie": False
         }
-    } 
+    }
+
+    def _make_time_range(self, date_str: str, end_date: Optional[str] = None) -> tuple[str, str]:
+        """Формирует диапазон ``target ± 1 день`` для выгрузки ROTI.
+
+        При передаче одной даты (``YYYY-MM-DD``) на SIMURG отправляется интервал
+        от 00:00 предыдущего дня до 00:00 следующего за целевым днём.
+        В результате имя файла на стороне SIMURG начинается с DOY предыдущего дня.
+        """
+        target_date = datetime.strptime(date_str, "%Y-%m-%d")
+        start_date = target_date - timedelta(days=1)
+        end_dt = target_date + timedelta(days=1)
+        return self._to_simurg_date(start_date), self._to_simurg_date(end_dt)
 
 
 

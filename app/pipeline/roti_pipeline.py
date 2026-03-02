@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader
@@ -42,8 +42,11 @@ def run_roti_pipeline(
 
     RotiDownloader(client=simurg_client, out_dir=simurg_dir).download(date_str)
 
+    target_date = datetime.strptime(date_str, "%Y-%m-%d")
+    file_start_date = (target_date - timedelta(days=1)).date()
+
     data = SimurgProcessor(folder_path=simurg_dir).load(
-        date_str,
+        file_start_date,
         product_type=DataProduct.ROTI,
     )
     if not data:
