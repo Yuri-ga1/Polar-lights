@@ -8,6 +8,7 @@ from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader
 from app.simurg.simurg_processor import DataProduct, SimurgProcessor
 from app.visualization.roti_plotter import plot_map
+from app.visualization.keogram_plotter import plot_keogram
 
 logger = logging.getLogger(__name__)
 
@@ -48,5 +49,10 @@ def run_roti_pipeline(
     if not data:
         logger.warning("Не удалось загрузить данные ROTI для %s.", date_str)
         return
+    
+    keys = data.keys()
+    day_start = min(keys)
+    day_finish = max(keys)
 
     plot_map(data=data, plot_times=_pick_plot_times(data), product_type="roti")
+    plot_keogram(data=data, day_start=day_start,day_finish=day_finish)
