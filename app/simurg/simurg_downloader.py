@@ -54,37 +54,57 @@ class _SimurgDownloader(BaseDownloader):
         :returns: путь к результату
         """
         start_iso, end_iso = self._make_time_range(date_str, end_date)
-        query_id = self.client.create_or_reuse_query_id(
+        query_ids = self.client.create_or_reuse_query_ids(
             start_time=start_iso,
             end_time=end_iso,
             method=self._method,
             args_params=self._args,
         )
-        file_path = self._wait_and_download(query_id)
+        file_path = self._wait_and_download(query_ids)
         return file_path
 
-    def _wait_and_download(self, query_id: str) -> str:
-        """Ожидает готовность и скачивает результат."""
-        while True:
-            status_data = self.client.check_status(query_id)
-            status = status_data.get("status")
+    def _wait_and_download(self, query_ids: list[str]) -> str:
+        """Ожидает готовность по множеству id и скачивает все готовые результаты."""
+        pending_ids = {str(query_id) for query_id in query_ids}
+        if not pending_ids:
+            raise RuntimeError("SIMURG не вернул id запросов для проверки статуса")
 
-            if status == "done":
-                result_path = (status_data.get("paths") or {}).get("data")
-                if result_path:
-                    full_result_url = (
-                        f"{self.client.download_url}/{str(result_path).lstrip('/')}"
-                    )
-                    return self._download_result(full_result_url)
-                raise RuntimeError(
-                    f"Запрос {query_id} завершён (done), но paths.data отсутствует: {status_data}"
-                )
+        self.client.query_ids.update(pending_ids)
+        downloaded_paths: list[str] = []
 
-            if status in {"new", "prepared", "processed", "plot"}:
-                time.sleep(self.client.polling_interval)
+        while pending_ids:
+            status_map = self.client.check_statuses(sorted(pending_ids))
+            done_ids: list[str] = []
+
+            for query_id, status_data in status_map.items():
+                status = status_data.get("status")
+                if self.client.status_has_keyword(status, "done"):
+                    result_path = (status_data.get("paths") or {}).get("data")
+                    if not result_path:
+                        raise RuntimeError(
+                            f"Запрос {query_id} завершён (done), но paths.data отсутствует: {status_data}"
+                        )
+
+                    full_result_url = f"{self.client.download_url}/{str(result_path).lstrip('/')}"
+                    downloaded_paths.append(self._download_result(full_result_url))
+                    done_ids.append(query_id)
+                    continue
+
+                in_progress_keywords = ("new", "prepared", "processed", "plot", "not_found")
+                if not any(self.client.status_has_keyword(status, keyword) for keyword in in_progress_keywords):
+                    raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
+
+            if done_ids:
+                pending_ids.difference_update(done_ids)
+                self.client.remove_query_ids(done_ids)
                 continue
 
-            raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
+            time.sleep(self.client.polling_interval)
+
+        if not downloaded_paths:
+            raise RuntimeError("Не удалось скачать данные SIMURG: отсутствуют готовые запросы")
+
+        return downloaded_paths[0]
 
     def _download_result(self, url: str) -> str:
         return super()._download_result(
@@ -143,4 +163,3 @@ class AdjustedTecDownloader(_SimurgDownloader):
             "create_movie": False
         }
     } 
-

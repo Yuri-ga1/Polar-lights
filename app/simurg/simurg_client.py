@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
@@ -17,11 +17,12 @@ class SimurgClient:
         verify: bool = True
     ) -> None:
         self.api_url = f'{base_url.rstrip("/")}/api'
-        self.download_url = f"{base_url.rstrip("/")}/ufiles"
+        self.download_url = f'{base_url.rstrip("/")}/ufiles'
         self.timeout = timeout
         self.polling_interval = polling_interval
         self.verify = verify
         self.email = email
+        self.query_ids: set[str] = set()
 
     def create_query(
         self,
@@ -29,10 +30,11 @@ class SimurgClient:
         end_time: str,
         method: str,
         args_params: Dict[str, Any],
-    ) -> str:
-        """Создаёт запрос к SIMuRG для получения данных и возвращает query_id."""
+    ) -> List[str]:
+        """Создаёт запрос к SIMuRG и возвращает список новых query_id."""
         print('Create new request')
         url = f"{self.api_url}"
+        known_ids = self._to_id_set(self.checking_by_mail())
         payload: Dict[str, Any] = {
             "method": method,
             "args": {
@@ -54,18 +56,26 @@ class SimurgClient:
                 f"Ответ: {resp.text}. Url: {url}"
             )
 
-        query_id = self.get_query_id()
-        if not query_id:
-            raise RuntimeError(f"Не удалось получить идентификатор запроса из ответа")
-        
-        print(f'id of new request is {query_id}')
-        return query_id
+        query_ids = self._new_ids_since(known_ids)
+        if not query_ids:
+            raise RuntimeError("Не удалось получить идентификатор запроса из ответа")
+
+        self.query_ids.update(query_ids)
+        print(f'ids of new request are {query_ids}')
+        return query_ids
     
-    def get_query_id(self):
-        req = self.checking_by_mail()
-        data = req[-1]
-        query_id = data.get("id")
-        return str(query_id)
+    @staticmethod
+    def _to_id_set(queries: Iterable[Dict[str, Any]]) -> set[str]:
+        return {
+            str(query_id)
+            for query in queries
+            if (query_id := query.get("id")) is not None
+        }
+
+    def _new_ids_since(self, known_ids: set[str]) -> List[str]:
+        queries = self.checking_by_mail()
+        new_ids = sorted(self._to_id_set(queries) - known_ids)
+        return new_ids
 
     def checking_by_mail(self) -> List[Dict[str, Any]]:
         """Возвращает список всех запросов по email (method=check)."""
@@ -115,6 +125,33 @@ class SimurgClient:
             return {"status": "not_found"}
 
         return query
+
+    def check_statuses(self, query_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        """Проверяет статусы сразу для множества id."""
+        query_id_set = {str(query_id) for query_id in query_ids}
+        if not query_id_set:
+            return {}
+
+        statuses = {query_id: {"status": "not_found"} for query_id in query_id_set}
+        for query in self.checking_by_mail():
+            query_id = query.get("id")
+            if query_id is None:
+                continue
+            query_id = str(query_id)
+            if query_id in query_id_set:
+                statuses[query_id] = query
+        return statuses
+
+
+    def remove_query_ids(self, query_ids: Iterable[str]) -> None:
+        """Удаляет id из локального набора отслеживаемых запросов."""
+        self.query_ids.difference_update(str(query_id) for query_id in query_ids)
+
+    @staticmethod
+    def status_has_keyword(status: Any, keyword: str) -> bool:
+        """Проверяет, содержит ли статус ключевое слово (например, 'Done (2)')."""
+        return str(keyword).lower() in str(status or "").lower()
+
 
     # -----------------------------
     # Reuse/create helper
@@ -200,12 +237,41 @@ class SimurgClient:
 
         if matched:
             # Prefer done, else newest by created
-            done = [q for q in matched if q.get("status") == "done"]
+            done = [q for q in matched if self.status_has_keyword(q.get("status"), "done")]
             chosen = done[0] if done else sorted(
                 matched, key=lambda q: str(q.get("created") or ""), reverse=True
             )[0]
             req_iq = str(chosen.get("id"))
+            self.query_ids.add(req_iq)
             print(f'Found created request with id: {req_iq}')
             return req_iq
+
+        created_query_ids = self.create_query(start_time, end_time, method, payload_args)
+        return created_query_ids[-1]
+
+    def create_or_reuse_query_ids(
+        self,
+        start_time: str,
+        end_time: str,
+        method: str,
+        args_params: Dict[str, Any],
+    ) -> List[str]:
+        """Возвращает все подходящие id запроса для дальнейшей проверки готовности."""
+        payload_args: Dict[str, Any] = {
+            "email": self.email,
+            "begin": start_time,
+            "end": end_time,
+        }
+        payload_args.update(args_params or {})
+
+        queries = self.checking_by_mail()
+        matched_ids = [
+            str(q.get("id"))
+            for q in queries
+            if q.get("id") is not None and self._payload_match(q, method, payload_args)
+        ]
+        if matched_ids:
+            self.query_ids.update(matched_ids)
+            return sorted(set(matched_ids))
 
         return self.create_query(start_time, end_time, method, payload_args)
