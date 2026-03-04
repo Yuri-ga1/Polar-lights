@@ -1,62 +1,30 @@
 from __future__ import annotations
 
 import datetime
-import re
 from typing import List, Optional
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.chrome.service import Service
-
 
 class ObservationLinksFinder:
-    """Scraper for SpaceWeatherLive observation links.
+    """Scraper for SpaceWeatherLive observation links (no Selenium).
 
-    Parameters
-    ----------
-    base_url : str, optional
-        The root of the SpaceWeatherLive site.  Defaults to the official
-        ``https://www.spaceweatherlive.com``.  Set this to
-        ``https://www.spaceweather.live`` if you prefer the alternative
-        TLD.
-    session : Optional[requests.Session], optional
-        An optional preconfigured ``requests.Session``.  If not
-        provided, a new session will be created with a sensible
-        desktop user–agent.
-    max_consecutive_errors : int, optional
-        When discovering pages without a known observation count, stop
-        the enumeration loop after this many consecutive non‑matching
-        pages **after** at least one valid page has been found.  The
-        default of ``50`` is conservative enough to tolerate gaps in
-        global observation IDs without wasting too many requests.
-    timeout : float, optional
-        Network timeout in seconds for each HTTP request.  Defaults to 10.
+    Uses the live-data endpoint:
+    /includes/live-data.php?object=getObservations&lang=EN&param=YYYYMMDD
     """
-
-    count_pattern = re.compile(
-        r"(\d+)\s+observations were shared by aurora chasers for this day",
-        re.IGNORECASE,
-    )
-
-    heading_date_pattern = re.compile(
-        r"on\s+[^,]+,\s+(\d+\s+\w+\s+\d{4})",  # e.g. "on Monday, 19 January 2026"
-        re.IGNORECASE,
-    )
 
     def __init__(
         self,
         base_url: str = "https://www.spaceweatherlive.com",
         session: Optional[requests.Session] = None,
-        max_consecutive_errors: int = 200,
         timeout: float = 10.0,
+        lang: str = "EN",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.max_consecutive_errors = max_consecutive_errors
+        self.lang = lang
 
         if session is None:
             session = requests.Session()
@@ -72,186 +40,92 @@ class ObservationLinksFinder:
             )
         self.session = session
 
-        chrome_options = Options()
-        chrome_options.add_argument("--headless=new")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--remote-debugging-port=9222")
-
-        from selenium.webdriver.chrome.service import Service
-
-        possible_bins = ("/usr/bin/chromium-browser", "/usr/bin/chromium")
-        for bin_path in possible_bins:
-            try:
-                with open(bin_path, "rb"):
-                    chrome_options.binary_location = bin_path
-                    break
-            except OSError:
-                pass
-
-        service = None
-        for driver_path in (
-            "/usr/bin/chromedriver",
-            "/usr/lib/chromium-browser/chromedriver",
-            "/usr/lib/chromium/chromedriver",
-        ):
-            try:
-                with open(driver_path, "rb"):
-                    service = Service(driver_path)
-                    break
-            except OSError:
-                pass
-
-        if service is not None:
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        else:
-            self.driver = webdriver.Chrome(options=chrome_options)
-
-
     @staticmethod
-    def _human_date(date_str: str) -> str:
-        """Convert ``YYYY/MM/DD`` into ``D Month YYYY``.
-
-        The site uses English month names in headings, so this helper
-        ensures the same format.  Leading zeros on the day are dropped.
-        """
+    def _date_to_param(date_str: str) -> str:
+        """Convert YYYY/MM/DD -> YYYYMMDD used by the live-data endpoint."""
         dt = datetime.datetime.strptime(date_str, "%Y/%m/%d")
-        return dt.strftime("%d %B %Y")
-    
+        return dt.strftime("%Y%m%d")
+
     def close(self) -> None:
-        driver = getattr(self, "driver", None)
-        if driver is not None:
-            driver.quit()
-            self.driver = None
+        """Kept for API compatibility (no driver anymore)."""
+        return
 
-    def _get_raw_page(self, url: str) -> Optional[str]:
-        """Return the text of ``url`` or ``None`` on errors.
+    def _fetch_observations_payload(self, date_str: str) -> Optional[dict]:
+        """Fetch GeoJSON-like payload from SpaceWeatherLive live-data endpoint."""
+        param = self._date_to_param(date_str)
 
-        This helper centralises exception handling for network issues.
-        It respects the configured timeout.
-        """
+        referer = f"{self.base_url}/en/archive/{date_str}/observations.html"
+
         try:
-            resp = self.session.get(url, timeout=self.timeout)
-            if resp.status_code == 200:
-                return resp.text
+            self.session.get(referer, timeout=self.timeout)
         except requests.RequestException:
             pass
-        return None
 
-    def get_observation_count(self, date_str: str) -> Optional[int]:
-        """
-        Extract observation count from dynamically rendered page
-        (JavaScript must be executed).
-        
-        Parameters
-        ----------
-        date_str : str
-            The date string in ``YYYY/MM/DD`` format.
+        url = f"{self.base_url}/includes/live-data.php"
+        params = {"object": "getObservations", "lang": self.lang, "param": param}
 
-        Returns
-        -------
-        Optional[int]
-            The number of observations for the specified date if
-            discoverable, otherwise ``None``.
-        """
-
-        url = f"{self.base_url}/en/archive/{date_str}/observations.html"
+        headers = {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": referer,
+            "Origin": self.base_url,
+        }
 
         try:
-            self.driver.get(url)
+            resp = self.session.get(url, params=params, headers=headers, timeout=self.timeout)
 
-            WebDriverWait(self.driver, 5).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-
-            html = self.driver.page_source
-
-        except Exception:
-            return None
-
-        if not html:
-            return None
-
-        match = self.count_pattern.search(html)
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
+            if resp.status_code != 200:
                 return None
+            return resp.json()
 
+        except (requests.RequestException, ValueError):
+            return None
+
+    def get_observation_count(self, date_str: str) -> Optional[int]:
+        payload = self._fetch_observations_payload(date_str)
+        if not payload:
+            return None
+        feats = payload.get("features")
+        if isinstance(feats, list):
+            return len(feats)
         return None
-
-
-
-    def _page_matches_date(self, html: str, human_date: str) -> bool:
-        """Return ``True`` if the observation page contains the target date.
-
-        Each observation page includes a heading like "Aurora Observation
-        by Maria on Monday, 19 January 2026 around ..."【385249715917304†L80-L92】.
-        This method extracts the date portion from that heading using
-        ``heading_date_pattern`` and compares it to ``human_date``.  If
-        no heading is found or the dates don't match, the page is
-        considered not relevant.
-        """
-        heading_match = self.heading_date_pattern.search(html)
-        if heading_match:
-            extracted = heading_match.group(1).strip()
-            return extracted.lower() == human_date.lower()
-        
-        return human_date.lower() in html.lower()
 
     def get_observation_links(self, date_str: str) -> List[str]:
         """Return a list of observation URLs for the given date.
 
-        The method first attempts to determine how many observations exist
-        using :meth:`get_observation_count`.  If that fails, it enters
-        an enumeration loop that walks through observation IDs and
-        collects pages whose heading matches the target date.  The loop
-        stops when it has found the expected number of observations or
-        when it has encountered ``max_consecutive_errors`` consecutive
-        unsuccessful attempts after at least one success.  If no
-        observations are found at all, the method still returns an empty
-        list without raising.
-
-        Parameters
-        ----------
-        date_str : str
-            The date in ``YYYY/MM/DD`` notation.
-
-        Returns
-        -------
-        List[str]
-            A list of fully qualified URLs pointing to each observation
-            page for ``date_str``.
+        Matches the old public behavior: returns fully qualified URLs.
+        Returns [] on any failure.
         """
-        human_date = self._human_date(date_str)
-        observation_count = self.get_observation_count(date_str)
+        payload = self._fetch_observations_payload(date_str)
+        if not payload:
+            return []
+
+        feats = payload.get("features")
+        if not isinstance(feats, list) or not feats:
+            return []
+
         links: List[str] = []
 
-        if observation_count and observation_count > 0:
-            current_id = 0
-            consecutive_errors = 0
-            while len(links) < observation_count and consecutive_errors < self.max_consecutive_errors:
-                url = f"{self.base_url}/en/archive/{date_str}/observations/{current_id}.html"
-                html = self._get_raw_page(url)
-                if html and self._page_matches_date(html, human_date):
-                    links.append(url)
-                    consecutive_errors = 0
-                else:
-                    consecutive_errors += 1
-                current_id += 1
-            return links
-        
-        current_id = 0
-        consecutive_errors = 0
-        while consecutive_errors < self.max_consecutive_errors:
-            url = f"{self.base_url}/en/archive/{date_str}/observations/{current_id}.html"
-            html = self._get_raw_page(url)
-            if html and self._page_matches_date(html, human_date):
-                links.append(url)
-                consecutive_errors = 0
-            else:
-                consecutive_errors += 1
-            current_id += 1
-        return links
+        for feat in feats:
+            props = feat.get("properties") or {}
+            html = props.get("html") or ""
+            if not html:
+                continue
+
+            soup = BeautifulSoup(html, "html.parser")
+            a = soup.find("a", href=True)
+            if not a:
+                continue
+
+            href = a["href"]
+            full_url = urljoin(self.base_url + "/", href)
+            links.append(full_url)
+
+        seen = set()
+        uniq: List[str] = []
+        for u in links:
+            if u not in seen:
+                seen.add(u)
+                uniq.append(u)
+
+        return uniq
