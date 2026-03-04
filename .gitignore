@@ -183,3 +183,9 @@ cython_debug/
 #Custom
 files/*
 # !files/EQ2.txt
+# Notebook/runtime artifacts
+.ipynb_checkpoints/
+**pycache**/
+*.pyc
+*.pyo
+results/
