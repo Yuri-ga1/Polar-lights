@@ -32,8 +32,6 @@ class OmniDownloader(BaseDownloader):
                      var_ids: Iterable[int]) -> List[Tuple[str, str]]:
         start_date = start_dt.strftime("%Y%m%d00")
         end_date = end_dt.strftime("%Y%m%d23")
-        print(start_date)
-        print(end_date)
         params: List[Tuple[str, str]] = [
             ("activity", "retrieve"),
             ("res", "min"),

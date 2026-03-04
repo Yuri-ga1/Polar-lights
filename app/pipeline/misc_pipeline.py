@@ -84,8 +84,9 @@ def run_misc_pipeline(
 
     nmdb_dir = os.path.join(base_out_dir, "nmdb")
     os.makedirs(nmdb_dir, exist_ok=True)
-    start_date = datetime.strptime(date_str, "%Y-%m-%d")
-    end_date = start_date + timedelta(days=30)
+    target_date = datetime.strptime(date_str, "%Y-%m-%d")
+    start_date = target_date - timedelta(days=15)
+    end_date = target_date + timedelta(days=15)
     NmdbDownloader(out_dir=nmdb_dir).download(
         start=start_date,
         end=end_date,
