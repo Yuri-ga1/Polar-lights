@@ -61,7 +61,6 @@ class SimurgClient:
             raise RuntimeError("Не удалось получить идентификатор запроса из ответа")
 
         self.query_ids.update(query_ids)
-        print(f'ids of new request are {query_ids}')
         return query_ids
     
     @staticmethod
@@ -182,7 +181,6 @@ class SimurgClient:
         if cls._norm_dt(server_query.get("begin")) != cls._norm_dt(payload_args.get("begin")):
             return False
         if cls._norm_dt(server_query.get("end")) != cls._norm_dt(payload_args.get("end")):
-            print(cls._norm_dt(server_query.get("end")), cls._norm_dt(payload_args.get("end")))
             return False
 
         # coordinates: compare keys we send
@@ -190,11 +188,9 @@ class SimurgClient:
         if pcoords is not None:
             scoords = server_query.get("coordinates")
             if not isinstance(pcoords, dict) or not isinstance(scoords, dict):
-                print('2')
                 return False
             for k, v in pcoords.items():
                 if scoords.get(k) != v:
-                    print('3')
                     return False
 
         # options: compare keys we send
@@ -202,11 +198,9 @@ class SimurgClient:
         if popt is not None:
             sopt = server_query.get("options")
             if not isinstance(popt, dict) or not isinstance(sopt, dict):
-                print('4')
                 return False
             for k, v in popt.items():
                 if sopt.get(k) != v:
-                    print('5')
                     return False
 
         return True

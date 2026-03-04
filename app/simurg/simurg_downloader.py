@@ -40,7 +40,7 @@ class _SimurgDownloader(BaseDownloader):
         """
         start_date = datetime.strptime(date_str, "%Y-%m-%d")
         if end_date:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
         else:
             end_dt = start_date + timedelta(days=1) - timedelta(minutes=1)
         return self._to_simurg_date(start_date), self._to_simurg_date(end_dt)
@@ -145,7 +145,7 @@ class RotiDownloader(_SimurgDownloader):
         """
         target_date = datetime.strptime(date_str, "%Y-%m-%d")
         start_date = target_date - timedelta(days=1)
-        end_dt = target_date + timedelta(days=1)
+        end_dt = target_date + timedelta(days=1, hours=23, minutes=59)
         return self._to_simurg_date(start_date), self._to_simurg_date(end_dt)
 
 
