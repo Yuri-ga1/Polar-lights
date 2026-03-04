@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from dataclasses import dataclass
 from datetime import date
@@ -19,7 +18,8 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class MainPipelineConfig:
     date_str: str
-    base_out_dir: str = "results"
+    download_base_dir: str = "files"
+    plots_base_dir: str = "results"
     ionosonde_code: str | None = None
     cosmic_station_codes: list[str] | None = None
     simurg_email: str | None = None
@@ -42,13 +42,16 @@ def _build_simurg_client(config: MainPipelineConfig) -> SimurgClient | None:
 
 def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient | None) -> list[ThreadSpec]:
     target_date = date.fromisoformat(config.date_str)
+    date_download_dir = f"{config.download_base_dir}/{config.date_str}"
+    date_plots_dir = f"{config.plots_base_dir}/{config.date_str}"
     return [
         ThreadSpec(
             name="adjusted-tec-pipeline",
             target=run_adjusted_tec_pipeline,
             kwargs={
                 "date_str": config.date_str,
-                "base_out_dir": config.base_out_dir,
+                "download_dir": date_download_dir,
+                "plots_dir": date_plots_dir,
                 "simurg_client": simurg_client,
             },
         ),
@@ -57,21 +60,23 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
             target=run_roti_pipeline,
             kwargs={
                 "date_str": config.date_str,
-                "base_out_dir": config.base_out_dir,
+                "download_dir": date_download_dir,
+                "plots_dir": date_plots_dir,
                 "simurg_client": simurg_client,
             },
         ),
         ThreadSpec(
             name="aurora-map-pipeline",
             target=run_aurora_pipeline,
-            kwargs={"target_date": target_date, "base_out_dir": config.base_out_dir},
+            kwargs={"target_date": target_date, "download_dir": date_download_dir, "plots_dir": date_plots_dir},
         ),
         ThreadSpec(
             name="misc-pipeline",
             target=run_misc_pipeline,
             kwargs={
                 "date_str": config.date_str,
-                "base_out_dir": config.base_out_dir,
+                "download_dir": date_download_dir,
+                "plots_dir": date_plots_dir,
                 "ionosonde_code": config.ionosonde_code,
                 "cosmic_stations": config.cosmic_station_codes,
             },

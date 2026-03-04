@@ -27,7 +27,8 @@ from app.pipeline.main_pipeline import MainPipelineConfig, run_main_pipeline
 
 config = MainPipelineConfig(
     date_str="2024-01-15",
-    base_out_dir="results/2024-01-15",
+    download_base_dir="files",
+    plots_base_dir="results",
     ionosonde_code=None,
     cosmic_station_codes=None,
     simurg_email=None,
@@ -36,7 +37,8 @@ config = MainPipelineConfig(
 run_main_pipeline(config)
 ```
 
-Runtime outputs should be stored under `results/`.
+Downloaded source files are stored under `files/<date>/`.
+Generated plots are stored under `results/<date>/`.
 
 ## Notebook Usage
 Use the notebook at `notebooks/00_examples_and_run.ipynb` as the visual entry point.
@@ -53,3 +55,7 @@ Reference examples are stored in:
 Runtime-generated outputs are stored in:
 
 - `results/`
+
+Downloaded data files are stored in:
+
+- `files/`

@@ -15,12 +15,16 @@ from app.visualization.aurora_map_plotter import AuroraMapPlotter
 
 def run_observation_workflow(
     date: date,
-    base_out_dir: str = "results",
+    download_dir: str = "files",
+    plots_dir: str = "results",
     plot_time: datetime | None = None,
 ) -> list[dict[str, str]]:
 
-    h5_path = os.path.join(base_out_dir, "spaceweather_observations.h5")
-    csv_path = os.path.join(base_out_dir, "aurora_data.csv")
+    os.makedirs(download_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
+
+    h5_path = os.path.join(download_dir, "spaceweather_observations.h5")
+    csv_path = os.path.join(download_dir, "aurora_data.csv")
 
     observations: list[dict[str, str]] = []
     storage = ObservationHDF5Storage(h5_path)
@@ -54,7 +58,7 @@ def run_observation_workflow(
         print(f'File {csv_path} was not created because there is no observation')
         return
 
-    save_path = os.path.join(base_out_dir, "Observation_map.png")
+    save_path = os.path.join(plots_dir, "Observation_map.png")
     plotter = AuroraMapPlotter(
         csv_path=csv_path,
         save_path=save_path,

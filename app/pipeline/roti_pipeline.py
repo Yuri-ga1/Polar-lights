@@ -30,15 +30,17 @@ def _pick_plot_times(data: dict[datetime, object], max_plots: int = 4) -> list[d
 
 def run_roti_pipeline(
     date_str: str,
-    base_out_dir: str,
+    download_dir: str,
+    plots_dir: str,
     simurg_client: SimurgClient | None,
 ) -> None:
     if simurg_client is None:
         logger.warning("SimurgClient не создан. Поток ROTI пропущен.")
         return
 
-    simurg_dir = os.path.join(base_out_dir, "simurg")
+    simurg_dir = os.path.join(download_dir, "simurg")
     os.makedirs(simurg_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
 
     RotiDownloader(client=simurg_client, out_dir=simurg_dir).download(date_str)
 
@@ -57,5 +59,5 @@ def run_roti_pipeline(
     day_start = min(keys)
     day_finish = max(keys)
 
-    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="roti", save_dir=base_out_dir)
-    plot_keogram(data=data, day_start=day_start, day_finish=day_finish, save_dir=base_out_dir)
+    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="roti", save_dir=plots_dir)
+    plot_keogram(data=data, day_start=day_start, day_finish=day_finish, save_dir=plots_dir)
