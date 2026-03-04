@@ -59,6 +59,7 @@ def plot_gim_maps(
     plot_times: List[datetime],
     ncols: int = 2,
     cmap: str = "jet",
+    save_dir: str = os.path.join("files", "graphs"),
 ) -> str:
     """
     Plot GIM TEC maps for specified times.
@@ -126,7 +127,6 @@ def plot_gim_maps(
         if (idx + 1) % ncols == 0:
             add_colorbar_right(fig, ax, img, f"TEC, {GIM_TEC_LIMITS.units}")
 
-    save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
 
     save_name = "GIM.png"

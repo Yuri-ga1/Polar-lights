@@ -57,5 +57,5 @@ def run_roti_pipeline(
     day_start = min(keys)
     day_finish = max(keys)
 
-    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="roti")
-    plot_keogram(data=data, day_start=day_start,day_finish=day_finish)
+    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="roti", save_dir=base_out_dir)
+    plot_keogram(data=data, day_start=day_start, day_finish=day_finish, save_dir=base_out_dir)

@@ -60,7 +60,7 @@ def _safe_download(label: str, download_func) -> Optional[str]:
 
 def prepare_space_weather_data(
     date_str: str,
-    base_out_dir: str = "files",
+    base_out_dir: str = "results",
 ) -> SpaceWeatherData:
     """
     Скачивает и загружает данные для дальнейшего построения графиков.

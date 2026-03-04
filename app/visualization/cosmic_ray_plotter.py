@@ -12,7 +12,8 @@ from app.visualization.plot_utils import *
 def plot_cosmic_ray_variations(
     cr_df: pd.DataFrame,
     kp_df: pd.DataFrame,
-    stations: List[str]
+    stations: List[str],
+    save_dir: str = os.path.join("files", "graphs"),
 ):
     labels_count = len(stations)
     labels = panel_labels(labels_count)
@@ -70,7 +71,6 @@ def plot_cosmic_ray_variations(
     fig.suptitle('November 2025', fontsize=30, y=0.995)
     fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.97)
 
-    save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "Cosmic_Ray.png")
 

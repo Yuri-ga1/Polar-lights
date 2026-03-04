@@ -59,6 +59,7 @@ def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: list[datetime],
     product_type: str = "roti",
+    save_dir: str = os.path.join("files", "graphs"),
 ) -> None:
     """
     Plotting data on globe (or part of globe).
@@ -157,7 +158,6 @@ def plot_map(
                 label=cbar_label
             )
 
-    save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f"{product.hdf_name.upper()}.png")
 

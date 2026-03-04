@@ -63,14 +63,14 @@ def run_misc_pipeline(
     sw_data = prepare_space_weather_data(date_str=date_str, base_out_dir=base_out_dir)
 
     if sw_data.omni is not None and sw_data.dst is not None and sw_data.kp is not None:
-        plot_sw_symh_dst_kp(sw_df=sw_data.omni, dst_df=sw_data.dst, kp_df=sw_data.kp)
+        plot_sw_symh_dst_kp(sw_df=sw_data.omni, dst_df=sw_data.dst, kp_df=sw_data.kp, save_dir=base_out_dir)
 
     gim_dir = os.path.join(base_out_dir, "gim")
     os.makedirs(gim_dir, exist_ok=True)
     GimDownloader(out_dir=gim_dir).download(date_str)
     gim_data = GimProcessor(folder_path=gim_dir).load(date_str)
     if gim_data:
-        plot_gim_maps(data=gim_data, plot_times=_pick_plot_times(gim_data))
+        plot_gim_maps(data=gim_data, plot_times=_pick_plot_times(gim_data), save_dir=base_out_dir)
 
     ionosonde_dir = os.path.join(base_out_dir, "ionosonde")
     os.makedirs(ionosonde_dir, exist_ok=True)
@@ -80,7 +80,7 @@ def run_misc_pipeline(
         station=ionosonde_code,
     )
     if ionosonde_df is not None and not ionosonde_df.empty:
-        plot_ionosonde(ionosonde_df)
+        plot_ionosonde(ionosonde_df, save_dir=base_out_dir)
 
     nmdb_dir = os.path.join(base_out_dir, "nmdb")
     os.makedirs(nmdb_dir, exist_ok=True)
@@ -98,4 +98,4 @@ def run_misc_pipeline(
     if cr_df is not None and not cr_df.empty and kp_df is not None and not kp_df.empty:
         stations_for_plot = _resolve_cosmic_stations(cr_df, cosmic_stations)
         if stations_for_plot:
-            plot_cosmic_ray_variations(cr_df=cr_df, kp_df=kp_df, stations=stations_for_plot)
+            plot_cosmic_ray_variations(cr_df=cr_df, kp_df=kp_df, stations=stations_for_plot, save_dir=base_out_dir)

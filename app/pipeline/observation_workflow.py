@@ -15,7 +15,7 @@ from app.visualization.aurora_map_plotter import AuroraMapPlotter
 
 def run_observation_workflow(
     date: date,
-    base_out_dir: str = "files",
+    base_out_dir: str = "results",
     plot_time: datetime | None = None,
 ) -> list[dict[str, str]]:
 
@@ -54,7 +54,7 @@ def run_observation_workflow(
         print(f'File {csv_path} was not created because there is no observation')
         return
 
-    save_path = os.path.join(base_out_dir, "graphs", "Observation_map.png")
+    save_path = os.path.join(base_out_dir, "Observation_map.png")
     plotter = AuroraMapPlotter(
         csv_path=csv_path,
         save_path=save_path,

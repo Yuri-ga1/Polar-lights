@@ -49,4 +49,4 @@ def run_adjusted_tec_pipeline(
         logger.warning("Не удалось загрузить данные adjusted TEC для %s.", date_str)
         return
 
-    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="tec_adjusted")
+    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="tec_adjusted", save_dir=base_out_dir)
