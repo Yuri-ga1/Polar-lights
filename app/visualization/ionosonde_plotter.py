@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels, style_axes
 
 
-def plot_ionosonde(df: pd.DataFrame) -> str:
+def plot_ionosonde(df: pd.DataFrame, save_dir: str = os.path.join("files", "graphs")) -> str:
     """
     Строит графики:
     ΔfoF2 (MHz)
@@ -68,7 +68,6 @@ def plot_ionosonde(df: pd.DataFrame) -> str:
 
     fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.1, left=0.08, right=0.97)
 
-    save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "ionosonde.png")
 

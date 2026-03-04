@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class MainPipelineConfig:
     date_str: str
-    base_out_dir: str = "files"
+    base_out_dir: str = "results"
     ionosonde_code: str | None = None
     cosmic_station_codes: list[str] | None = None
     simurg_email: str | None = None

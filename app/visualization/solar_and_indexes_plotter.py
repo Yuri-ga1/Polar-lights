@@ -88,6 +88,7 @@ def plot_sw_symh_dst_kp(
     sw_df: pd.DataFrame,
     dst_df: pd.DataFrame,
     kp_df: pd.DataFrame,
+    save_dir: str = os.path.join("files", "graphs"),
 ):
     labels = panel_labels(4)
 
@@ -182,7 +183,6 @@ def plot_sw_symh_dst_kp(
     # layout + save
     fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.97)
 
-    save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
 
     save_name = "SW_SYMH_DST_KP.png"

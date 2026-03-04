@@ -126,6 +126,7 @@ def plot_keogram(
     day_start: date,
     day_finish: date,
     cfg: Optional[KeogramConfig] = None,
+    save_dir: str = os.path.join("files", "graphs"),
 ) -> Path:
     """
     Строит и сохраняет кеограмму из данных SIMuRG (как roti_plotter: вход — dict[datetime, NDArray]).
@@ -179,7 +180,6 @@ def plot_keogram(
     add_colorbar_right(fig=fig, ax=ax, mappable=im, label=cfg.colorbar_label)
     fig.subplots_adjust(right=0.90)
 
-    save_dir = os.path.join("files", "graphs")
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "keogram.png")
 
