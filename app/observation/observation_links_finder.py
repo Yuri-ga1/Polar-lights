@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.chrome.service import Service
 
 
 class ObservationLinksFinder:
@@ -76,8 +77,36 @@ class ObservationLinksFinder:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--remote-debugging-port=9222")
 
-        self.driver = webdriver.Chrome(options=chrome_options)
+        from selenium.webdriver.chrome.service import Service
+
+        possible_bins = ("/usr/bin/chromium-browser", "/usr/bin/chromium")
+        for bin_path in possible_bins:
+            try:
+                with open(bin_path, "rb"):
+                    chrome_options.binary_location = bin_path
+                    break
+            except OSError:
+                pass
+
+        service = None
+        for driver_path in (
+            "/usr/bin/chromedriver",
+            "/usr/lib/chromium-browser/chromedriver",
+            "/usr/lib/chromium/chromedriver",
+        ):
+            try:
+                with open(driver_path, "rb"):
+                    service = Service(driver_path)
+                    break
+            except OSError:
+                pass
+
+        if service is not None:
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+        else:
+            self.driver = webdriver.Chrome(options=chrome_options)
 
 
     @staticmethod
