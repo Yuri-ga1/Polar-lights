@@ -29,15 +29,17 @@ def _pick_plot_times(data: dict[datetime, object], max_plots: int = 4) -> list[d
 
 def run_adjusted_tec_pipeline(
     date_str: str,
-    base_out_dir: str,
+    download_dir: str,
+    plots_dir: str,
     simurg_client: SimurgClient | None,
 ) -> None:
     if simurg_client is None:
         logger.warning("SimurgClient не создан. Поток adjusted TEC пропущен.")
         return
 
-    simurg_dir = os.path.join(base_out_dir, "simurg")
+    simurg_dir = os.path.join(download_dir, "simurg")
     os.makedirs(simurg_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
 
     AdjustedTecDownloader(client=simurg_client, out_dir=simurg_dir).download(date_str)
 
@@ -49,4 +51,4 @@ def run_adjusted_tec_pipeline(
         logger.warning("Не удалось загрузить данные adjusted TEC для %s.", date_str)
         return
 
-    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="tec_adjusted", save_dir=base_out_dir)
+    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="tec_adjusted", save_dir=plots_dir)

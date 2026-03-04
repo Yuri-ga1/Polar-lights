@@ -56,23 +56,27 @@ def _resolve_cosmic_stations(
 
 def run_misc_pipeline(
     date_str: str,
-    base_out_dir: str,
+    download_dir: str,
+    plots_dir: str,
     ionosonde_code: str | None,
     cosmic_stations: Sequence[str] | None,
 ) -> None:
-    sw_data = prepare_space_weather_data(date_str=date_str, base_out_dir=base_out_dir)
+    os.makedirs(download_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
+
+    sw_data = prepare_space_weather_data(date_str=date_str, download_dir=download_dir)
 
     if sw_data.omni is not None and sw_data.dst is not None and sw_data.kp is not None:
-        plot_sw_symh_dst_kp(sw_df=sw_data.omni, dst_df=sw_data.dst, kp_df=sw_data.kp, save_dir=base_out_dir)
+        plot_sw_symh_dst_kp(sw_df=sw_data.omni, dst_df=sw_data.dst, kp_df=sw_data.kp, save_dir=plots_dir)
 
-    gim_dir = os.path.join(base_out_dir, "gim")
+    gim_dir = os.path.join(download_dir, "gim")
     os.makedirs(gim_dir, exist_ok=True)
     GimDownloader(out_dir=gim_dir).download(date_str)
     gim_data = GimProcessor(folder_path=gim_dir).load(date_str)
     if gim_data:
-        plot_gim_maps(data=gim_data, plot_times=_pick_plot_times(gim_data), save_dir=base_out_dir)
+        plot_gim_maps(data=gim_data, plot_times=_pick_plot_times(gim_data), save_dir=plots_dir)
 
-    ionosonde_dir = os.path.join(base_out_dir, "ionosonde")
+    ionosonde_dir = os.path.join(download_dir, "ionosonde")
     os.makedirs(ionosonde_dir, exist_ok=True)
     IonosondeDownloader(out_dir=ionosonde_dir).download(target_date=date_str, station=ionosonde_code)
     ionosonde_df = IonosondeProcessor(folder_path=ionosonde_dir).load(
@@ -80,9 +84,9 @@ def run_misc_pipeline(
         station=ionosonde_code,
     )
     if ionosonde_df is not None and not ionosonde_df.empty:
-        plot_ionosonde(ionosonde_df, save_dir=base_out_dir)
+        plot_ionosonde(ionosonde_df, save_dir=plots_dir)
 
-    nmdb_dir = os.path.join(base_out_dir, "nmdb")
+    nmdb_dir = os.path.join(download_dir, "nmdb")
     os.makedirs(nmdb_dir, exist_ok=True)
     target_date = datetime.strptime(date_str, "%Y-%m-%d")
     start_date = target_date - timedelta(days=15)
@@ -94,8 +98,8 @@ def run_misc_pipeline(
     )
 
     cr_df = NmdbProcessor(folder_path=nmdb_dir).load(date_str)
-    kp_df = GfzProcessor(folder_path=os.path.join(base_out_dir, "kp")).load(date_str=date_str)
+    kp_df = GfzProcessor(folder_path=os.path.join(download_dir, "kp")).load(date_str=date_str)
     if cr_df is not None and not cr_df.empty and kp_df is not None and not kp_df.empty:
         stations_for_plot = _resolve_cosmic_stations(cr_df, cosmic_stations)
         if stations_for_plot:
-            plot_cosmic_ray_variations(cr_df=cr_df, kp_df=kp_df, stations=stations_for_plot, save_dir=base_out_dir)
+            plot_cosmic_ray_variations(cr_df=cr_df, kp_df=kp_df, stations=stations_for_plot, save_dir=plots_dir)

@@ -8,6 +8,8 @@ from app.visualization.plot_settings import set_plt_def_params
 
 def main(
     date_str: str,
+    download_base_dir: str = "files",
+    plots_base_dir: str = "results",
     ionosonde_code: str | None = None,
     cosmic_station_codes: list[str] | None = None,
     email: str | None = None,
@@ -17,6 +19,8 @@ def main(
 
     config = MainPipelineConfig(
         date_str=date_str,
+        download_base_dir=download_base_dir,
+        plots_base_dir=plots_base_dir,
         ionosonde_code=ionosonde_code,
         cosmic_station_codes=cosmic_station_codes,
         simurg_email=email,
@@ -32,8 +36,9 @@ if __name__ == "__main__":
 
     main(
         date_str=date,
+        download_base_dir="files",
+        plots_base_dir="results",
         ionosonde_code=ionosonde_code,
         cosmic_station_codes=cosmic_stations,
         email=email,
     )
-

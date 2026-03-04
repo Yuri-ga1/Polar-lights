@@ -60,13 +60,13 @@ def _safe_download(label: str, download_func) -> Optional[str]:
 
 def prepare_space_weather_data(
     date_str: str,
-    base_out_dir: str = "results",
+    download_dir: str = "files",
 ) -> SpaceWeatherData:
     """
     Скачивает и загружает данные для дальнейшего построения графиков.
     Возвращает DataFrame'ы и пути к файлам (если скачивание прошло успешно).
     """
-    paths = SpaceWeatherPaths.from_base(base_out_dir)
+    paths = SpaceWeatherPaths.from_base(download_dir)
     _ensure_output_dirs(paths)
 
     omni_path = _safe_download(
