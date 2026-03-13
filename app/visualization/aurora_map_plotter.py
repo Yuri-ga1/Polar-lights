@@ -151,6 +151,7 @@ class AuroraMapPlotter:
             handler_map={self.MulticolorPatch: self.MulticolorPatchHandler()},
             handlelength=1.5,
             handleheight=1.5,
+            fontsize=24
         )
         
         plt.title(f"{time.strftime("%d %B %Y")} auroras")
