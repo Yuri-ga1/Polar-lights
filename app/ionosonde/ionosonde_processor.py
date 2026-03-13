@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import glob
-import re
 from dataclasses import dataclass
-from typing import Optional, Union
 from datetime import date, datetime
+from io import StringIO
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -14,9 +14,9 @@ from app.base_classes.base_processor import BaseProcessor
 
 @dataclass(frozen=True)
 class IonosondeParseConfig:
-    """Parsing settings for autoscaled SCL files."""
-    fof2_scale: float = 0.1  # foF2 is stored in 0.1 MHz units
-    hf2_scale: float = 1.0   # h'F2 is stored in km units
+    """Parsing settings for autoscaled GIRO text files."""
+    fof2_scale: float = 1.0
+    hmf2_scale: float = 1.0
 
 
 class IonosondeProcessor(BaseProcessor):
@@ -37,7 +37,7 @@ class IonosondeProcessor(BaseProcessor):
         Downloader creates: {station}_{product}_{dataset}_{YYYYMMDD}.txt
 
         If station is None:
-          - we search any station file matching the date first, then any txt.
+          - search any station file matching the date first, then any txt.
         """
         if isinstance(date_value, pd.Timestamp):
             d = date_value.date()
@@ -48,14 +48,16 @@ class IonosondeProcessor(BaseProcessor):
         if station:
             return (
                 f"{station}_*_{day_anchor}.txt",
+                f"{station}_foF2_hmF2_{day_anchor}.txt",
                 f"{station}_*.txt",
                 "*.txt",
             )
 
         return (
-            f"*_*_{day_anchor}.txt",  # any station, exact date
-            f"*_{day_anchor}.txt",    # fallback
-            "*.txt",                  # last resort
+            f"*_*_{day_anchor}.txt",
+            f"*_foF2_hmF2_{day_anchor}.txt",
+            f"*_{day_anchor}.txt",
+            "*.txt",
         )
 
     def _pick_existing_file(self, patterns: tuple[str, str, str]) -> Optional[str]:
@@ -70,86 +72,63 @@ class IonosondeProcessor(BaseProcessor):
     # parsing helpers
     # -------------------------
 
-    @staticmethod
-    def _digits_to_number(raw: str) -> Optional[int]:
-        if raw is None:
-            return None
-        m = re.search(r"(\d+)", raw)
-        return int(m.group(1)) if m else None
-
-    @staticmethod
-    def _parse_ts_YYMMDDHHMM(value: str) -> Optional[pd.Timestamp]:
-        if not re.fullmatch(r"\d{10}", value):
-            return None
-        yy = int(value[0:2])
-        year = 2000 + yy if yy <= 69 else 1900 + yy
-        month = int(value[2:4])
-        day = int(value[4:6])
-        hour = int(value[6:8])
-        minute = int(value[8:10])
-        try:
-            return pd.Timestamp(year=year, month=month, day=day, hour=hour, minute=minute)
-        except Exception:
-            return None
-
     def _parse_downloaded_text(self, raw: str) -> pd.DataFrame:
-        records = []
-        for ln in raw.splitlines():
-            ln = ln.strip()
-            if not ln or ln.startswith("#"):
-                continue
+        """
+        Expected data section format:
 
-            parts = ln.split(maxsplit=1)
-            if len(parts) != 2:
-                continue
+        #Time                     CS   foF2 QD    hmF2 QD
+        2025-10-28T00:00:00.000Z   0 11.800 //  232.5 //
+        2025-10-28T00:07:30.000Z  95 11.575 //  232.5 //
 
-            ts_raw, payload = parts[0], parts[1]
-            ts = self._parse_ts_YYMMDDHHMM(ts_raw)
-            if ts is None:
-                continue
+        Parsed columns:
+          - datetime
+          - foF2
+          - hmF2
+        """
+        try:
+            df = pd.read_csv(
+                StringIO(raw),
+                sep=r"\s+",
+                comment="#",
+                header=None,
+                names=["datetime", "CS", "foF2", "QD1", "hmF2", "QD2"],
+                engine="python",
+            )
+        except Exception:
+            return pd.DataFrame()
 
-            fields = payload.split("//")
-            while fields and fields[-1] == "":
-                fields.pop()
-            if len(fields) < 5:
-                continue
-
-            fof2_raw = fields[-5]
-            hf2_raw = fields[-3]
-
-            fof2_int = self._digits_to_number(fof2_raw)
-            hf2_int = self._digits_to_number(hf2_raw)
-
-            fof2 = (fof2_int * self.config.fof2_scale) if fof2_int is not None else np.nan
-            hmF2 = (hf2_int * self.config.hf2_scale) if hf2_int is not None else np.nan
-
-            if fof2 == 0:
-                fof2 = np.nan
-            if hmF2 == 0:
-                hmF2 = np.nan
-
-            records.append({"datetime": ts, "foF2": fof2, "hmF2": hmF2})
-
-        df = pd.DataFrame.from_records(records)
         if df.empty:
             return df
 
+        df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce").dt.tz_localize(None)
+        df["foF2"] = pd.to_numeric(df["foF2"], errors="coerce") * self.config.fof2_scale
+        df["hmF2"] = pd.to_numeric(df["hmF2"], errors="coerce") * self.config.hmf2_scale
+
+        df["foF2"] = df["foF2"].replace(0, np.nan)
+        df["hmF2"] = df["hmF2"].replace(0, np.nan)
+
         df = (
             df.dropna(subset=["datetime"])
+            [["datetime", "foF2", "hmF2"]]
             .sort_values("datetime")
             .groupby("datetime", as_index=False)
             .agg({"foF2": "last", "hmF2": "last"})
         )
+
         return df
 
     @staticmethod
-    def _compute_q_sliding_window(
+    def _compute_q_local_time_mean(
         df_window: pd.DataFrame,
         target_day: date,
         days_range: int,
         value_col: str,
         q_col: str,
     ) -> pd.DataFrame:
+        """
+        Compute climatological mean using same local time across ±days_range days.
+        """
+
         if df_window is None or df_window.empty:
             return df_window
 
@@ -159,25 +138,35 @@ class IonosondeProcessor(BaseProcessor):
         tmp["datetime"] = pd.to_datetime(tmp["datetime"], errors="coerce")
         tmp = tmp.dropna(subset=["datetime"])
 
+        tmp[value_col] = pd.to_numeric(tmp[value_col], errors="coerce")
+
+        tmp["tod"] = tmp["datetime"].dt.time
+
         mask_target = tmp["datetime"].dt.date == target_day
         out = tmp.loc[mask_target].copy()
+
         if out.empty:
             return out.drop(columns=[c for c in out.columns if c == q_col], errors="ignore")
 
         q_values = []
-        delta = pd.Timedelta(days=days_range)
 
-        # pre-coerce once for speed
-        tmp_vals = pd.to_numeric(tmp[value_col], errors="coerce")
+        d0 = target_day - pd.Timedelta(days=days_range)
+        d1 = target_day + pd.Timedelta(days=days_range)
 
-        for t in out["datetime"]:
-            left = t - delta
-            right = t + delta
-            mask = (tmp["datetime"] >= left) & (tmp["datetime"] <= right)
-            q_values.append(tmp_vals.loc[mask].mean())
+        for _, row in out.iterrows():
+            tod = row["tod"]
+
+            mask = (
+                (tmp["datetime"].dt.date >= d0)
+                & (tmp["datetime"].dt.date <= d1)
+                & (tmp["tod"] == tod)
+            )
+
+            q_values.append(tmp.loc[mask, value_col].mean())
 
         out[q_col] = pd.Series(q_values, index=out.index).astype("float64").round(1)
-        return out
+
+        return out.drop(columns=["tod"])
 
     @staticmethod
     def _add_deltas(df: pd.DataFrame) -> pd.DataFrame:
@@ -226,12 +215,20 @@ class IonosondeProcessor(BaseProcessor):
         if df_window.empty:
             return None
 
-        out = self._compute_q_sliding_window(
-            df_window, target_day, days_range, "foF2", "foF2q"
+        out = self._compute_q_local_time_mean(
+            df_window,
+            target_day,
+            days_range,
+            "foF2",
+            "foF2q",
         )
 
-        out_hm = self._compute_q_sliding_window(
-            df_window, target_day, days_range, "hmF2", "hmF2q"
+        out_hm = self._compute_q_local_time_mean(
+            df_window,
+            target_day,
+            days_range,
+            "hmF2",
+            "hmF2q",
         )
 
         out["hmF2q"] = out_hm["hmF2q"].values
@@ -247,4 +244,3 @@ class IonosondeProcessor(BaseProcessor):
         )
 
         return out
-

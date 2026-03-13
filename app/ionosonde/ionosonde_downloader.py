@@ -2,13 +2,24 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import requests
 
 from app.base_classes.base_downloader import BaseDownloader
+
+
+class TemporaryNetworkError(Exception):
+    """Temporary network-related error."""
+    pass
+
+
+class DataFetchError(Exception):
+    """Non-retryable data fetch error."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -23,18 +34,15 @@ class StationDownloadReport:
 
 
 class IonosondeDownloader(BaseDownloader):
-    BASE_ROOT: str = "https://downloads.sws.bom.gov.au/wdc/wdc_ion_auto"
+    BASE_URL: str = "https://lgdc.uml.edu/common/DIDBGetValues"
+    STATIONS_PAGE: str = "https://giro.uml.edu/didbase/scaled.php"
 
     def __init__(
         self,
         out_dir: str = ".",
-        product: str = "scl",
-        dataset: str = "auto",
         timeout: float = 60.0,
     ) -> None:
         super().__init__(out_dir=out_dir)
-        self.product = product
-        self.dataset = dataset
         self.timeout = timeout
 
         self._headers = {
@@ -45,8 +53,10 @@ class IonosondeDownloader(BaseDownloader):
             )
         }
 
-        # cache: (station, yy) -> set({"250101.scl", ...})
-        self._year_listing_cache: Dict[Tuple[str, str], Set[str]] = {}
+        self._session = requests.Session()
+        self._session.headers.update(self._headers)
+
+        self._availability_cache: Dict[Tuple[str, str], Set[str]] = {}
 
     # -------------------------
     # date helpers
@@ -54,6 +64,7 @@ class IonosondeDownloader(BaseDownloader):
 
     @staticmethod
     def _parse_date(d: Union[str, date, datetime]) -> date:
+        """Normalize input value to date."""
         if isinstance(d, date) and not isinstance(d, datetime):
             return d
         if isinstance(d, datetime):
@@ -63,27 +74,60 @@ class IonosondeDownloader(BaseDownloader):
         raise TypeError(f"Дата должна быть str/date/datetime, получено: {type(d)!r}")
 
     @staticmethod
-    def _daterange(d0: date, d1: date):
+    def _daterange(d0: date, d1: date) -> Iterable[date]:
         cur = d0
         while cur <= d1:
             yield cur
             cur += timedelta(days=1)
 
-    @staticmethod
-    def _yy(d: date) -> str:
-        return f"{d.year % 100:02d}"
-
-    @staticmethod
-    def _yymmdd(d: date) -> str:
-        return f"{d.year % 100:02d}{d.month:02d}{d.day:02d}"
-
     # -------------------------
     # http helpers
     # -------------------------
 
+    def _get_with_retries(
+        self,
+        url: str,
+        max_attempts: int = 5,
+        base_delay: float = 1.5,
+    ) -> requests.Response:
+        """Perform GET request with retries for temporary network/server errors."""
+        last_exc: Optional[Exception] = None
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = self._session.get(url, timeout=self.timeout)
+                resp.raise_for_status()
+                return resp
+
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+            ) as exc:
+                last_exc = exc
+                if attempt == max_attempts:
+                    raise TemporaryNetworkError(str(exc)) from exc
+                time.sleep(base_delay * attempt)
+
+            except requests.exceptions.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+
+                if status is not None and 500 <= status < 600:
+                    last_exc = exc
+                    if attempt == max_attempts:
+                        raise TemporaryNetworkError(f"HTTP {status}: {exc}") from exc
+                    time.sleep(base_delay * attempt)
+                    continue
+
+                raise DataFetchError(str(exc)) from exc
+
+            except requests.RequestException as exc:
+                raise DataFetchError(str(exc)) from exc
+
+        raise TemporaryNetworkError(str(last_exc))
+
     def _get_text(self, url: str) -> str:
-        resp = requests.get(url, headers=self._headers, timeout=self.timeout)
-        resp.raise_for_status()
+        """Fetch URL and return text content."""
+        resp = self._get_with_retries(url)
         return resp.text
 
     # -------------------------
@@ -91,74 +135,83 @@ class IonosondeDownloader(BaseDownloader):
     # -------------------------
 
     def _list_all_stations(self) -> List[str]:
-        url = f"{self.BASE_ROOT}/"
+        """Retrieve valid URSI station codes from GIRO page."""
         try:
-            html = self._get_text(url)
+            html = self._get_text(self.STATIONS_PAGE)
         except Exception:
             return []
 
-        stations = re.findall(r'href=[\'"]([a-z0-9]{3,12})/[\'"]', html, flags=re.IGNORECASE)
-        stations = [s for s in stations if s.lower() not in ("parent", "parentdirectory")]
+        # URSI station codes look like IF843, MO155 etc.
+        codes = re.findall(r"\(([A-Z]{2}\d{3})\)", html)
 
-        seen = set()
+        seen: Set[str] = set()
         ordered: List[str] = []
-        for s in stations:
-            if s not in seen:
-                seen.add(s)
-                ordered.append(s)
+
+        for code in codes:
+            if code not in seen:
+                seen.add(code)
+                ordered.append(code)
+
         return ordered
 
     # -------------------------
-    # url builder (как было)
+    # availability check
     # -------------------------
 
-    def _build_urls_for_date_window(
+    def _build_query_url(
         self,
         station: str,
-        target_date: Union[str, date, datetime],
-        days_range: int = 13,
-    ) -> List[str]:
-        center = self._parse_date(target_date)
-        d0 = center - timedelta(days=days_range)
-        d1 = center + timedelta(days=days_range)
+        from_dt: datetime,
+        to_dt: datetime,
+        char_names: Iterable[str],
+        dmuf: int = 3000,
+    ) -> str:
+        """Build GIRO query URL preserving current URL format."""
+        from_str = from_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        to_str = to_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        char_params = ",".join(list(char_names))
 
-        urls: List[str] = []
-        for d in self._daterange(d0, d1):
-            yy = self._yy(d)
-            yymmdd = self._yymmdd(d)
-            urls.append(
-                f"{self.BASE_ROOT}/{station}/{self.product}/{self.dataset}/{yy}/{yymmdd}.{self.product}"
-            )
-        return urls
+        params = [
+            f"ursiCode={station}",
+            f"charName={char_params}",
+            f"DMUF={dmuf}",
+            f"fromDate={from_str}",
+            f"toDate={to_str}",
+        ]
+        return f"{self.BASE_URL}?{'&'.join(params)}"
 
-    # -------------------------
-    # NEW: listing-based availability check (без скачивания данных)
-    # -------------------------
+    def _fetch_data_text(
+        self,
+        station: str,
+        from_dt: datetime,
+        to_dt: datetime,
+        char_names: Iterable[str],
+        dmuf: int,
+    ) -> str:
+        """Fetch data text from GIRO with retries."""
+        url = self._build_query_url(station, from_dt, to_dt, char_names, dmuf)
+        resp = self._get_with_retries(url)
+        return resp.text
 
-    def _year_dir_url(self, station: str, yy: str) -> str:
-        return f"{self.BASE_ROOT}/{station}/{self.product}/{self.dataset}/{yy}/"
+    def _parse_unique_days(self, data_text: str) -> Set[str]:
+        """Extract unique YYYY-MM-DD dates from GIRO response."""
+        unique_days: Set[str] = set()
 
-    def _list_files_in_year_dir(self, station: str, yy: str) -> Set[str]:
-        """
-        Читает HTML-листинг папки года и возвращает множество имён файлов
-        вида {"250101.scl", ...}. Кэшируется в рамках экземпляра.
-        """
-        key = (station, yy)
-        if key in self._year_listing_cache:
-            return self._year_listing_cache[key]
+        for line in data_text.splitlines():
+            if not line or line.startswith("#"):
+                continue
 
-        url = self._year_dir_url(station, yy)
-        try:
-            html = self._get_text(url)
-        except Exception:
-            files: Set[str] = set()
-            self._year_listing_cache[key] = files
-            return files
+            parts = line.split()
+            if not parts:
+                continue
 
-        ext = re.escape(f".{self.product}")
-        files = set(re.findall(rf'href=[\'"](\d{{6}}{ext})[\'"]', html, flags=re.IGNORECASE))
-        self._year_listing_cache[key] = files
-        return files
+            ts = parts[0]
+            if len(ts) >= 10:
+                day_str = ts[:10]
+                if day_str != "---":
+                    unique_days.add(day_str)
+
+        return unique_days
 
     def _station_has_min_days(
         self,
@@ -166,51 +219,16 @@ class IonosondeDownloader(BaseDownloader):
         d0: date,
         d1: date,
         min_days_present: int,
+        char_names: Iterable[str],
+        dmuf: int,
     ) -> bool:
-        """
-        Проверяет наличие как минимум min_days_present дневных файлов в окне [d0..d1]
-        у указанной станции, читая только листинги каталогов (без скачивания файлов).
-        """
-        needed_by_year: Dict[str, List[str]] = {}
-        for d in self._daterange(d0, d1):
-            yy = self._yy(d)
-            fname = f"{self._yymmdd(d)}.{self.product}"
-            needed_by_year.setdefault(yy, []).append(fname)
+        """Check whether station has enough data days in the requested range."""
+        from_dt = datetime.combine(d0, datetime.min.time())
+        to_dt = datetime.combine(d1, datetime.max.time().replace(microsecond=0))
 
-        found = 0
-        for yy, needed_files in needed_by_year.items():
-            available_files = self._list_files_in_year_dir(station, yy)
-            if not available_files:
-                continue
-
-            # считаем пересечение
-            for f in needed_files:
-                if f in available_files:
-                    found += 1
-                    if found >= min_days_present:
-                        return True
-
-        return False
-
-    def _filter_available_stations(
-        self,
-        stations: List[str],
-        d0: date,
-        d1: date,
-        min_days_present: int,
-    ) -> List[str]:
-        """
-        Возвращает только станции, которые имеют >= min_days_present файлов в окне.
-        """
-        available: List[str] = []
-        for st in stations:
-            try:
-                if self._station_has_min_days(st, d0, d1, min_days_present=min_days_present):
-                    available.append(st)
-            except Exception:
-                # если где-то сетевой/парсинг косяк — считаем станцию недоступной
-                continue
-        return available
+        text = self._fetch_data_text(station, from_dt, to_dt, char_names, dmuf)
+        unique_days = self._parse_unique_days(text)
+        return len(unique_days) >= min_days_present
 
     # -------------------------
     # public API
@@ -219,18 +237,24 @@ class IonosondeDownloader(BaseDownloader):
     def download(
         self,
         target_date: Union[str, date, datetime],
+        char_names: Iterable[str],
         station: Optional[str] = None,
         days_range: int = 13,
         min_days_present: int = 1,
         filename: Optional[str] = None,
+        dmuf: int = 3000,
     ) -> StationDownloadReport:
+        """Download ionosonde data for target date and station."""
         center = self._parse_date(target_date)
         d0 = center - timedelta(days=days_range)
         d1 = center + timedelta(days=days_range)
         requested_days = (d1 - d0).days + 1
 
+        chars_list = list(char_names)
+
+        selected_station: Optional[str] = None
+
         if station is None:
-            # 1) берём все станции
             all_stations = self._list_all_stations()
             if not all_stations:
                 raise RuntimeError(
@@ -238,67 +262,98 @@ class IonosondeDownloader(BaseDownloader):
                     "Передайте station явно."
                 )
 
-            # 2) фильтруем по наличию файлов в окне (по листингам)
-            stations_list = self._filter_available_stations(
-                all_stations, d0=d0, d1=d1, min_days_present=min_days_present
-            )
+            network_errors = 0
 
-            if not stations_list:
+            for st in all_stations:
+                try:
+                    if self._station_has_min_days(
+                        st, d0, d1, min_days_present, chars_list, dmuf
+                    ):
+                        selected_station = st
+                        break
+
+                except TemporaryNetworkError as exc:
+                    network_errors += 1
+                    # print(f"Temporary network error for station {st}: {exc}")
+                    continue
+
+                except DataFetchError as exc:
+                    # print(f"Data fetch error for station {st}: {exc}")
+                    continue
+
+                except Exception as exc:
+                    # print(f"Unexpected error for station {st}: {exc}")
+                    continue
+
+            if selected_station is None:
+                if network_errors > 0:
+                    raise RuntimeError(
+                        "Не удалось автоматически выбрать станцию: "
+                        "во время проверки были временные сетевые ошибки при обращении к GIRO."
+                    )
+
                 raise RuntimeError(
                     f"Не найдено ни одной станции с >= {min_days_present} днями данных "
                     f"в диапазоне {d0.isoformat()}–{d1.isoformat()}."
                 )
-
-            station = stations_list[0]
-            print(
-                f"Available ionosonde stations for {target_date}: {stations_list}\n"
-                f"No station was explicitly specified. Automatically selecting the first available station: {station}"
-            )
         else:
-            # Если station задана — оставим как раньше: просто качаем её (валидацию по желанию можно вернуть)
-            station = station.strip()
+            selected_station = station.strip().upper()
 
         return self._download_for_station(
-            station=station,
-            target_date=center,
+            station=selected_station,
+            center=center,
             d0=d0,
             d1=d1,
             requested_days=requested_days,
-            days_range=days_range,
             min_days_present=min_days_present,
             filename=filename,
+            char_names=chars_list,
+            dmuf=dmuf,
         )
 
     def _download_for_station(
         self,
         station: str,
-        target_date: date,
+        center: date,
         d0: date,
         d1: date,
         requested_days: int,
-        days_range: int,
         min_days_present: int,
         filename: Optional[str],
+        char_names: Iterable[str],
+        dmuf: int,
     ) -> StationDownloadReport:
-        files = self._build_urls_for_date_window(station, target_date, days_range=days_range)
+        """Download data for explicitly selected station."""
+        from_dt = datetime.combine(d0, datetime.min.time())
+        to_dt = datetime.combine(d1, datetime.max.time().replace(microsecond=0))
 
-        collected: List[str] = []
-        downloaded_days = 0
+        try:
+            text = self._fetch_data_text(station, from_dt, to_dt, char_names, dmuf)
 
-        for url in files:
-            try:
-                resp = requests.get(url, headers=self._headers, timeout=self.timeout)
-                if resp.status_code != 200:
-                    continue
-                text = resp.text
-                if not text or not text.strip():
-                    continue
+        except TemporaryNetworkError as exc:
+            return StationDownloadReport(
+                station=station,
+                start=d0,
+                end=d1,
+                requested_days=requested_days,
+                downloaded_days=0,
+                output_path=None,
+                skipped_reason=f"Временная сетевая ошибка при загрузке данных: {exc}",
+            )
 
-                collected.append(f"# station={station} url={url}")
-                collected.append(text.rstrip("\n"))
-                downloaded_days += 1
-            except Exception:
-                continue
+        except Exception as exc:
+            return StationDownloadReport(
+                station=station,
+                start=d0,
+                end=d1,
+                requested_days=requested_days,
+                downloaded_days=0,
+                output_path=None,
+                skipped_reason=f"Ошибка загрузки данных: {exc}",
+            )
+
+        unique_days = self._parse_unique_days(text)
+        downloaded_days = len(unique_days)
 
         if downloaded_days < min_days_present:
             return StationDownloadReport(
@@ -316,15 +371,15 @@ class IonosondeDownloader(BaseDownloader):
 
         if filename is None:
             filename_local = (
-                f"{station}_{self.product}_{self.dataset}_"
-                f"{target_date.strftime('%Y%m%d')}.txt"
+                f"{station}_{'_'.join(char_names)}_"
+                f"{center.strftime('%Y%m%d')}.txt"
             )
         else:
             root, ext = os.path.splitext(filename)
             ext = ext or ".txt"
             filename_local = f"{root}_{station}{ext}"
 
-        out_path = self._write_text_file(filename_local, "\n".join(collected) + "\n")
+        out_path = self._write_text_file(filename_local, text)
 
         return StationDownloadReport(
             station=station,
