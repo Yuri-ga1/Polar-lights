@@ -237,7 +237,7 @@ class IonosondeDownloader(BaseDownloader):
     def download(
         self,
         target_date: Union[str, date, datetime],
-        char_names: Iterable[str],
+        char_names: Iterable[str] = ['foF2', 'hmF2'],
         station: Optional[str] = None,
         days_range: int = 13,
         min_days_present: int = 1,
