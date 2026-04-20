@@ -32,8 +32,10 @@ class GfzDownloader(BaseDownloader):
         super().__init__(out_dir=out_dir)
 
     @staticmethod
-    def _parse_date(s: str) -> date:
-        return datetime.strptime(s, "%Y-%m-%d").date()
+    def _parse_date(s: str | date) -> date:
+        if isinstance(s, str):
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        return s
 
     @staticmethod
     def _month_range(d: date) -> DateRange:
