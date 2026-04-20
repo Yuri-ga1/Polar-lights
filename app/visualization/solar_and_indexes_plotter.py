@@ -189,5 +189,7 @@ def plot_sw_symh_dst_kp(
 
     save_name = "SW_SYMH_DST_KP.png"
     fig.savefig(os.path.join(save_dir, save_name), bbox_inches="tight", pad_inches=0.15)
+
+    return fig
     
-    plt.close(fig)
+    # plt.close(fig)

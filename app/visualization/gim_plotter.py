@@ -132,4 +132,5 @@ def plot_gim_maps(
     save_name = "GIM.png"
     save_path = os.path.join(save_dir, save_name)
     fig.savefig(save_path)
-    plt.close(fig)
+    
+    return fig

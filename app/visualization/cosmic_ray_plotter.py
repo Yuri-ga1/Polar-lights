@@ -75,4 +75,4 @@ def plot_cosmic_ray_variations(
     save_path = os.path.join(save_dir, "Cosmic_Ray.png")
 
     fig.savefig(save_path)
-    plt.close(fig)
+    return fig

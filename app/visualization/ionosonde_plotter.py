@@ -72,5 +72,5 @@ def plot_ionosonde(df: pd.DataFrame, save_dir: str = os.path.join("files", "grap
     save_path = os.path.join(save_dir, "ionosonde.png")
 
     fig.savefig(save_path)
-    plt.close(fig)
-    return save_path
+    
+    return fig
