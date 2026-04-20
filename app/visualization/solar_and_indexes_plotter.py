@@ -152,6 +152,8 @@ def plot_sw_symh_dst_kp(
 
     ax_r = ax.twinx()
     ax_r.plot(dst_df["datetime"], dst_df["dst"], color="k", label="Dst")
+    ax_r.yaxis.labelpad = 16
+    ax_r.set_ylabel("Dst, nT", fontweight="bold")
 
     (yl_r, yh_r), yt_r = auto_ylim_and_ticks(dst_df["dst"], target_ticks=5)
     ax_r.set_ylim(yl_r, yh_r)
@@ -181,11 +183,11 @@ def plot_sw_symh_dst_kp(
     ax.set_title(labels[-1], loc="left", x=0.0125, y=0.75, weight="bold")
 
     # layout + save
-    fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.97)
+    fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.85)
 
     os.makedirs(save_dir, exist_ok=True)
 
     save_name = "SW_SYMH_DST_KP.png"
-    fig.savefig(os.path.join(save_dir, save_name))
+    fig.savefig(os.path.join(save_dir, save_name), bbox_inches="tight", pad_inches=0.15)
     
     plt.close(fig)
