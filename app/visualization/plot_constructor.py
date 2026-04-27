@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Mapping, Sequence
 
 import cartopy.crs as ccrs
-import cartopy.feature as cfeature
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from app.visualization.aurora_map_plotter import plot_aurora_dataframe
+from app.visualization.gim_plotter import plot_gim_snapshot
+from app.visualization.plot_utils import plot_dataframe_series, plot_kp_index, plot_structured_map
+from app.visualization.roti_plotter import plot_map_snapshot
 
 
 PlotRequest = str | Mapping[str, Any]
@@ -89,15 +92,14 @@ class PlotConstructor:
         for idx, (ax, (definition, params)) in enumerate(zip(axes, resolved), start=1):
             plot_type = definition.plot_type or "timeseries"
             if plot_type == "map":
-                # Replace regular axis with geo axis for this subplot slot.
                 geo_ax = fig.add_subplot(len(resolved), 1, idx, projection=ccrs.PlateCarree())
                 ax.remove()
                 axes[idx - 1] = geo_ax
-                self._plot_map(geo_ax, definition, params)
+                self._plot_map(geo_ax, definition, dict(params))
             elif plot_type == "histogram":
-                self._plot_histogram(ax, definition, params)
+                self._plot_histogram(ax, definition, dict(params))
             else:
-                self._plot_timeseries(ax, definition, params)
+                self._plot_timeseries(ax, definition, dict(params))
 
         fig.tight_layout()
         return fig, axes
@@ -133,7 +135,6 @@ class PlotConstructor:
                         continue
                     self._register_name(registry, str(col), payload, canonical_source)
 
-        # Helpful aliases for known products.
         alias_map = {
             "aurora observation": ["aurora", "aurora observations", "observation"],
             "adjusted tec": ["tec adjusted", "adjusted_tec"],
@@ -173,15 +174,6 @@ class PlotConstructor:
             return "histogram"
         return "timeseries"
 
-    @staticmethod
-    def _extract_x(df: pd.DataFrame) -> pd.Series:
-        for candidate in ("datetime", "DateTime", "date", "time"):
-            if candidate in df.columns:
-                return pd.to_datetime(df[candidate], errors="coerce")
-        if isinstance(df.index, pd.DatetimeIndex):
-            return pd.Series(df.index)
-        return pd.Series(np.arange(len(df)))
-
     def _plot_timeseries(self, ax: plt.Axes, definition: PlotDefinition, params: dict[str, Any]) -> None:
         data = definition.data
         color = params.pop("color", None)
@@ -189,23 +181,30 @@ class PlotConstructor:
         if isinstance(data, pd.DataFrame):
             col = definition.name if definition.name in data.columns else definition.canonical_name
             if col not in data.columns:
-                # fallback: first numeric column
                 numeric_cols = data.select_dtypes(include="number").columns.tolist()
                 if not numeric_cols:
                     raise ValueError(f"No numeric columns to plot for '{definition.name}'.")
                 col = numeric_cols[0]
-            x = self._extract_x(data)
-            y = pd.to_numeric(data[col], errors="coerce")
-            ax.plot(x, y, color=color, **params)
-            ax.set_ylabel(col)
-        elif isinstance(data, pd.Series):
+
+            plot_dataframe_series(
+                ax,
+                data,
+                y_col=col,
+                color=color,
+                title=definition.name,
+                ylabel=col,
+                **params,
+            )
+            return
+
+        if isinstance(data, pd.Series):
             ax.plot(data.index, data.values, color=color, **params)
             ax.set_ylabel(definition.name)
-        else:
-            raise ValueError(f"Timeseries plot '{definition.name}' has unsupported data type: {type(data).__name__}")
+            ax.set_title(definition.name)
+            ax.grid(True, linestyle="--", alpha=0.35)
+            return
 
-        ax.set_title(definition.name)
-        ax.grid(True, linestyle="--", alpha=0.35)
+        raise ValueError(f"Timeseries plot '{definition.name}' has unsupported data type: {type(data).__name__}")
 
     def _plot_histogram(self, ax: plt.Axes, definition: PlotDefinition, params: dict[str, Any]) -> None:
         data = definition.data
@@ -215,6 +214,11 @@ class PlotConstructor:
         col = definition.name if definition.name in data.columns else definition.canonical_name
         if col not in data.columns:
             raise ValueError(f"Column '{definition.name}' not found in source '{definition.source}'.")
+
+        if col.lower() == "kp":
+            plot_kp_index(ax, data, datetime_col="datetime", kp_col=col, xlabel="Day")
+            ax.set_title(definition.name)
+            return
 
         values = pd.to_numeric(data[col], errors="coerce").dropna()
         bins = params.pop("bins", 9)
@@ -228,10 +232,7 @@ class PlotConstructor:
     def _plot_map(self, ax: plt.Axes, definition: PlotDefinition, params: dict[str, Any]) -> None:
         data = definition.data
         cmap = params.pop("cmap", "jet")
-        ax.set_global()
-        ax.add_feature(cfeature.LAND, facecolor="lightgray")
-        ax.add_feature(cfeature.OCEAN, facecolor="white")
-        ax.add_feature(cfeature.COASTLINE, linewidth=0.6)
+        canonical_name = definition.canonical_name
 
         if isinstance(data, dict):
             if not data:
@@ -245,16 +246,49 @@ class PlotConstructor:
                 available = ", ".join(str(k) for k in sorted(data.keys())[:5])
                 raise ValueError(f"Missing plot_time '{t}' for '{definition.name}'. Example times: {available}")
 
-            arr = data[t]
-            names = getattr(getattr(arr, "dtype", None), "names", None)
-            if not names or not {"lat", "lon", "vals"}.issubset(set(names)):
-                raise ValueError(f"Map '{definition.name}' expects structured array with lat/lon/vals fields.")
-            img = ax.scatter(arr["lon"], arr["lat"], c=arr["vals"], s=params.pop("s", 8), cmap=cmap, transform=ccrs.PlateCarree(), **params)
-            plt.colorbar(img, ax=ax, shrink=0.75, pad=0.02)
+            if canonical_name in {"roti", "adjusted tec", "adjusted_tec"}:
+                product_type = "tec_adjusted" if canonical_name in {"adjusted tec", "adjusted_tec"} else "roti"
+                plot_map_snapshot(
+                    ax,
+                    data[t],
+                    t,
+                    product_type=product_type,
+                    cmap=cmap,
+                    point_size=params.pop("s", 10),
+                )
+                return
+
+            if canonical_name == "gim":
+                plot_gim_snapshot(ax, data[t], t, cmap=cmap)
+                return
+
+            plot_structured_map(
+                ax,
+                data[t],
+                cmap=cmap,
+                point_size=params.pop("s", 8),
+                colorbar=True,
+            )
             ax.set_title(f"{definition.name}: {t}")
             return
 
         if isinstance(data, pd.DataFrame):
+            if canonical_name in {"aurora", "aurora observation", "aurora observations"}:
+                requested_time = params.pop("plot_time", None)
+                if requested_time is None:
+                    if "date" in data.columns:
+                        requested_time = pd.to_datetime(data["date"], errors="coerce").dropna().min()
+                    else:
+                        raise ValueError("Aurora map requires `plot_time` or DataFrame `date` column.")
+                plot_aurora_dataframe(
+                    data,
+                    pd.to_datetime(requested_time).to_pydatetime(),
+                    ax=ax,
+                    show_geomagnetic_equator=params.pop("show_geomagnetic_equator", True),
+                    show_terminator=params.pop("show_terminator", True),
+                )
+                return
+
             required = {"lat", "lon"}
             if not required.issubset(set(data.columns)):
                 raise ValueError(f"Map '{definition.name}' expects columns {sorted(required)} in DataFrame.")

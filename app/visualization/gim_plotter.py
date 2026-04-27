@@ -54,6 +54,43 @@ def _to_grid(arr: NDArray) -> tuple[NDArray, NDArray, NDArray]:
     return lats, lons, grid
 
 
+def plot_gim_snapshot(
+    ax: plt.Axes,
+    arr: NDArray,
+    t: datetime,
+    *,
+    cmap: str = "jet",
+) -> plt.Axes:
+    """
+    Draw one GIM TEC map snapshot on existing geo axis.
+    """
+    lon_locator = (-180, -90, 0, 90, 180)
+    lat_locator = (-80, -40, 0, 40, 80)
+
+    geomagnetic_lines(
+        ax=ax,
+        date=t.replace(tzinfo=None),
+        levels=[-50, -30, 30, 50],
+        color="black",
+    )
+    prepare_layout(ax, lon_locator, lat_locator)
+
+    lats, lons, grid = _to_grid(arr)
+    extent = (float(lons.min()), float(lons.max()), float(lats.min()), float(lats.max()))
+    img = ax.imshow(
+        grid,
+        extent=extent,
+        origin="lower",
+        cmap=cmap,
+        vmin=GIM_TEC_LIMITS.vmin,
+        vmax=GIM_TEC_LIMITS.vmax,
+        transform=ccrs.PlateCarree(),
+    )
+    ax.set_title(t.strftime(TIME_FORMAT_TITLE)[:-7] + " UT")
+    add_colorbar_right(ax.figure, ax, img, f"TEC, {GIM_TEC_LIMITS.units}")
+    return ax
+
+
 def plot_gim_maps(
     data: Dict[datetime, NDArray],
     plot_times: List[datetime],

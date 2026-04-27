@@ -55,6 +55,45 @@ def _resolve_product(product_type: str) -> DataProduct:
         supported = ", ".join(DataProducts.__members__.keys())
         raise ValueError(f"Неизвестный тип продукта: {product_type}. Поддерживаются: {supported}") from error
 
+
+def plot_map_snapshot(
+    ax: plt.Axes,
+    arr: np.ndarray,
+    time: datetime,
+    *,
+    product_type: str = "roti",
+    cmap: str = "jet",
+    point_size: float = 10,
+) -> plt.Axes:
+    """
+    Draw a single ROTI/TEC-adjusted snapshot on an existing geo axis.
+    """
+    product = _resolve_product(product_type)
+    lon_locator = (-180, -90, 0, 90, 180)
+    lat_locator = (-80, -40, 0, 40, 80)
+
+    native_time = time.replace(tzinfo=None)
+    solar_terminator(ax, time=native_time, color="black", alpha=0.1)
+    geomagnetic_lines(ax=ax, date=native_time, levels=[-50, -30, 0, 30, 50], color="black")
+    prepare_layout(ax, lon_locator, lat_locator)
+
+    sctr = ax.scatter(
+        arr["lon"],
+        arr["lat"],
+        c=arr["vals"],
+        alpha=1,
+        marker="s",
+        s=point_size,
+        zorder=3,
+        vmin=product.color_limits.min,
+        vmax=product.color_limits.max,
+        cmap=cmap,
+    )
+    ax.set_title(time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT")
+    add_colorbar_right(fig=ax.figure, ax=ax, mappable=sctr, label=product.color_limits.units)
+    return ax
+
+
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: list[datetime],
