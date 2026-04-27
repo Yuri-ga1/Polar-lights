@@ -1,0 +1,342 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+import cartopy.crs as ccrs
+from app.visualization.plot_utils import (
+    plot_histogram_on_ax,
+    plot_kp_bars,
+    plot_timeseries_on_ax,
+)
+from app.visualization.roti_plotter import plot_simurg_map_on_ax
+from app.visualization.gim_plotter import plot_gim_map_on_ax
+from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
+
+
+MAP_PLOT_NAMES = {
+    "roti",
+    "gim",
+    "adjusted tec",
+    "tec adjusted",
+    "keogram",
+    "aurora observation",
+    "aurora",
+}
+HIST_PLOT_NAMES = {"kp"}
+TIME_COLUMN_CANDIDATES = ("datetime", "DateTime", "time", "timestamp")
+
+
+@dataclass(frozen=True)
+class PlotDescriptor:
+    """Description of one available plot and how to read its data from processor results."""
+
+    name: str
+    plot_type: str
+    source_key: str
+    column: str | None = None
+
+
+class PlotConstructor:
+    """Build stacked plots from processor outputs using plot names.
+
+    Parameters
+    ----------
+    processor_results:
+        Mapping of source name -> processor output. Typical values are pandas DataFrame,
+        dict[datetime, numpy.ndarray] map-like products, or other series-like containers.
+    """
+
+    def __init__(self, processor_results: Mapping[str, Any]) -> None:
+        self.processor_results = dict(processor_results)
+        self._registry = self._build_registry()
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return " ".join(name.strip().lower().replace("_", " ").split())
+
+    @classmethod
+    def _resolve_plot_type(cls, name: str, fallback: str = "timeseries") -> str:
+        normalized = cls._normalize_name(name)
+        if normalized in MAP_PLOT_NAMES:
+            return "map"
+        if normalized in HIST_PLOT_NAMES:
+            return "histogram"
+        return fallback
+
+    @staticmethod
+    def _find_time_column(df: pd.DataFrame) -> str | None:
+        for candidate in TIME_COLUMN_CANDIDATES:
+            if candidate in df.columns:
+                return candidate
+        return None
+
+    @staticmethod
+    def _is_map_dict(data: Any) -> bool:
+        if not isinstance(data, dict) or not data:
+            return False
+        first_value = next(iter(data.values()))
+        dtype_names = getattr(getattr(first_value, "dtype", None), "names", None)
+        return bool(dtype_names and {"lat", "lon", "vals"}.issubset(set(dtype_names)))
+
+    def _build_registry(self) -> dict[str, PlotDescriptor]:
+        registry: dict[str, PlotDescriptor] = {}
+
+        for source_key, data in self.processor_results.items():
+            source_type = self._resolve_plot_type(source_key)
+            normalized_source = self._normalize_name(source_key)
+
+            if isinstance(data, pd.DataFrame):
+                # Register source name itself for map-like aurora observations in tabular form.
+                if source_type == "map":
+                    registry.setdefault(
+                        normalized_source,
+                        PlotDescriptor(name=source_key, plot_type="map", source_key=source_key),
+                    )
+
+                for column in data.columns:
+                    if column in TIME_COLUMN_CANDIDATES:
+                        continue
+                    normalized_col = self._normalize_name(column)
+                    plot_type = self._resolve_plot_type(column)
+                    registry.setdefault(
+                        normalized_col,
+                        PlotDescriptor(
+                            name=column,
+                            plot_type=plot_type,
+                            source_key=source_key,
+                            column=column,
+                        ),
+                    )
+            elif self._is_map_dict(data):
+                registry.setdefault(
+                    normalized_source,
+                    PlotDescriptor(name=source_key, plot_type="map", source_key=source_key),
+                )
+            else:
+                registry.setdefault(
+                    normalized_source,
+                    PlotDescriptor(name=source_key, plot_type=source_type, source_key=source_key),
+                )
+
+        return registry
+
+    def available_plots(self) -> list[str]:
+        """Return sorted list of plot names available for the provided processor results."""
+        return sorted(descriptor.name for descriptor in self._registry.values())
+
+    def _resolve_descriptor(self, requested_name: str) -> PlotDescriptor:
+        key = self._normalize_name(requested_name)
+        descriptor = self._registry.get(key)
+        if descriptor is None:
+            available = ", ".join(self.available_plots())
+            raise ValueError(f"Unknown plot '{requested_name}'. Available plots: {available}")
+        return descriptor
+
+    def _extract_plot_data(self, descriptor: PlotDescriptor) -> tuple[Any, str | None]:
+        if descriptor.source_key not in self.processor_results:
+            raise ValueError(
+                f"Missing data source '{descriptor.source_key}' for plot '{descriptor.name}'."
+            )
+
+        data = self.processor_results[descriptor.source_key]
+        if data is None:
+            raise ValueError(
+                f"Data for plot '{descriptor.name}' is missing (source '{descriptor.source_key}' is None)."
+            )
+
+        if isinstance(data, pd.DataFrame) and descriptor.column is not None:
+            if descriptor.column not in data.columns:
+                raise ValueError(
+                    f"Column '{descriptor.column}' required by '{descriptor.name}' is absent in source '{descriptor.source_key}'."
+                )
+            return data, descriptor.column
+
+        return data, None
+
+    def _plot_map(self, ax: plt.Axes, descriptor: PlotDescriptor, data: Any, params: dict[str, Any]) -> None:
+        normalized_name = self._normalize_name(descriptor.name)
+
+        if isinstance(data, dict) and data:
+            plot_time = params.get("time")
+            if plot_time is None:
+                plot_time = sorted(data.keys())[0]
+            if plot_time not in data:
+                raise ValueError(f"Time '{plot_time}' is unavailable for map '{descriptor.name}'.")
+            arr = data[plot_time]
+
+            if normalized_name == "gim":
+                plot_gim_map_on_ax(
+                    ax,
+                    arr,
+                    title=f"{descriptor.name} ({plot_time})",
+                    cmap=params.get("cmap", "jet"),
+                )
+            else:
+                limits = (0.0, 80.0) if normalized_name in {"adjusted tec", "tec adjusted"} else (0.0, 1.0)
+                plot_simurg_map_on_ax(
+                    ax,
+                    arr,
+                    title=f"{descriptor.name} ({plot_time})",
+                    cmap=params.get("cmap", "jet"),
+                    point_size=params.get("s", 8),
+                    colorbar_limits=limits,
+                )
+            return
+
+        if isinstance(data, pd.DataFrame):
+            if normalized_name in {"aurora observation", "aurora"}:
+                time_value = params.get("time")
+                if time_value is None:
+                    date_col = pd.to_datetime(data.get("date"), errors="coerce").dropna()
+                    if date_col.empty:
+                        raise ValueError(
+                            f"Map plot '{descriptor.name}' requires a valid 'date' column for aurora observations."
+                        )
+                    time_value = pd.Timestamp(date_col.iloc[0]).to_pydatetime()
+                plot_aurora_observations_on_ax(
+                    ax,
+                    data,
+                    time=time_value,
+                    show_geomagnetic_equator=params.get("show_geomagnetic_equator", True),
+                    show_terminator=params.get("show_terminator", True),
+                    point_radius=params.get("point_radius", 1.0),
+                )
+                ax.set_title(descriptor.name)
+                return
+
+            if not {"lat", "lon"}.issubset(set(data.columns)):
+                raise ValueError(
+                    f"Map plot '{descriptor.name}' requires 'lat' and 'lon' columns in source '{descriptor.source_key}'."
+                )
+            # fallback for other map-like tabular data: via existing SIMuRG-like renderer is not applicable
+            raise ValueError(
+                f"Map plot '{descriptor.name}' expects processor data in map dictionary format or aurora-observation table."
+            )
+            return
+
+        raise ValueError(f"Unsupported map data format for plot '{descriptor.name}'.")
+
+    def _plot_histogram(
+        self,
+        ax: plt.Axes,
+        descriptor: PlotDescriptor,
+        data: Any,
+        column: str | None,
+        params: dict[str, Any],
+    ) -> None:
+        if isinstance(data, pd.DataFrame):
+            series = data[column] if column else data.iloc[:, 0]
+        else:
+            series = pd.Series(data)
+
+        if self._normalize_name(descriptor.name) == "kp":
+            if isinstance(data, pd.DataFrame):
+                plot_kp_bars(ax=ax, kp_df=data, set_xlabel=False)
+                ax.set_title(descriptor.name)
+                return
+
+        plot_histogram_on_ax(
+            ax,
+            series,
+            bins=params.get("bins", 9),
+            color=params.get("color", "tab:green"),
+            title=descriptor.name,
+        )
+
+    def _plot_timeseries(
+        self,
+        ax: plt.Axes,
+        descriptor: PlotDescriptor,
+        data: Any,
+        column: str | None,
+        params: dict[str, Any],
+    ) -> None:
+        if isinstance(data, pd.DataFrame):
+            time_col = self._find_time_column(data)
+            if time_col is None:
+                raise ValueError(
+                    f"Timeseries '{descriptor.name}' needs one of {TIME_COLUMN_CANDIDATES}, but none found in '{descriptor.source_key}'."
+                )
+            y_col = column or next((c for c in data.columns if c != time_col), None)
+            if y_col is None:
+                raise ValueError(f"No value column found for timeseries '{descriptor.name}'.")
+            plot_timeseries_on_ax(
+                ax,
+                data,
+                time_col=time_col,
+                value_col=y_col,
+                color=params.get("color", "tab:blue"),
+                linewidth=params.get("linewidth", 1.5),
+                title=descriptor.name,
+                ylabel=y_col,
+            )
+            return
+
+        if isinstance(data, (Sequence, np.ndarray)) and not isinstance(data, (str, bytes)):
+            ax.plot(data, color=params.get("color", "tab:blue"))
+            ax.set_title(descriptor.name)
+            ax.grid(True, alpha=0.3)
+            return
+
+        raise ValueError(f"Unsupported timeseries data format for plot '{descriptor.name}'.")
+
+    def plot(
+        self,
+        plots: Sequence[str | Mapping[str, Any]],
+        *,
+        figsize: tuple[float, float] | None = None,
+    ) -> tuple[plt.Figure, list[plt.Axes]]:
+        """Plot requested charts vertically in the same order as input list.
+
+        Parameters
+        ----------
+        plots:
+            Sequence of plot names or dictionaries:
+            - "Dst"
+            - {"name": "Kp", "params": {"bins": 9}}
+        figsize:
+            Optional matplotlib figure size. Defaults to (16, 4 * number_of_plots).
+        """
+        if not plots:
+            raise ValueError("plots list is empty.")
+
+        parsed: list[tuple[PlotDescriptor, dict[str, Any], Any, str | None]] = []
+        for item in plots:
+            if isinstance(item, str):
+                name = item
+                params: dict[str, Any] = {}
+            elif isinstance(item, Mapping):
+                name = str(item.get("name", "")).strip()
+                params = dict(item.get("params", {}))
+            else:
+                raise ValueError(f"Unsupported plot spec type: {type(item)!r}")
+
+            if not name:
+                raise ValueError("Each plot spec must contain non-empty 'name'.")
+
+            descriptor = self._resolve_descriptor(name)
+            data, column = self._extract_plot_data(descriptor)
+            parsed.append((descriptor, params, data, column))
+
+        fig = plt.figure(figsize=figsize or (16, 4 * len(parsed)))
+        axes: list[plt.Axes] = []
+
+        for idx, (descriptor, params, data, column) in enumerate(parsed, start=1):
+            if descriptor.plot_type == "map":
+                ax = fig.add_subplot(len(parsed), 1, idx, projection=ccrs.PlateCarree())
+                self._plot_map(ax, descriptor, data, params)
+            else:
+                ax = fig.add_subplot(len(parsed), 1, idx)
+                if descriptor.plot_type == "histogram":
+                    self._plot_histogram(ax, descriptor, data, column, params)
+                else:
+                    self._plot_timeseries(ax, descriptor, data, column, params)
+            axes.append(ax)
+
+        fig.tight_layout()
+        return fig, axes
