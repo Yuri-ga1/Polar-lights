@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Any, Iterable
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -103,6 +103,98 @@ def kp_colors(kp_values: pd.Series) -> list[str]:
         else:
             colors.append("red")
     return colors
+
+
+def plot_kp_index(
+    ax: plt.Axes,
+    kp_df: pd.DataFrame,
+    *,
+    datetime_col: str = "datetime",
+    kp_col: str = "kp",
+    width: float = 0.115,
+    ylabel: str = "Kp",
+    xlabel: str | None = "Day",
+) -> plt.Axes:
+    """Draw Kp bars on the provided axis and return the axis."""
+    dt = pd.to_datetime(kp_df[datetime_col], errors="coerce")
+    values = pd.to_numeric(kp_df[kp_col], errors="coerce")
+
+    ax.bar(dt, values, color=kp_colors(values), width=width)
+    ax.set_ylim(0, 9)
+    ax.set_yticks([0, 3, 6, 9])
+    ax.set_ylabel(ylabel, fontweight="bold")
+    if xlabel:
+        ax.set_xlabel(xlabel, fontweight="bold")
+    return ax
+
+
+def plot_dataframe_series(
+    ax: plt.Axes,
+    data: pd.DataFrame,
+    *,
+    y_col: str,
+    datetime_candidates: tuple[str, ...] = ("datetime", "DateTime", "date", "time"),
+    color: str | None = None,
+    title: str | None = None,
+    ylabel: str | None = None,
+    **params: Any,
+) -> plt.Axes:
+    """Plot one DataFrame column as time series on a provided axis."""
+    x = None
+    for candidate in datetime_candidates:
+        if candidate in data.columns:
+            x = pd.to_datetime(data[candidate], errors="coerce")
+            break
+
+    if x is None:
+        if isinstance(data.index, pd.DatetimeIndex):
+            x = data.index
+        else:
+            x = pd.RangeIndex(start=0, stop=len(data), step=1)
+
+    y = pd.to_numeric(data[y_col], errors="coerce")
+    ax.plot(x, y, color=color, **params)
+
+    if ylabel:
+        ax.set_ylabel(ylabel)
+    if title:
+        ax.set_title(title)
+
+    ax.grid(True, linestyle="--", alpha=0.35)
+    return ax
+
+
+def plot_structured_map(
+    ax: plt.Axes,
+    arr,
+    *,
+    cmap: str = "jet",
+    point_size: float = 8,
+    colorbar: bool = True,
+) -> plt.Axes:
+    """Plot structured map array with lat/lon/vals fields."""
+    names = getattr(getattr(arr, "dtype", None), "names", None)
+    if not names or not {"lat", "lon", "vals"}.issubset(set(names)):
+        raise ValueError("Expected structured array with lat/lon/vals fields.")
+
+    ax.set_global()
+    ax.add_feature(feature.LAND, facecolor="lightgray")
+    ax.add_feature(feature.OCEAN, facecolor="white")
+    ax.add_feature(feature.COASTLINE, linewidth=0.6)
+
+    img = ax.scatter(
+        arr["lon"],
+        arr["lat"],
+        c=arr["vals"],
+        s=point_size,
+        cmap=cmap,
+        transform=ccrs.PlateCarree(),
+    )
+
+    if colorbar:
+        plt.colorbar(img, ax=ax, shrink=0.75, pad=0.02)
+
+    return ax
 
 
 def prepare_layout(
