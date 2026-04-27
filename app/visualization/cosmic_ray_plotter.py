@@ -52,13 +52,7 @@ def plot_cosmic_ray_variations(
 
     # --- Kp ---
     ax_kp = axes[-1]
-    colors = kp_colors(kp_df["kp"])
-    ax_kp.bar(kp_df["datetime"], kp_df["kp"], color=colors, width=0.115)
-
-    ax_kp.set_ylim(0, 9)
-    ax_kp.set_yticks([0, 3, 6, 9])
-    ax_kp.set_ylabel("Kp", fontweight="bold")
-    ax_kp.set_xlabel("Day", fontweight="bold")
+    plot_kp_bars(ax=ax_kp, kp_df=kp_df, set_xlabel=True)
 
     ax_kp.xaxis.set_major_formatter(formatter)
     ax_kp.set_xlim(xlim[0], xlim[1])

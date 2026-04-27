@@ -67,8 +67,6 @@ def plot_map(
 
     product = _resolve_product(product_type)
     ncols = 2
-    lon_locator = (-180, -90, 0, 90, 180)
-    lat_locator = (-80, -40, 0, 40, 80)
     map_params = MapParams()
     colorbar_limit_scaling = 1
     fig_width = FIGSIZE_WIDTH
@@ -123,29 +121,15 @@ def plot_map(
             color='black'
         )
 
-        arr = data[time]
-        lats = arr["lat"]
-        lons = arr["lon"]
-        values = arr["vals"]
-
-        prepare_layout(ax1, lon_locator, lat_locator)
-
         color_limits = scale_color_limits(product, colorbar_limit_scaling)
-        sctr = ax1.scatter(
-            lons,
-            lats,
-            c=values,
-            alpha=1,
-            marker=map_params.point_marker,
-            s=map_params.point_size,
-            zorder=3,
-            vmin=color_limits.min,
-            vmax=color_limits.max,
+        arr = data[time]
+        sctr = plot_simurg_map_on_ax(
+            ax1,
+            arr,
+            title=time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
             cmap=map_params.cmap,
-        )
-
-        ax1.set_title(
-            time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
+            point_size=map_params.point_size,
+            colorbar_limits=(color_limits.min, color_limits.max),
         )
         add_panel_label(ax=ax1, label=subplot_marks[axs_index])
 
@@ -163,3 +147,34 @@ def plot_map(
 
     fig.savefig(save_path)
     plt.close(fig)
+
+
+def plot_simurg_map_on_ax(
+    ax: plt.Axes,
+    arr: np.ndarray,
+    *,
+    title: str,
+    cmap: str = "jet",
+    point_size: float = 10,
+    colorbar_limits: tuple[float, float] = (0.0, 1.0),
+):
+    """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
+    lon_locator = (-180, -90, 0, 90, 180)
+    lat_locator = (-80, -40, 0, 40, 80)
+
+    prepare_layout(ax, lon_locator, lat_locator)
+    sctr = ax.scatter(
+        arr["lon"],
+        arr["lat"],
+        c=arr["vals"],
+        alpha=1,
+        marker="s",
+        s=point_size,
+        zorder=3,
+        vmin=colorbar_limits[0],
+        vmax=colorbar_limits[1],
+        cmap=cmap,
+        transform=ccrs.PlateCarree(),
+    )
+    ax.set_title(title)
+    return sctr
