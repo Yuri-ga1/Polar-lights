@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from math import ceil
+from matplotlib.gridspec import GridSpecFromSubplotSpec
 
 import cartopy.crs as ccrs
 from app.visualization.plot_utils import (
@@ -157,35 +160,63 @@ class PlotConstructor:
             return data, descriptor.column
 
         return data, None
+    
+    def _add_map_axis(
+        self,
+        fig: plt.Figure,
+        inner_grid: GridSpecFromSubplotSpec,
+        map_idx: int,
+        maps_count: int,
+        ncols: int,
+    ) -> plt.Axes:
+        is_last = map_idx == maps_count - 1
+        is_odd = maps_count % 2 == 1
+
+        row = map_idx // ncols
+        col = map_idx % ncols
+
+        if is_last and is_odd and ncols > 1:
+            return fig.add_subplot(
+                inner_grid[row, :],
+                projection=ccrs.PlateCarree(),
+            )
+
+        return fig.add_subplot(
+            inner_grid[row, col],
+            projection=ccrs.PlateCarree(),
+        )
 
     def _plot_map(self, ax: plt.Axes, descriptor: PlotDescriptor, data: Any, params: dict[str, Any]) -> None:
         normalized_name = self._normalize_name(descriptor.name)
 
         if isinstance(data, dict) and data:
-            plot_time = params.get("time")
-            if plot_time is None:
-                plot_time = sorted(data.keys())[0]
-            if plot_time not in data:
-                raise ValueError(f"Time '{plot_time}' is unavailable for map '{descriptor.name}'.")
-            arr = data[plot_time]
+            plot_times = params.get("time")
+            for plot_time_str in plot_times:
+                plot_time = datetime.strptime(plot_time_str, '%Y-%m-%d %H:%M:%S')
+                plot_time = plot_time.replace(tzinfo=timezone.utc)
+                if plot_time is None:
+                    plot_time = sorted(data.keys())[0]
+                if plot_time not in data:
+                    raise ValueError(f"Time '{plot_time}' is unavailable for map '{descriptor.name}'.")
+                arr = data[plot_time]
 
-            if normalized_name == "gim":
-                plot_gim_map_on_ax(
-                    ax,
-                    arr,
-                    title=f"{descriptor.name} ({plot_time})",
-                    cmap=params.get("cmap", "jet"),
-                )
-            else:
-                limits = (0.0, 80.0) if normalized_name in {"adjusted tec", "tec adjusted"} else (0.0, 1.0)
-                plot_simurg_map_on_ax(
-                    ax,
-                    arr,
-                    title=f"{descriptor.name} ({plot_time})",
-                    cmap=params.get("cmap", "jet"),
-                    point_size=params.get("s", 8),
-                    colorbar_limits=limits,
-                )
+                if normalized_name == "gim":
+                    plot_gim_map_on_ax(
+                        ax,
+                        arr,
+                        title=f"{descriptor.name} ({plot_time})",
+                        cmap=params.get("cmap", "jet"),
+                    )
+                else:
+                    limits = (0.0, 80.0) if normalized_name in {"adjusted tec", "tec adjusted"} else (0.0, 1.0)
+                    plot_simurg_map_on_ax(
+                        ax,
+                        arr,
+                        title=f"{descriptor.name} ({plot_time})",
+                        cmap=params.get("cmap", "jet"),
+                        point_size=params.get("s", 8),
+                        colorbar_limits=limits,
+                    )
             return
 
         if isinstance(data, pd.DataFrame):
@@ -291,21 +322,12 @@ class PlotConstructor:
         *,
         figsize: tuple[float, float] | None = None,
     ) -> tuple[plt.Figure, list[plt.Axes]]:
-        """Plot requested charts vertically in the same order as input list.
-
-        Parameters
-        ----------
-        plots:
-            Sequence of plot names or dictionaries:
-            - "Dst"
-            - {"name": "Kp", "params": {"bins": 9}}
-        figsize:
-            Optional matplotlib figure size. Defaults to (16, 4 * number_of_plots).
-        """
+        """Plot requested charts vertically in the same order as input list."""
         if not plots:
             raise ValueError("plots list is empty.")
 
         parsed: list[tuple[PlotDescriptor, dict[str, Any], Any, str | None]] = []
+
         for item in plots:
             if isinstance(item, str):
                 name = item
@@ -324,19 +346,109 @@ class PlotConstructor:
             parsed.append((descriptor, params, data, column))
 
         fig = plt.figure(figsize=figsize or (16, 4 * len(parsed)))
+        outer_grid = fig.add_gridspec(len(parsed), 1)
+
         axes: list[plt.Axes] = []
 
-        for idx, (descriptor, params, data, column) in enumerate(parsed, start=1):
+        for idx, (descriptor, params, data, column) in enumerate(parsed):
+            subplot_spec = outer_grid[idx]
+
             if descriptor.plot_type == "map":
-                ax = fig.add_subplot(len(parsed), 1, idx, projection=ccrs.PlateCarree())
-                self._plot_map(ax, descriptor, data, params)
+                normalized_name = self._normalize_name(descriptor.name)
+
+                if isinstance(data, dict) and data:
+                    plot_times = params.get("time")
+
+                    if plot_times is None:
+                        plot_times = [sorted(data.keys())[0]]
+
+                    if isinstance(plot_times, str):
+                        plot_times = [plot_times]
+
+                    prepared_times: list[datetime] = []
+
+                    for plot_time in plot_times:
+                        if isinstance(plot_time, str):
+                            prepared_time = datetime.strptime(
+                                plot_time,
+                                "%Y-%m-%d %H:%M:%S",
+                            ).replace(tzinfo=timezone.utc)
+                        elif isinstance(plot_time, datetime):
+                            prepared_time = plot_time
+                        else:
+                            raise ValueError(
+                                f"Unsupported time value type: {type(plot_time)!r}"
+                            )
+
+                        if prepared_time not in data:
+                            raise ValueError(
+                                f"Time '{prepared_time}' is unavailable for map '{descriptor.name}'."
+                            )
+
+                        prepared_times.append(prepared_time)
+
+                    ncols = int(params.get("ncols", 2))
+                    nrows = max(1, ceil(len(prepared_times) / ncols))
+
+                    inner_grid = GridSpecFromSubplotSpec(
+                        nrows,
+                        ncols,
+                        subplot_spec=subplot_spec,
+                        wspace=0.08,
+                        hspace=0.25,
+                    )
+
+                    for map_idx, plot_time in enumerate(prepared_times):
+                        ax = self._add_map_axis(
+                            fig=fig,
+                            inner_grid=inner_grid,
+                            map_idx=map_idx,
+                            maps_count=len(prepared_times),
+                            ncols=ncols,
+                        )
+
+                        if normalized_name == "gim":
+                            plot_gim_map_on_ax(
+                                ax,
+                                data[plot_time],
+                                title=f"{descriptor.name} ({plot_time})",
+                                cmap=params.get("cmap", "jet"),
+                            )
+                        else:
+                            limits = (
+                                (0.0, 80.0)
+                                if normalized_name in {"adjusted tec", "tec adjusted"}
+                                else (0.0, 1.0)
+                            )
+
+                            plot_simurg_map_on_ax(
+                                ax,
+                                data[plot_time],
+                                title=f"{descriptor.name} ({plot_time})",
+                                cmap=params.get("cmap", "jet"),
+                                point_size=params.get("s", 8),
+                                colorbar_limits=limits,
+                            )
+
+                        axes.append(ax)
+
+                else:
+                    ax = fig.add_subplot(
+                        subplot_spec,
+                        projection=ccrs.PlateCarree(),
+                    )
+                    self._plot_map(ax, descriptor, data, params)
+                    axes.append(ax)
+
             else:
-                ax = fig.add_subplot(len(parsed), 1, idx)
+                ax = fig.add_subplot(subplot_spec)
+
                 if descriptor.plot_type == "histogram":
                     self._plot_histogram(ax, descriptor, data, column, params)
                 else:
                     self._plot_timeseries(ax, descriptor, data, column, params)
-            axes.append(ax)
+
+                axes.append(ax)
 
         fig.tight_layout()
         return fig, axes
