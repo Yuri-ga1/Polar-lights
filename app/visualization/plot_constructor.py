@@ -85,6 +85,33 @@ class PlotConstructor:
         first_value = next(iter(data.values()))
         dtype_names = getattr(getattr(first_value, "dtype", None), "names", None)
         return bool(dtype_names and {"lat", "lon", "vals"}.issubset(set(dtype_names)))
+    
+    @staticmethod
+    def _resolve_x_range(params: dict[str, Any]) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+        left = params.get("date_start") or params.get("x_start")
+        right = params.get("date_end") or params.get("x_end")
+
+        if left is None or right is None:
+            return None
+
+        x_start = pd.to_datetime(left, errors="coerce")
+        x_end = pd.to_datetime(right, errors="coerce")
+
+        if pd.isna(x_start) or pd.isna(x_end):
+            raise ValueError("Invalid x-axis range. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS for date_start/date_end.")
+
+        if x_end < x_start:
+            raise ValueError("x-axis range is invalid: date_end must be greater than or equal to date_start.")
+
+        return pd.Timestamp(x_start), pd.Timestamp(x_end)
+
+    @classmethod
+    def _apply_x_range(cls, ax: plt.Axes, params: dict[str, Any]) -> None:
+        x_range = cls._resolve_x_range(params)
+        if x_range is None:
+            return
+        x_start, x_end = x_range
+        ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
 
     def _build_registry(self) -> dict[str, PlotDescriptor]:
         registry: dict[str, PlotDescriptor] = {}
@@ -292,6 +319,7 @@ class PlotConstructor:
             color=params.get("color", "tab:green"),
             title=descriptor.name,
         )
+        self._apply_x_range(ax, params)
 
 
     @staticmethod
@@ -339,6 +367,7 @@ class PlotConstructor:
                 title=descriptor.name,
                 ylabel=y_col,
             )
+            self._apply_x_range(ax, params)
 
             for marker in params.get("time_markers", []):
                 marker_local = marker.tz_convert(None) if marker.tzinfo is not None else marker
