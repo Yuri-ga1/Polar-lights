@@ -279,6 +279,20 @@ class PlotConstructor:
             title=descriptor.name,
         )
 
+
+    @staticmethod
+    def _parse_time_markers(raw_time: Any) -> list[pd.Timestamp]:
+        if raw_time is None:
+            return []
+        values = raw_time if isinstance(raw_time, (list, tuple, set)) else [raw_time]
+        markers: list[pd.Timestamp] = []
+        for value in values:
+            ts = pd.to_datetime(value, errors="coerce", utc=True)
+            if pd.isna(ts):
+                continue
+            markers.append(pd.Timestamp(ts))
+        return markers
+
     def _plot_timeseries(
         self,
         ax: plt.Axes,
@@ -306,6 +320,16 @@ class PlotConstructor:
                 title=descriptor.name,
                 ylabel=y_col,
             )
+
+            for marker in self._parse_time_markers(params.get("time")):
+                marker_local = marker.tz_convert(None) if marker.tzinfo is not None else marker
+                ax.axvline(
+                    marker_local,
+                    color=params.get("time_marker_color", "tab:red"),
+                    linestyle=params.get("time_marker_linestyle", "--"),
+                    linewidth=params.get("time_marker_linewidth", 1.2),
+                    alpha=params.get("time_marker_alpha", 0.8),
+                )
             return
 
         if isinstance(data, (Sequence, np.ndarray)) and not isinstance(data, (str, bytes)):
