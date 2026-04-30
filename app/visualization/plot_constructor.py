@@ -161,6 +161,20 @@ class PlotConstructor:
 
         return data, None
     
+    def _collect_map_time_markers(
+        self,
+        parsed: list[tuple[PlotDescriptor, dict[str, Any], Any, str | None]],
+    ) -> list[pd.Timestamp]:
+        markers: list[pd.Timestamp] = []
+
+        for descriptor, params, _, _ in parsed:
+            if descriptor.plot_type != "map":
+                continue
+
+            markers.extend(self._parse_time_markers(params.get("time")))
+
+        return markers
+    
     def _add_map_axis(
         self,
         fig: plt.Figure,
@@ -303,13 +317,18 @@ class PlotConstructor:
     ) -> None:
         if isinstance(data, pd.DataFrame):
             time_col = self._find_time_column(data)
+
             if time_col is None:
                 raise ValueError(
-                    f"Timeseries '{descriptor.name}' needs one of {TIME_COLUMN_CANDIDATES}, but none found in '{descriptor.source_key}'."
+                    f"Timeseries '{descriptor.name}' needs one of {TIME_COLUMN_CANDIDATES}, "
+                    f"but none found in '{descriptor.source_key}'."
                 )
+
             y_col = column or next((c for c in data.columns if c != time_col), None)
+
             if y_col is None:
                 raise ValueError(f"No value column found for timeseries '{descriptor.name}'.")
+
             plot_timeseries_on_ax(
                 ax,
                 data,
@@ -321,8 +340,9 @@ class PlotConstructor:
                 ylabel=y_col,
             )
 
-            for marker in self._parse_time_markers(params.get("time")):
+            for marker in params.get("time_markers", []):
                 marker_local = marker.tz_convert(None) if marker.tzinfo is not None else marker
+
                 ax.axvline(
                     marker_local,
                     color=params.get("time_marker_color", "tab:red"),
@@ -330,6 +350,7 @@ class PlotConstructor:
                     linewidth=params.get("time_marker_linewidth", 1.2),
                     alpha=params.get("time_marker_alpha", 0.8),
                 )
+
             return
 
         if isinstance(data, (Sequence, np.ndarray)) and not isinstance(data, (str, bytes)):
@@ -368,6 +389,8 @@ class PlotConstructor:
             descriptor = self._resolve_descriptor(name)
             data, column = self._extract_plot_data(descriptor)
             parsed.append((descriptor, params, data, column))
+        
+        time_markers = self._collect_map_time_markers(parsed)
 
         fig = plt.figure(figsize=figsize or (16, 4 * len(parsed)))
         outer_grid = fig.add_gridspec(len(parsed), 1)
@@ -470,7 +493,10 @@ class PlotConstructor:
                 if descriptor.plot_type == "histogram":
                     self._plot_histogram(ax, descriptor, data, column, params)
                 else:
-                    self._plot_timeseries(ax, descriptor, data, column, params)
+                    timeseries_params = dict(params)
+                    timeseries_params["time_markers"] = time_markers
+
+                    self._plot_timeseries(ax, descriptor, data, column, timeseries_params)
 
                 axes.append(ax)
 
