@@ -324,6 +324,28 @@ class IonosondeDownloader(BaseDownloader):
         dmuf: int,
     ) -> StationDownloadReport:
         """Download data for explicitly selected station."""
+        if filename is None:
+            filename_local = (
+                f"{station}_{'_'.join(char_names)}_"
+                f"{center.strftime('%Y%m%d')}.txt"
+            )
+        else:
+            root, ext = os.path.splitext(filename)
+            ext = ext or ".txt"
+            filename_local = f"{root}_{station}{ext}"
+
+        existing_file = self._get_existing_file(filename_local)
+        if existing_file:
+            return StationDownloadReport(
+                station=station,
+                start=d0,
+                end=d1,
+                requested_days=requested_days,
+                downloaded_days=requested_days,
+                output_path=existing_file,
+                skipped_reason=None,
+            )
+
         from_dt = datetime.combine(d0, datetime.min.time())
         to_dt = datetime.combine(d1, datetime.max.time().replace(microsecond=0))
 
@@ -368,16 +390,6 @@ class IonosondeDownloader(BaseDownloader):
                     f"< min_days_present={min_days_present})"
                 ),
             )
-
-        if filename is None:
-            filename_local = (
-                f"{station}_{'_'.join(char_names)}_"
-                f"{center.strftime('%Y%m%d')}.txt"
-            )
-        else:
-            root, ext = os.path.splitext(filename)
-            ext = ext or ".txt"
-            filename_local = f"{root}_{station}{ext}"
 
         out_path = self._write_text_file(filename_local, text)
 

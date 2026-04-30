@@ -125,16 +125,6 @@ class NmdbDownloader(BaseDownloader):
         else:
             params["allstations"] = 1
 
-        try:
-            response = requests.get(self.BASE_URL, params=params, timeout=120)
-            response.raise_for_status()
-        except Exception as exc:
-            raise RuntimeError(f"Ошибка при запросе NMDB: {exc}") from exc
-
-        text: str = response.text
-        if not text or not text.strip():
-            raise RuntimeError("NMDB вернул пустой ответ.")
-
         if filename is None:
             # генерируем имя на основе станций и дат
             if not stations or len(stations) == 0:
@@ -146,5 +136,19 @@ class NmdbDownloader(BaseDownloader):
                 f"{start_dt.strftime('%Y%m%d%H%M')}-"
                 f"{end_dt.strftime('%Y%m%d%H%M')}.txt"
             )
+
+        existing_file = self._get_existing_file(filename)
+        if existing_file:
+            return existing_file
+
+        try:
+            response = requests.get(self.BASE_URL, params=params, timeout=120)
+            response.raise_for_status()
+        except Exception as exc:
+            raise RuntimeError(f"Ошибка при запросе NMDB: {exc}") from exc
+
+        text: str = response.text
+        if not text or not text.strip():
+            raise RuntimeError("NMDB вернул пустой ответ.")
 
         return self._write_text_file(filename, text)
