@@ -38,4 +38,12 @@ class GimDownloader(BaseDownloader):
             gim_type=self.gim_type,
         )
 
-        return self._download_result(url=url, filename=filename)
+        existing_file = (
+            self._get_existing_file(filename)
+            or self._get_existing_file(f"{filename}.Z")
+        )
+        if existing_file:
+            print(f"Using cached file: {existing_file}")
+            return existing_file
+
+        return self._download_result(url=url, filename=f"{filename}.Z")
