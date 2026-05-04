@@ -1,812 +1,94 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
-from datetime import datetime, timezone
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from math import ceil
-from matplotlib.gridspec import GridSpecFromSubplotSpec
 
 import cartopy.crs as ccrs
-from app.visualization.plot_utils import (
-    plot_histogram_on_ax,
-    plot_kp_bars,
-    plot_timeseries_on_ax,
-)
-from app.visualization.roti_plotter import plot_simurg_map_on_ax
-from app.visualization.gim_plotter import plot_gim_map_on_ax
-from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
+import matplotlib.pyplot as plt
+import pandas as pd
 
-
-MAP_PLOT_NAMES = {
-    "roti",
-    "gim",
-    "adjusted tec",
-    "tec adjusted",
-    "keogram",
-    "aurora observation",
-    "aurora",
-}
-HIST_PLOT_NAMES = {"kp"}
-SOURCE_PLOT_NAMES = {"ionosonde", "cosmic ray", "cosmic rays"}
-TIME_COLUMN_CANDIDATES = ("datetime", "DateTime", "time", "timestamp")
-IONOSONDE_COLUMNS = ("dfoF2", "dhmF2")
-
-
-@dataclass(frozen=True)
-class PlotDescriptor:
-    """Description of one available plot and how to read its data from processor results."""
-
-    name: str
-    plot_type: str
-    source_key: str
-    column: str | None = None
-
-@dataclass(frozen=True)
-class PlotPanel:
-    """One global figure row.
-
-    A panel can contain:
-    - one regular timeseries/histogram axis;
-    - one map row with up to ncols map axes;
-    - one ionosonde parameter;
-    - one cosmic ray station.
-    """
-
-    descriptor: PlotDescriptor
-    params: dict[str, Any]
-    data: Any
-    column: str | None = None
-    panel_name: str | None = None
-    map_times: tuple[datetime, ...] = ()
+from app.visualization.plot_constructor_pack.metadata import PlotMetadataBuilder
+from app.visualization.plot_constructor_pack.models import ParsedPlot
+from app.visualization.plot_constructor_pack.panels import PlotPanelBuilder
+from app.visualization.plot_constructor_pack.registry import PlotRegistry
+from app.visualization.plot_constructor_pack.renderers import PlotRenderer
 
 
 class PlotConstructor:
-    """Build stacked plots from processor outputs using plot names.
-
-    Parameters
-    ----------
-    processor_results:
-        Mapping of source name -> processor output. Typical values are pandas DataFrame,
-        dict[datetime, numpy.ndarray] map-like products, or other series-like containers.
-    """
+    """Build stacked plots from processor outputs using plot names."""
 
     def __init__(self, processor_results: Mapping[str, Any]) -> None:
         self.processor_results = dict(processor_results)
-        self._registry = self._build_registry()
 
-    @staticmethod
-    def _normalize_name(name: str) -> str:
-        return " ".join(name.strip().lower().replace("_", " ").split())
-
-    @classmethod
-    def _resolve_plot_type(cls, name: str, fallback: str = "timeseries") -> str:
-        normalized = cls._normalize_name(name)
-        if normalized in MAP_PLOT_NAMES:
-            return "map"
-        if normalized in HIST_PLOT_NAMES:
-            return "histogram"
-        return fallback
-
-    @staticmethod
-    def _find_time_column(df: pd.DataFrame) -> str | None:
-        for candidate in TIME_COLUMN_CANDIDATES:
-            if candidate in df.columns:
-                return candidate
-        return None
-
-    @staticmethod
-    def _is_map_dict(data: Any) -> bool:
-        if not isinstance(data, dict) or not data:
-            return False
-        first_value = next(iter(data.values()))
-        dtype_names = getattr(getattr(first_value, "dtype", None), "names", None)
-        return bool(dtype_names and {"lat", "lon", "vals"}.issubset(set(dtype_names)))
-    
-    @staticmethod
-    def _resolve_x_range(params: dict[str, Any]) -> tuple[pd.Timestamp, pd.Timestamp] | None:
-        left = params.get("date_start") or params.get("x_start")
-        right = params.get("date_end") or params.get("x_end")
-
-        if left is None or right is None:
-            return None
-
-        x_start = pd.to_datetime(left, errors="coerce")
-        x_end = pd.to_datetime(right, errors="coerce")
-
-        if pd.isna(x_start) or pd.isna(x_end):
-            raise ValueError("Invalid x-axis range. Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS for date_start/date_end.")
-
-        if x_end < x_start:
-            raise ValueError("x-axis range is invalid: date_end must be greater than or equal to date_start.")
-
-        return pd.Timestamp(x_start), pd.Timestamp(x_end)
-
-    @classmethod
-    def _apply_x_range(cls, ax: plt.Axes, params: dict[str, Any]) -> None:
-        x_range = cls._resolve_x_range(params)
-        if x_range is None:
-            return
-        x_start, x_end = x_range
-        ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
-
-    @staticmethod
-    def _chunked(values: Sequence[Any], chunk_size: int) -> list[list[Any]]:
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be positive.")
-
-        return [
-            list(values[idx:idx + chunk_size])
-            for idx in range(0, len(values), chunk_size)
-        ]
-    
-    @staticmethod
-    def _prepare_map_time(plot_time: str | datetime) -> datetime:
-        if isinstance(plot_time, str):
-            return datetime.strptime(
-                plot_time,
-                "%Y-%m-%d %H:%M:%S",
-            ).replace(tzinfo=timezone.utc)
-
-        if isinstance(plot_time, datetime):
-            return plot_time
-
-        raise ValueError(f"Unsupported time value type: {type(plot_time)!r}")
-
-    def _build_plot_info(self, descriptor: PlotDescriptor) -> str | dict[str, Any]:
-        data = self.processor_results.get(descriptor.source_key)
-
-        if isinstance(data, dict) and data:
-            times = sorted(data.keys())
-
-            info: dict[str, Any] = {
-                descriptor.name: {
-                    "type": descriptor.plot_type,
-                    "time_start": str(times[0]),
-                    "time_end": str(times[-1]),
-                }
-            }
-
-            if len(times) > 1:
-                step = times[1] - times[0]
-                info[descriptor.name]["time_step"] = str(step)
-
-            return info
-
-        if isinstance(data, pd.DataFrame):
-            normalized_name = self._normalize_name(descriptor.name)
-
-            if normalized_name in {"cosmic ray", "cosmic rays"}:
-                stations = [
-                    column
-                    for column in data.columns
-                    if column not in TIME_COLUMN_CANDIDATES
-                ]
-
-                return {
-                    descriptor.name: {
-                        "type": descriptor.plot_type,
-                        "stations": stations,
-                    }
-                }
-
-            if normalized_name == "ionosonde":
-                return {
-                    descriptor.name: {
-                        "type": descriptor.plot_type,
-                        "parameters": list(IONOSONDE_COLUMNS),
-                    }
-                }
-
-            time_col = self._find_time_column(data)
-            if time_col is not None and not data.empty:
-                time_values = pd.to_datetime(data[time_col], errors="coerce").dropna()
-
-                if not time_values.empty:
-                    return {
-                        descriptor.name: {
-                            "type": descriptor.plot_type,
-                            "time_start": str(time_values.min()),
-                            "time_end": str(time_values.max()),
-                        }
-                    }
-
-        return descriptor.name
-
-    def _build_registry(self) -> dict[str, PlotDescriptor]:
-        registry: dict[str, PlotDescriptor] = {}
-
-        for source_key, data in self.processor_results.items():
-            source_type = self._resolve_plot_type(source_key)
-            normalized_source = self._normalize_name(source_key)
-
-            if isinstance(data, pd.DataFrame):
-                # Register explicit source-level plots that should be requested as one plot,
-                # instead of being available only through their individual DataFrame columns.
-                if normalized_source in SOURCE_PLOT_NAMES:
-                    registry.setdefault(
-                        normalized_source,
-                        PlotDescriptor(
-                            name=source_key,
-                            plot_type=source_type,
-                            source_key=source_key,
-                        ),
-                    )
-                    continue
-
-                # Register source name itself for map-like aurora observations in tabular form.
-                if source_type == "map":
-                    registry.setdefault(
-                        normalized_source,
-                        PlotDescriptor(name=source_key, plot_type="map", source_key=source_key),
-                    )
-
-                for column in data.columns:
-                    if column in TIME_COLUMN_CANDIDATES:
-                        continue
-                    normalized_col = self._normalize_name(column)
-                    plot_type = self._resolve_plot_type(column)
-                    registry.setdefault(
-                        normalized_col,
-                        PlotDescriptor(
-                            name=column,
-                            plot_type=plot_type,
-                            source_key=source_key,
-                            column=column,
-                        ),
-                    )
-            elif self._is_map_dict(data):
-                registry.setdefault(
-                    normalized_source,
-                    PlotDescriptor(name=source_key, plot_type="map", source_key=source_key),
-                )
-            else:
-                registry.setdefault(
-                    normalized_source,
-                    PlotDescriptor(name=source_key, plot_type=source_type, source_key=source_key),
-                )
-
-        return registry
+        self.registry = PlotRegistry(self.processor_results)
+        self.metadata_builder = PlotMetadataBuilder(self.processor_results, self.registry)
+        self.panel_builder = PlotPanelBuilder()
+        self.renderer = PlotRenderer(self.registry)
 
     def available_plots(self, with_details: bool = True) -> list[str | dict[str, Any]]:
-        """Return available plot names.
-
-        If with_details=True, returns additional metadata for complex sources:
-        - map data: start/end time and time step
-        - cosmic ray: available station list
-        - ionosonde: plotted parameters
-        """
-        if not with_details:
-            return sorted(descriptor.name for descriptor in self._registry.values())
-
-        return [
-            self._build_plot_info(descriptor)
-            for descriptor in sorted(self._registry.values(), key=lambda item: item.name)
-        ]
-
-    def _resolve_descriptor(self, requested_name: str) -> PlotDescriptor:
-        key = self._normalize_name(requested_name)
-        descriptor = self._registry.get(key)
-        if descriptor is None:
-            available = ", ".join(self.available_plots())
-            raise ValueError(f"Unknown plot '{requested_name}'. Available plots: {available}")
-        return descriptor
-    
-    def _resolve_map_times(
-        self,
-        data: dict[datetime, Any],
-        params: dict[str, Any],
-        descriptor: PlotDescriptor,
-    ) -> list[datetime]:
-        plot_times = params.get("time")
-
-        if plot_times is None:
-            plot_times = [sorted(data.keys())[0]]
-
-        if isinstance(plot_times, str):
-            plot_times = [plot_times]
-
-        prepared_times: list[datetime] = []
-
-        for plot_time in plot_times:
-            prepared_time = self._prepare_map_time(plot_time)
-
-            if prepared_time not in data:
-                raise ValueError(
-                    f"Time '{prepared_time}' is unavailable for map '{descriptor.name}'."
-                )
-
-            prepared_times.append(prepared_time)
-
-        return prepared_times
-    
-    def _expand_plot_panels(
-        self,
-        parsed: list[tuple[PlotDescriptor, dict[str, Any], Any, str | None]],
-    ) -> list[PlotPanel]:
-        panels: list[PlotPanel] = []
-
-        for descriptor, params, data, column in parsed:
-            normalized_name = self._normalize_name(descriptor.name)
-
-            if descriptor.plot_type == "map" and isinstance(data, dict) and data:
-                prepared_times = self._resolve_map_times(
-                    data=data,
-                    params=params,
-                    descriptor=descriptor,
-                )
-
-                ncols = int(params.get("ncols", 2))
-                time_groups = self._chunked(prepared_times, ncols)
-
-                for time_group in time_groups:
-                    panels.append(
-                        PlotPanel(
-                            descriptor=descriptor,
-                            params=params,
-                            data=data,
-                            column=column,
-                            panel_name=descriptor.name,
-                            map_times=tuple(time_group),
-                        )
-                    )
-
-                continue
-
-            if normalized_name == "ionosonde" and isinstance(data, pd.DataFrame):
-                for ionosonde_column in IONOSONDE_COLUMNS:
-                    if ionosonde_column not in data.columns:
-                        raise ValueError(
-                            f"Ionosonde source is missing required column: {ionosonde_column}"
-                        )
-
-                    panels.append(
-                        PlotPanel(
-                            descriptor=descriptor,
-                            params=params,
-                            data=data,
-                            column=ionosonde_column,
-                            panel_name=f"{descriptor.name}: {ionosonde_column}",
-                        )
-                    )
-
-                continue
-
-            if normalized_name in {"cosmic ray", "cosmic rays"} and isinstance(data, pd.DataFrame):
-                layout = self._normalize_name(
-                    str(params.get("station_layout", params.get("layout", "single")))
-                )
-
-                if layout not in {"single", "separate"}:
-                    raise ValueError(
-                        "Cosmic ray station layout must be 'single' or 'separate'."
-                    )
-
-                stations = self._resolve_cosmic_ray_stations(data, params)
-
-                if layout == "separate":
-                    for station in stations:
-                        panels.append(
-                            PlotPanel(
-                                descriptor=descriptor,
-                                params=params,
-                                data=data,
-                                column=station,
-                                panel_name=f"{descriptor.name}: {station}",
-                            )
-                        )
-                else:
-                    panels.append(
-                        PlotPanel(
-                            descriptor=descriptor,
-                            params=params,
-                            data=data,
-                            column=None,
-                            panel_name=descriptor.name,
-                        )
-                    )
-
-                continue
-
-            panels.append(
-                PlotPanel(
-                    descriptor=descriptor,
-                    params=params,
-                    data=data,
-                    column=column,
-                    panel_name=descriptor.name,
-                )
-            )
-
-        return panels
-    
-    def _draw_map_on_axis(
-        self,
-        ax: plt.Axes,
-        descriptor: PlotDescriptor,
-        data: dict[datetime, Any],
-        plot_time: datetime,
-        params: dict[str, Any],
-    ) -> None:
-        normalized_name = self._normalize_name(descriptor.name)
-        arr = data[plot_time]
-
-        if normalized_name == "gim":
-            plot_gim_map_on_ax(
-                ax,
-                arr,
-                title=f"{descriptor.name} ({plot_time})",
-                cmap=params.get("cmap", "jet"),
-            )
-            return
-
-        limits = (
-            (0.0, 80.0)
-            if normalized_name in {"adjusted tec", "tec adjusted"}
-            else (0.0, 1.0)
-        )
-
-        plot_simurg_map_on_ax(
-            ax,
-            arr,
-            title=f"{descriptor.name} ({plot_time})",
-            cmap=params.get("cmap", "jet"),
-            point_size=params.get("s", 8),
-            colorbar_limits=limits,
-        )
-
-    def _plot_map_panel(
-        self,
-        fig: plt.Figure,
-        subplot_spec,
-        panel: PlotPanel,
-    ) -> list[plt.Axes]:
-        map_times = list(panel.map_times)
-
-        if not map_times:
-            raise ValueError(f"Map panel '{panel.descriptor.name}' has no map times.")
-
-        ncols_requested = int(panel.params.get("ncols", 2))
-        ncols = max(1, min(ncols_requested, len(map_times)))
-
-        inner_grid = GridSpecFromSubplotSpec(
-            1,
-            ncols,
-            subplot_spec=subplot_spec,
-            wspace=0.08,
-            hspace=0.25,
-        )
-
-        axes: list[plt.Axes] = []
-
-        for map_idx, plot_time in enumerate(map_times):
-            if len(map_times) == 1 and ncols_requested > 1:
-                ax = fig.add_subplot(
-                    inner_grid[0, :],
-                    projection=ccrs.PlateCarree(),
-                )
-            else:
-                ax = fig.add_subplot(
-                    inner_grid[0, map_idx],
-                    projection=ccrs.PlateCarree(),
-                )
-
-            self._draw_map_on_axis(
-                ax=ax,
-                descriptor=panel.descriptor,
-                data=panel.data,
-                plot_time=plot_time,
-                params=panel.params,
-            )
-
-            axes.append(ax)
-
-        return axes
-    
-    def _plot_cosmic_ray_single_panel(
-        self,
-        ax: plt.Axes,
-        panel: PlotPanel,
-    ) -> None:
-        if not isinstance(panel.data, pd.DataFrame):
-            raise ValueError("Cosmic ray panel requires pandas DataFrame data.")
-
-        stations = self._resolve_cosmic_ray_stations(panel.data, panel.params)
-        if not stations:
-            raise ValueError("Cosmic ray source has no station columns to plot.")
-
-        time_col = self._find_time_column(panel.data)
-        if time_col is None:
-            raise ValueError(
-                f"Timeseries '{panel.descriptor.name}' needs one of {TIME_COLUMN_CANDIDATES}, "
-                f"but none found in '{panel.descriptor.source_key}'."
-            )
-
-        for station in stations:
-            ax.plot(
-                panel.data[time_col],
-                panel.data[station],
-                linewidth=panel.params.get("linewidth", 1.5),
-                label=station,
-            )
-
-        ax.set_title(panel.panel_name or panel.descriptor.name)
-        ax.set_ylabel(panel.params.get("ylabel", "%"))
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-        self._apply_x_range(ax, panel.params)
-
-    def _plot_regular_panel(
-        self,
-        ax: plt.Axes,
-        panel: PlotPanel,
-        time_markers: list[pd.Timestamp],
-    ) -> None:
-        descriptor = panel.descriptor
-        data = panel.data
-        column = panel.column
-        params = dict(panel.params)
-        params["time_markers"] = time_markers
-
-        normalized_name = self._normalize_name(descriptor.name)
-
-        if normalized_name in {"cosmic ray", "cosmic rays"} and column is None:
-            self._plot_cosmic_ray_single_panel(ax, panel)
-            return
-
-        if descriptor.plot_type == "histogram":
-            self._plot_histogram(ax, descriptor, data, column, panel.params)
-            return
-
-        self._plot_timeseries(ax, descriptor, data, column, params)
-
-        if panel.panel_name:
-            ax.set_title(panel.panel_name)
-
-    def _extract_plot_data(self, descriptor: PlotDescriptor) -> tuple[Any, str | None]:
-        if descriptor.source_key not in self.processor_results:
-            raise ValueError(
-                f"Missing data source '{descriptor.source_key}' for plot '{descriptor.name}'."
-            )
-
-        data = self.processor_results[descriptor.source_key]
-        if data is None:
-            raise ValueError(
-                f"Data for plot '{descriptor.name}' is missing (source '{descriptor.source_key}' is None)."
-            )
-
-        if isinstance(data, pd.DataFrame) and descriptor.column is not None:
-            if descriptor.column not in data.columns:
-                raise ValueError(
-                    f"Column '{descriptor.column}' required by '{descriptor.name}' is absent in source '{descriptor.source_key}'."
-                )
-            return data, descriptor.column
-
-        return data, None
-    
-    def _collect_map_time_markers(
-        self,
-        parsed: list[tuple[PlotDescriptor, dict[str, Any], Any, str | None]],
-    ) -> list[pd.Timestamp]:
-        markers: list[pd.Timestamp] = []
-
-        for descriptor, params, _, _ in parsed:
-            if descriptor.plot_type != "map":
-                continue
-
-            markers.extend(self._parse_time_markers(params.get("time")))
-
-        return markers
-    
-    def _add_map_axis(
-        self,
-        fig: plt.Figure,
-        inner_grid: GridSpecFromSubplotSpec,
-        map_idx: int,
-        maps_count: int,
-        ncols: int,
-    ) -> plt.Axes:
-        is_last = map_idx == maps_count - 1
-        is_odd = maps_count % 2 == 1
-
-        row = map_idx // ncols
-        col = map_idx % ncols
-
-        if is_last and is_odd and ncols > 1:
-            return fig.add_subplot(
-                inner_grid[row, :],
-                projection=ccrs.PlateCarree(),
-            )
-
-        return fig.add_subplot(
-            inner_grid[row, col],
-            projection=ccrs.PlateCarree(),
-        )
-
-    def _plot_map(self, ax: plt.Axes, descriptor: PlotDescriptor, data: Any, params: dict[str, Any]) -> None:
-        normalized_name = self._normalize_name(descriptor.name)
-
-        if isinstance(data, dict) and data:
-            plot_times = params.get("time")
-            for plot_time_str in plot_times:
-                plot_time = datetime.strptime(plot_time_str, '%Y-%m-%d %H:%M:%S')
-                plot_time = plot_time.replace(tzinfo=timezone.utc)
-                if plot_time is None:
-                    plot_time = sorted(data.keys())[0]
-                if plot_time not in data:
-                    raise ValueError(f"Time '{plot_time}' is unavailable for map '{descriptor.name}'.")
-                arr = data[plot_time]
-
-                if normalized_name == "gim":
-                    plot_gim_map_on_ax(
-                        ax,
-                        arr,
-                        title=f"{descriptor.name} ({plot_time})",
-                        cmap=params.get("cmap", "jet"),
-                    )
-                else:
-                    limits = (0.0, 80.0) if normalized_name in {"adjusted tec", "tec adjusted"} else (0.0, 1.0)
-                    plot_simurg_map_on_ax(
-                        ax,
-                        arr,
-                        title=f"{descriptor.name} ({plot_time})",
-                        cmap=params.get("cmap", "jet"),
-                        point_size=params.get("s", 8),
-                        colorbar_limits=limits,
-                    )
-            return
-
-        if isinstance(data, pd.DataFrame):
-            if normalized_name in {"aurora observation", "aurora"}:
-                time_value = params.get("time")
-                if time_value is None:
-                    date_col = pd.to_datetime(data.get("date"), errors="coerce").dropna()
-                    if date_col.empty:
-                        raise ValueError(
-                            f"Map plot '{descriptor.name}' requires a valid 'date' column for aurora observations."
-                        )
-                    time_value = pd.Timestamp(date_col.iloc[0]).to_pydatetime()
-                plot_aurora_observations_on_ax(
-                    ax,
-                    data,
-                    time=time_value,
-                    show_geomagnetic_equator=params.get("show_geomagnetic_equator", True),
-                    show_terminator=params.get("show_terminator", True),
-                    point_radius=params.get("point_radius", 1.0),
-                )
-                ax.set_title(descriptor.name)
-                return
-
-            if not {"lat", "lon"}.issubset(set(data.columns)):
-                raise ValueError(
-                    f"Map plot '{descriptor.name}' requires 'lat' and 'lon' columns in source '{descriptor.source_key}'."
-                )
-            # fallback for other map-like tabular data: via existing SIMuRG-like renderer is not applicable
-            raise ValueError(
-                f"Map plot '{descriptor.name}' expects processor data in map dictionary format or aurora-observation table."
-            )
-            return
-
-        raise ValueError(f"Unsupported map data format for plot '{descriptor.name}'.")
-
-    def _plot_histogram(
-        self,
-        ax: plt.Axes,
-        descriptor: PlotDescriptor,
-        data: Any,
-        column: str | None,
-        params: dict[str, Any],
-    ) -> None:
-        if isinstance(data, pd.DataFrame):
-            series = data[column] if column else data.iloc[:, 0]
-        else:
-            series = pd.Series(data)
-
-        if self._normalize_name(descriptor.name) == "kp":
-            if isinstance(data, pd.DataFrame):
-                plot_kp_bars(ax=ax, kp_df=data, set_xlabel=False)
-                ax.set_title(descriptor.name)
-                return
-
-        plot_histogram_on_ax(
-            ax,
-            series,
-            bins=params.get("bins", 9),
-            color=params.get("color", "tab:green"),
-            title=descriptor.name,
-        )
-        self._apply_x_range(ax, params)
-
+        return self.metadata_builder.available_plots(with_details=with_details)
 
     @staticmethod
     def _parse_time_markers(raw_time: Any) -> list[pd.Timestamp]:
         if raw_time is None:
             return []
+
         values = raw_time if isinstance(raw_time, (list, tuple, set)) else [raw_time]
         markers: list[pd.Timestamp] = []
+
         for value in values:
             ts = pd.to_datetime(value, errors="coerce", utc=True)
             if pd.isna(ts):
                 continue
+
             markers.append(pd.Timestamp(ts))
+
         return markers
 
-    def _plot_timeseries(
+    def _collect_map_time_markers(self, parsed: list[ParsedPlot]) -> list[pd.Timestamp]:
+        markers: list[pd.Timestamp] = []
+
+        for item in parsed:
+            if item.descriptor.plot_type != "map":
+                continue
+
+            markers.extend(self._parse_time_markers(item.params.get("time")))
+
+        return markers
+
+    def _parse_plots(
         self,
-        ax: plt.Axes,
-        descriptor: PlotDescriptor,
-        data: Any,
-        column: str | None,
-        params: dict[str, Any],
-    ) -> None:
-        if isinstance(data, pd.DataFrame):
-            time_col = self._find_time_column(data)
+        plots: Sequence[str | Mapping[str, Any]],
+    ) -> list[ParsedPlot]:
+        parsed: list[ParsedPlot] = []
 
-            if time_col is None:
-                raise ValueError(
-                    f"Timeseries '{descriptor.name}' needs one of {TIME_COLUMN_CANDIDATES}, "
-                    f"but none found in '{descriptor.source_key}'."
+        for item in plots:
+            if isinstance(item, str):
+                name = item
+                params: dict[str, Any] = {}
+
+            elif isinstance(item, Mapping):
+                name = str(item.get("name", "")).strip()
+                params = dict(item.get("params", {}))
+
+            else:
+                raise ValueError(f"Unsupported plot spec type: {type(item)!r}")
+
+            if not name:
+                raise ValueError("Each plot spec must contain non-empty 'name'.")
+
+            descriptor = self.registry.resolve_descriptor(name)
+            data, column = self.registry.extract_plot_data(descriptor)
+
+            parsed.append(
+                ParsedPlot(
+                    descriptor=descriptor,
+                    params=params,
+                    data=data,
+                    column=column,
                 )
-
-            y_col = column or next((c for c in data.columns if c != time_col), None)
-
-            if y_col is None:
-                raise ValueError(f"No value column found for timeseries '{descriptor.name}'.")
-
-            plot_timeseries_on_ax(
-                ax,
-                data,
-                time_col=time_col,
-                value_col=y_col,
-                color=params.get("color", "tab:blue"),
-                linewidth=params.get("linewidth", 1.5),
-                title=descriptor.name,
-                ylabel=y_col,
             )
-            self._apply_x_range(ax, params)
 
-            for marker in params.get("time_markers", []):
-                marker_local = marker.tz_convert(None) if marker.tzinfo is not None else marker
-
-                ax.axvline(
-                    marker_local,
-                    color=params.get("time_marker_color", "tab:red"),
-                    linestyle=params.get("time_marker_linestyle", "--"),
-                    linewidth=params.get("time_marker_linewidth", 1.2),
-                    alpha=params.get("time_marker_alpha", 0.8),
-                )
-
-            return
-
-        if isinstance(data, (Sequence, np.ndarray)) and not isinstance(data, (str, bytes)):
-            ax.plot(data, color=params.get("color", "tab:blue"))
-            ax.set_title(descriptor.name)
-            ax.grid(True, alpha=0.3)
-            return
-
-        raise ValueError(f"Unsupported timeseries data format for plot '{descriptor.name}'.")
-
-    @staticmethod
-    def _resolve_cosmic_ray_stations(data: pd.DataFrame, params: dict[str, Any]) -> list[str]:
-        available_stations = [column for column in data.columns if column not in TIME_COLUMN_CANDIDATES]
-        requested_stations = params.get("stations")
-
-        if requested_stations is None:
-            return available_stations
-
-        if isinstance(requested_stations, str):
-            requested = [requested_stations]
-        else:
-            requested = list(requested_stations)
-
-        missing = [station for station in requested if station not in available_stations]
-        if missing:
-            raise ValueError(f"Cosmic ray source is missing requested stations: {missing}")
-
-        return requested
+        return parsed
 
     def plot(
         self,
@@ -814,31 +96,12 @@ class PlotConstructor:
         *,
         figsize: tuple[float, float] | None = None,
     ) -> tuple[plt.Figure, list[plt.Axes]]:
-        """Plot requested charts vertically in the same order as input list."""
         if not plots:
             raise ValueError("plots list is empty.")
 
-        parsed: list[tuple[PlotDescriptor, dict[str, Any], Any, str | None]] = []
-
-        for item in plots:
-            if isinstance(item, str):
-                name = item
-                params: dict[str, Any] = {}
-            elif isinstance(item, Mapping):
-                name = str(item.get("name", "")).strip()
-                params = dict(item.get("params", {}))
-            else:
-                raise ValueError(f"Unsupported plot spec type: {type(item)!r}")
-
-            if not name:
-                raise ValueError("Each plot spec must contain non-empty 'name'.")
-
-            descriptor = self._resolve_descriptor(name)
-            data, column = self._extract_plot_data(descriptor)
-            parsed.append((descriptor, params, data, column))
-
+        parsed = self._parse_plots(plots)
         time_markers = self._collect_map_time_markers(parsed)
-        panels = self._expand_plot_panels(parsed)
+        panels = self.panel_builder.expand(parsed)
 
         fig = plt.figure(figsize=figsize or (16, 4 * len(panels)))
         outer_grid = fig.add_gridspec(len(panels), 1)
@@ -850,7 +113,7 @@ class PlotConstructor:
 
             if panel.descriptor.plot_type == "map" and panel.map_times:
                 axes.extend(
-                    self._plot_map_panel(
+                    self.renderer.plot_map_panel(
                         fig=fig,
                         subplot_spec=subplot_spec,
                         panel=panel,
@@ -863,12 +126,24 @@ class PlotConstructor:
                     subplot_spec,
                     projection=ccrs.PlateCarree(),
                 )
-                self._plot_map(ax, panel.descriptor, panel.data, panel.params)
+
+                if isinstance(panel.data, dict):
+                    raise ValueError(
+                        f"Map plot '{panel.descriptor.name}' has no selected map times."
+                    )
+
+                self.renderer.plot_map_table(
+                    ax=ax,
+                    descriptor=panel.descriptor,
+                    data=panel.data,
+                    params=panel.params,
+                )
                 axes.append(ax)
                 continue
 
             ax = fig.add_subplot(subplot_spec)
-            self._plot_regular_panel(
+
+            self.renderer.plot_regular_panel(
                 ax=ax,
                 panel=panel,
                 time_markers=time_markers,
