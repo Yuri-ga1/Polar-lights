@@ -33,6 +33,7 @@ MAP_PLOT_NAMES = {
 HIST_PLOT_NAMES = {"kp"}
 SOURCE_PLOT_NAMES = {"ionosonde", "cosmic ray", "cosmic rays"}
 TIME_COLUMN_CANDIDATES = ("datetime", "DateTime", "time", "timestamp")
+IONOSONDE_COLUMNS = ("dfoF2", "dhmF2")
 
 
 @dataclass(frozen=True)
@@ -404,6 +405,153 @@ class PlotConstructor:
 
         raise ValueError(f"Unsupported timeseries data format for plot '{descriptor.name}'.")
 
+    def _plot_ionosonde_source(
+        self,
+        fig: plt.Figure,
+        subplot_spec,
+        descriptor: PlotDescriptor,
+        data: pd.DataFrame,
+        params: dict[str, Any],
+    ) -> list[plt.Axes]:
+        missing = [column for column in IONOSONDE_COLUMNS if column not in data.columns]
+        if missing:
+            raise ValueError(f"Ionosonde source is missing required columns: {missing}")
+
+        inner_grid = GridSpecFromSubplotSpec(
+            len(IONOSONDE_COLUMNS),
+            1,
+            subplot_spec=subplot_spec,
+            hspace=0.25,
+        )
+
+        axes: list[plt.Axes] = []
+        for idx, column in enumerate(IONOSONDE_COLUMNS):
+            ax = fig.add_subplot(inner_grid[idx, 0])
+            column_params = dict(params)
+            column_params.setdefault("linewidth", params.get("linewidth", 1.5))
+            self._plot_timeseries(
+                ax=ax,
+                descriptor=PlotDescriptor(
+                    name=column,
+                    plot_type="timeseries",
+                    source_key=descriptor.source_key,
+                    column=column,
+                ),
+                data=data,
+                column=column,
+                params=column_params,
+            )
+            ax.set_title(f"{descriptor.name}: {column}")
+            axes.append(ax)
+
+        return axes
+
+    @staticmethod
+    def _resolve_cosmic_ray_stations(data: pd.DataFrame, params: dict[str, Any]) -> list[str]:
+        available_stations = [column for column in data.columns if column not in TIME_COLUMN_CANDIDATES]
+        requested_stations = params.get("stations")
+
+        if requested_stations is None:
+            return available_stations
+
+        if isinstance(requested_stations, str):
+            requested = [requested_stations]
+        else:
+            requested = list(requested_stations)
+
+        missing = [station for station in requested if station not in available_stations]
+        if missing:
+            raise ValueError(f"Cosmic ray source is missing requested stations: {missing}")
+
+        return requested
+
+    def _plot_cosmic_ray_source(
+        self,
+        fig: plt.Figure,
+        subplot_spec,
+        descriptor: PlotDescriptor,
+        data: pd.DataFrame,
+        params: dict[str, Any],
+    ) -> list[plt.Axes]:
+        stations = self._resolve_cosmic_ray_stations(data, params)
+        if not stations:
+            raise ValueError("Cosmic ray source has no station columns to plot.")
+
+        layout = self._normalize_name(str(params.get("station_layout", params.get("layout", "single"))))
+        if layout not in {"single", "separate"}:
+            raise ValueError("Cosmic ray station layout must be 'single' or 'separate'.")
+
+        if layout == "single":
+            ax = fig.add_subplot(subplot_spec)
+            time_col = self._find_time_column(data)
+            if time_col is None:
+                raise ValueError(
+                    f"Timeseries '{descriptor.name}' needs one of {TIME_COLUMN_CANDIDATES}, "
+                    f"but none found in '{descriptor.source_key}'."
+                )
+
+            for station in stations:
+                ax.plot(
+                    data[time_col],
+                    data[station],
+                    linewidth=params.get("linewidth", 1.5),
+                    label=station,
+                )
+
+            ax.set_title(descriptor.name)
+            ax.set_ylabel(params.get("ylabel", "%"))
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            self._apply_x_range(ax, params)
+            return [ax]
+
+        inner_grid = GridSpecFromSubplotSpec(
+            len(stations),
+            1,
+            subplot_spec=subplot_spec,
+            hspace=0.25,
+        )
+
+        axes: list[plt.Axes] = []
+        for idx, station in enumerate(stations):
+            ax = fig.add_subplot(inner_grid[idx, 0])
+            self._plot_timeseries(
+                ax=ax,
+                descriptor=PlotDescriptor(
+                    name=station,
+                    plot_type="timeseries",
+                    source_key=descriptor.source_key,
+                    column=station,
+                ),
+                data=data,
+                column=station,
+                params=params,
+            )
+            ax.set_title(f"{descriptor.name}: {station}")
+            axes.append(ax)
+
+        return axes
+
+    def _plot_source_timeseries(
+        self,
+        fig: plt.Figure,
+        subplot_spec,
+        descriptor: PlotDescriptor,
+        data: Any,
+        params: dict[str, Any],
+    ) -> list[plt.Axes] | None:
+        normalized_name = self._normalize_name(descriptor.name)
+        if not isinstance(data, pd.DataFrame):
+            return None
+
+        if normalized_name == "ionosonde":
+            return self._plot_ionosonde_source(fig, subplot_spec, descriptor, data, params)
+
+        if normalized_name in {"cosmic ray", "cosmic rays"}:
+            return self._plot_cosmic_ray_source(fig, subplot_spec, descriptor, data, params)
+
+        return None
+
     def plot(
         self,
         plots: Sequence[str | Mapping[str, Any]],
@@ -531,14 +679,25 @@ class PlotConstructor:
                     axes.append(ax)
 
             else:
+                timeseries_params = dict(params)
+                timeseries_params["time_markers"] = time_markers
+
+                source_axes = self._plot_source_timeseries(
+                    fig=fig,
+                    subplot_spec=subplot_spec,
+                    descriptor=descriptor,
+                    data=data,
+                    params=timeseries_params,
+                )
+                if source_axes is not None:
+                    axes.extend(source_axes)
+                    continue
+
                 ax = fig.add_subplot(subplot_spec)
 
                 if descriptor.plot_type == "histogram":
                     self._plot_histogram(ax, descriptor, data, column, params)
                 else:
-                    timeseries_params = dict(params)
-                    timeseries_params["time_markers"] = time_markers
-
                     self._plot_timeseries(ax, descriptor, data, column, timeseries_params)
 
                 axes.append(ax)
