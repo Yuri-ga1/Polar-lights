@@ -22,7 +22,7 @@ class PlotConstructor:
         self.registry = PlotRegistry(self.processor_results)
         self.metadata_builder = PlotMetadataBuilder(self.processor_results, self.registry)
         self.panel_builder = PlotPanelBuilder()
-        self.renderer = PlotRenderer(self.registry)
+        self.renderer = PlotRenderer(self.registry, self.processor_results)
 
     def available_plots(self, with_details: bool = True) -> list[str | dict[str, Any]]:
         return self.metadata_builder.available_plots(with_details=with_details)

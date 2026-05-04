@@ -15,10 +15,28 @@ MAP_PLOT_NAMES = {
     "aurora",
 }
 HIST_PLOT_NAMES = {"kp"}
-SOURCE_PLOT_NAMES = {"ionosonde", "cosmic ray", "cosmic rays"}
+SOURCE_PLOT_NAMES = {
+    "ionosonde",
+    "cosmic ray",
+    "cosmic rays",
+    "omni",
+}
+
 TIME_COLUMN_CANDIDATES = ("datetime", "DateTime", "time", "timestamp")
 IONOSONDE_COLUMNS = ("dfoF2", "dhmF2")
 
+SERVICE_COLUMNS = {
+    "datetime",
+    "DateTime",
+    "time",
+    "timestamp",
+    "date",
+    "hour",
+    "year",
+    "doy",
+    "hr",
+    "mn",
+}
 
 @dataclass(frozen=True)
 class PlotDescriptor:

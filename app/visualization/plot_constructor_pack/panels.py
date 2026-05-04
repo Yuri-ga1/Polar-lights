@@ -93,6 +93,24 @@ class PlotPanelBuilder:
             raise ValueError(f"Cosmic ray source is missing requested stations: {missing}")
 
         return requested
+    
+    @staticmethod
+    def resolve_group_fields(params: dict[str, Any]) -> list[dict[str, Any]]:
+        groups = params.get("groups") or []
+
+        if not groups:
+            fields = params.get("fields")
+            if fields is None:
+                return []
+
+            return [
+                {
+                    "title": "OMNI",
+                    "fields": fields,
+                }
+            ]
+
+        return groups
 
     def expand(self, parsed: list[ParsedPlot]) -> list[PlotPanel]:
         panels: list[PlotPanel] = []
@@ -183,6 +201,32 @@ class PlotPanelBuilder:
                     )
 
                 continue
+
+            if normalized_name == "omni" and isinstance(data, pd.DataFrame):
+                groups = self.resolve_group_fields(params)
+
+                if groups:
+                    for group in groups:
+                        title = group.get("title", descriptor.name)
+                        fields = list(group.get("fields", []))
+
+                        if not fields:
+                            continue
+
+                        panels.append(
+                            PlotPanel(
+                                descriptor=descriptor,
+                                params={
+                                    **params,
+                                    "fields": fields,
+                                },
+                                data=data,
+                                column=None,
+                                panel_name=title,
+                            )
+                        )
+
+                    continue
 
             panels.append(
                 PlotPanel(

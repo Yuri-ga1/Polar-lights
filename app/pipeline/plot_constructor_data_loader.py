@@ -17,17 +17,25 @@ from app.storage.hdf5_storage import ObservationHDF5Storage
 
 from app.gfz.gfz_downloader import GfzDownloader
 from app.gfz.gfz_processor import GfzProcessor
+
 from app.kyoto.kyoto_dst_downloader import KyotoDstDownloader
 from app.kyoto.kyoto_dst_processor import KyotoProcessor
+
 from app.simurg.gim_downloader import GimDownloader
 from app.simurg.gim_processor import GimProcessor
+
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader, AdjustedTecDownloader
 from app.simurg.simurg_processor import SimurgProcessor, DataProduct
+
 from app.ionosonde.ionosonde_downloader import IonosondeDownloader
 from app.ionosonde.ionosonde_processor import IonosondeProcessor
+
 from app.nmdb.nmdb_downloader import NmdbDownloader
 from app.nmdb.nmdb_processor import NmdbProcessor
+
+from app.omni.omni_downloader import OmniDownloader
+from app.omni.omni_processor import OmniProcessor
 
 
 @dataclass
@@ -119,6 +127,23 @@ class PlotConstructorDataLoader:
         except Exception as exc:
             print(f"Download warning: {exc}")
             return None
+        
+    @classmethod
+    def _collect_group_fields(cls, plots: list[str | dict[str, Any]]) -> set[str]:
+        fields: set[str] = set()
+
+        for item in plots:
+            if isinstance(item, str):
+                continue
+
+            params = dict(item.get("params", {}))
+            groups = params.get("groups") or []
+
+            for group in groups:
+                for field in group.get("fields", []):
+                    fields.add(cls._normalize(str(field)))
+
+        return fields
 
     def _simurg_client(self, email: str | None = None) -> SimurgClient | None:
         resolved_email = email or self.config.simurg_email
@@ -251,6 +276,17 @@ class PlotConstructorDataLoader:
 
         return NmdbProcessor(folder_path=out_dir).load(self.primary_date_str)
 
+    def _load_omni(self):
+        out_dir = os.path.join(self.date_dir, "omni")
+        os.makedirs(out_dir, exist_ok=True)
+
+        for date_str in self.download_dates:
+            self._safe_download(
+                lambda d=date_str: OmniDownloader(out_dir=out_dir).download(d)
+            )
+
+        return OmniProcessor(folder_path=out_dir).load(self.primary_date_str)
+
     def _aurora_stub(self, date_str: str) -> pd.DataFrame:
         download_dir = self.date_dir
         os.makedirs(download_dir, exist_ok=True)
@@ -298,13 +334,14 @@ class PlotConstructorDataLoader:
             for item in plots
         }
         params_by_plot = self._merge_plot_params(plots)
+        group_fields = self._collect_group_fields(plots)
 
         results: dict[str, Any] = {}
 
         if self._contains(names, "kp"):
             results["Kp"] = self._load_kp()
 
-        if self._contains(names, "dst"):
+        if self._contains(names, "dst") or "dst" in group_fields:
             results["Dst"] = self._load_dst()
 
         if self._contains(names, "roti", "keogram"):
@@ -330,5 +367,8 @@ class PlotConstructorDataLoader:
                 params_by_plot.get("cosmic ray")
                 or params_by_plot.get("cosmic rays")
             )
+
+        if self._contains(names, "omni"):
+            results["OMNI"] = self._load_omni()
 
         return results

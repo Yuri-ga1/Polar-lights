@@ -26,8 +26,9 @@ from app.visualization.roti_plotter import plot_simurg_map_on_ax
 
 
 class PlotRenderer:
-    def __init__(self, registry: PlotRegistry) -> None:
+    def __init__(self, registry: PlotRegistry, processor_results: dict[str, Any]) -> None:
         self.registry = registry
+        self.processor_results = processor_results
         self.panel_builder = PlotPanelBuilder()
 
     @staticmethod
@@ -62,6 +63,22 @@ class PlotRenderer:
 
         x_start, x_end = x_range
         ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
+
+    def _find_field_source(self, field: str) -> tuple[pd.DataFrame, str, str]:
+        normalized_field = PlotRegistry.normalize_name(field)
+
+        for source_name, data in self.processor_results.items():
+            if not isinstance(data, pd.DataFrame):
+                continue
+
+            for column in data.columns:
+                if column in TIME_COLUMN_CANDIDATES:
+                    continue
+
+                if PlotRegistry.normalize_name(column) == normalized_field:
+                    return data, column, source_name
+
+        raise ValueError(f"Field '{field}' was not found in available processor results.")
 
     def draw_map_on_axis(
         self,
@@ -314,6 +331,10 @@ class PlotRenderer:
 
         normalized_name = PlotRegistry.normalize_name(descriptor.name)
 
+        if normalized_name == "omni" and panel.params.get("fields"):
+            self.plot_omni_group_panel(ax, panel)
+            return
+
         if normalized_name in {"cosmic ray", "cosmic rays"} and column is None:
             self.plot_cosmic_ray_single_panel(ax, panel)
             return
@@ -326,3 +347,31 @@ class PlotRenderer:
 
         if panel.panel_name:
             ax.set_title(panel.panel_name)
+
+    def plot_omni_group_panel(self, ax: plt.Axes, panel: PlotPanel) -> None:
+        fields = panel.params.get("fields") or []
+
+        if not fields:
+            raise ValueError(f"OMNI group '{panel.panel_name}' has no fields.")
+
+        for field in fields:
+            source_df, source_column, source_name = self._find_field_source(str(field))
+
+            time_col = self.registry.find_time_column(source_df)
+            if time_col is None:
+                raise ValueError(
+                    f"Field '{field}' source '{source_name}' has no time column."
+                )
+
+            ax.plot(
+                source_df[time_col],
+                source_df[source_column],
+                linewidth=panel.params.get("linewidth", 1.5),
+                label=source_column,
+            )
+
+        ax.set_title(panel.panel_name or panel.descriptor.name)
+        ax.set_ylabel(panel.params.get("ylabel", "value"))
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        self.apply_x_range(ax, panel.params)

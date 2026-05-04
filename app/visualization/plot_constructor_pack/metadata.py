@@ -7,6 +7,7 @@ import pandas as pd
 from app.visualization.plot_constructor_pack.models import (
     IONOSONDE_COLUMNS,
     TIME_COLUMN_CANDIDATES,
+    SERVICE_COLUMNS,
     PlotDescriptor,
 )
 from app.visualization.plot_constructor_pack.registry import PlotRegistry
@@ -48,11 +49,36 @@ class PlotMetadataBuilder:
         if isinstance(data, pd.DataFrame):
             normalized_name = PlotRegistry.normalize_name(descriptor.name)
 
+            if normalized_name == "omni":
+                fields = [
+                    column
+                    for column in data.columns
+                    if column not in SERVICE_COLUMNS
+                ]
+
+                time_col = self.registry.find_time_column(data)
+
+                info = {
+                    descriptor.name: {
+                        "type": descriptor.plot_type,
+                        "fields": fields,
+                    }
+                }
+
+                if time_col is not None and not data.empty:
+                    time_values = pd.to_datetime(data[time_col], errors="coerce").dropna()
+
+                    if not time_values.empty:
+                        info[descriptor.name]["time_start"] = str(time_values.min())
+                        info[descriptor.name]["time_end"] = str(time_values.max())
+
+                return info
+
             if normalized_name in {"cosmic ray", "cosmic rays"}:
                 stations = [
                     column
                     for column in data.columns
-                    if column not in TIME_COLUMN_CANDIDATES
+                    if column not in SERVICE_COLUMNS
                 ]
 
                 return {
