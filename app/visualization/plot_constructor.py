@@ -115,6 +115,66 @@ class PlotConstructor:
         x_start, x_end = x_range
         ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
 
+    def _build_plot_info(self, descriptor: PlotDescriptor) -> str | dict[str, Any]:
+        data = self.processor_results.get(descriptor.source_key)
+
+        if isinstance(data, dict) and data:
+            times = sorted(data.keys())
+
+            info: dict[str, Any] = {
+                descriptor.name: {
+                    "type": descriptor.plot_type,
+                    "time_start": str(times[0]),
+                    "time_end": str(times[-1]),
+                }
+            }
+
+            if len(times) > 1:
+                step = times[1] - times[0]
+                info[descriptor.name]["time_step"] = str(step)
+
+            return info
+
+        if isinstance(data, pd.DataFrame):
+            normalized_name = self._normalize_name(descriptor.name)
+
+            if normalized_name in {"cosmic ray", "cosmic rays"}:
+                stations = [
+                    column
+                    for column in data.columns
+                    if column not in TIME_COLUMN_CANDIDATES
+                ]
+
+                return {
+                    descriptor.name: {
+                        "type": descriptor.plot_type,
+                        "stations": stations,
+                    }
+                }
+
+            if normalized_name == "ionosonde":
+                return {
+                    descriptor.name: {
+                        "type": descriptor.plot_type,
+                        "parameters": list(IONOSONDE_COLUMNS),
+                    }
+                }
+
+            time_col = self._find_time_column(data)
+            if time_col is not None and not data.empty:
+                time_values = pd.to_datetime(data[time_col], errors="coerce").dropna()
+
+                if not time_values.empty:
+                    return {
+                        descriptor.name: {
+                            "type": descriptor.plot_type,
+                            "time_start": str(time_values.min()),
+                            "time_end": str(time_values.max()),
+                        }
+                    }
+
+        return descriptor.name
+
     def _build_registry(self) -> dict[str, PlotDescriptor]:
         registry: dict[str, PlotDescriptor] = {}
 
@@ -170,9 +230,21 @@ class PlotConstructor:
 
         return registry
 
-    def available_plots(self) -> list[str]:
-        """Return sorted list of plot names available for the provided processor results."""
-        return sorted(descriptor.name for descriptor in self._registry.values())
+    def available_plots(self, with_details: bool = True) -> list[str | dict[str, Any]]:
+        """Return available plot names.
+
+        If with_details=True, returns additional metadata for complex sources:
+        - map data: start/end time and time step
+        - cosmic ray: available station list
+        - ionosonde: plotted parameters
+        """
+        if not with_details:
+            return sorted(descriptor.name for descriptor in self._registry.values())
+
+        return [
+            self._build_plot_info(descriptor)
+            for descriptor in sorted(self._registry.values(), key=lambda item: item.name)
+        ]
 
     def _resolve_descriptor(self, requested_name: str) -> PlotDescriptor:
         key = self._normalize_name(requested_name)
