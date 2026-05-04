@@ -31,6 +31,7 @@ MAP_PLOT_NAMES = {
     "aurora",
 }
 HIST_PLOT_NAMES = {"kp"}
+SOURCE_PLOT_NAMES = {"ionosonde"}
 TIME_COLUMN_CANDIDATES = ("datetime", "DateTime", "time", "timestamp")
 
 
@@ -121,6 +122,18 @@ class PlotConstructor:
             normalized_source = self._normalize_name(source_key)
 
             if isinstance(data, pd.DataFrame):
+                # Register explicit source-level plots that should be requested as one plot,
+                # instead of being available only through their individual DataFrame columns.
+                if normalized_source in SOURCE_PLOT_NAMES:
+                    registry.setdefault(
+                        normalized_source,
+                        PlotDescriptor(
+                            name=source_key,
+                            plot_type=source_type,
+                            source_key=source_key,
+                        ),
+                    )
+
                 # Register source name itself for map-like aurora observations in tabular form.
                 if source_type == "map":
                     registry.setdefault(
