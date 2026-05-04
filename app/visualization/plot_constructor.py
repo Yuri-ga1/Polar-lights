@@ -31,7 +31,7 @@ MAP_PLOT_NAMES = {
     "aurora",
 }
 HIST_PLOT_NAMES = {"kp"}
-SOURCE_PLOT_NAMES = {"ionosonde"}
+SOURCE_PLOT_NAMES = {"ionosonde", "cosmic ray", "cosmic rays"}
 TIME_COLUMN_CANDIDATES = ("datetime", "DateTime", "time", "timestamp")
 
 
@@ -133,6 +133,7 @@ class PlotConstructor:
                             source_key=source_key,
                         ),
                     )
+                    continue
 
                 # Register source name itself for map-like aurora observations in tabular form.
                 if source_type == "map":
