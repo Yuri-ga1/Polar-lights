@@ -107,19 +107,6 @@ def plot_map(
             continue
 
         time = plot_times[axs_index]
-        native_time = time.replace(tzinfo=None)
-        solar_terminator(
-            ax1,
-            time=native_time,
-            color="black",
-            alpha=0.1,
-        )
-        geomagnetic_lines(
-            ax=ax1,
-            date=native_time,
-            levels=[-50, -30, 0, 30, 50],
-            color='black'
-        )
 
         color_limits = scale_color_limits(product, colorbar_limit_scaling)
         arr = data[time]
@@ -129,6 +116,7 @@ def plot_map(
             title=time.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
             cmap=map_params.cmap,
             point_size=map_params.point_size,
+            plot_time=time,
             colorbar_limits=(color_limits.min, color_limits.max),
         )
         add_panel_label(ax=ax1, label=subplot_marks[axs_index])
@@ -154,15 +142,39 @@ def plot_simurg_map_on_ax(
     arr: np.ndarray,
     *,
     title: str,
+    plot_time: datetime | None = None,
     cmap: str = "jet",
     point_size: float = 10,
     colorbar_limits: tuple[float, float] = (0.0, 1.0),
+    show_terminator: bool = True,
+    show_geomagnetic_lines: bool = True,
+    geomagnetic_levels: Iterable[float] = (-50, -30, 0, 30, 50),
 ):
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
 
     prepare_layout(ax, lon_locator, lat_locator)
+
+    if plot_time is not None:
+        native_time = plot_time.replace(tzinfo=None)
+
+        if show_terminator:
+            solar_terminator(
+                ax,
+                time=native_time,
+                color="black",
+                alpha=0.1,
+            )
+
+        if show_geomagnetic_lines:
+            geomagnetic_lines(
+                ax=ax,
+                date=native_time,
+                levels=list(geomagnetic_levels),
+                color="black",
+            )
+
     sctr = ax.scatter(
         arr["lon"],
         arr["lat"],

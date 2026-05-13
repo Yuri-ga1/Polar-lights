@@ -77,6 +77,10 @@ class PlotRenderer:
                 alpha=params.get("time_marker_alpha", 0.8),
             )
 
+    @staticmethod
+    def format_map_title(name: str, plot_time: datetime) -> str:
+        return f"{name} for {plot_time.strftime('%d %b %Y at %H:%M:%S UTC')}"
+
     def _find_field_source(self, field: str) -> tuple[pd.DataFrame, str, str]:
         normalized_field = PlotRegistry.normalize_name(field)
 
@@ -108,7 +112,7 @@ class PlotRenderer:
             plot_gim_map_on_ax(
                 ax,
                 arr,
-                title=f"{descriptor.name} ({plot_time})",
+                title=self.format_map_title(descriptor.name, plot_time),
                 cmap=params.get("cmap", "jet"),
             )
             return
@@ -122,10 +126,14 @@ class PlotRenderer:
         plot_simurg_map_on_ax(
             ax,
             arr,
-            title=f"{descriptor.name} ({plot_time})",
+            title=self.format_map_title(descriptor.name, plot_time),
+            plot_time=plot_time,
             cmap=params.get("cmap", "jet"),
             point_size=params.get("s", 8),
             colorbar_limits=limits,
+            show_terminator=params.get("show_terminator", True),
+            show_geomagnetic_lines=params.get("show_geomagnetic_lines", True),
+            geomagnetic_levels=params.get("geomagnetic_levels", [-50, -30, 0, 30, 50]),
         )
 
     def plot_map_panel(
