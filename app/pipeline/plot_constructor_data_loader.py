@@ -144,6 +144,18 @@ class PlotConstructorDataLoader:
                     fields.add(cls._normalize(str(field)))
 
         return fields
+    
+    def _filter_by_datetime_range(self, df: pd.DataFrame | None) -> pd.DataFrame | None:
+        if df is None or df.empty:
+            return df
+
+        if "datetime" not in df.columns:
+            return df
+
+        time_values = pd.to_datetime(df["datetime"], errors="coerce")
+        mask = (time_values >= self.start_dt) & (time_values <= self.end_dt)
+
+        return df.loc[mask].reset_index(drop=True)
 
     def _simurg_client(self, email: str | None = None) -> SimurgClient | None:
         resolved_email = email or self.config.simurg_email
@@ -164,7 +176,8 @@ class PlotConstructorDataLoader:
                 )
             )
 
-        return GfzProcessor(folder_path=out_dir).load(date_str=self.primary_date_str)
+        kp_df = GfzProcessor(folder_path=out_dir).load(date_str=self.primary_date_str)
+        return self._filter_by_datetime_range(kp_df)
 
     def _load_dst(self):
         out_dir = os.path.join(self.date_dir, "kyoto")
