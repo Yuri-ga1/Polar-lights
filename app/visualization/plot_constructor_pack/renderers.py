@@ -64,6 +64,19 @@ class PlotRenderer:
         x_start, x_end = x_range
         ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
 
+    @staticmethod
+    def draw_time_markers(ax: plt.Axes, params: dict[str, Any]) -> None:
+        for marker in params.get("time_markers", []):
+            marker_local = marker.tz_convert(None) if marker.tzinfo is not None else marker
+
+            ax.axvline(
+                marker_local,
+                color=params.get("time_marker_color", "tab:red"),
+                linestyle=params.get("time_marker_linestyle", "--"),
+                linewidth=params.get("time_marker_linewidth", 1.2),
+                alpha=params.get("time_marker_alpha", 0.8),
+            )
+
     def _find_field_source(self, field: str) -> tuple[pd.DataFrame, str, str]:
         normalized_field = PlotRegistry.normalize_name(field)
 
@@ -267,16 +280,7 @@ class PlotRenderer:
             )
             self.apply_x_range(ax, params)
 
-            for marker in params.get("time_markers", []):
-                marker_local = marker.tz_convert(None) if marker.tzinfo is not None else marker
-
-                ax.axvline(
-                    marker_local,
-                    color=params.get("time_marker_color", "tab:red"),
-                    linestyle=params.get("time_marker_linestyle", "--"),
-                    linewidth=params.get("time_marker_linewidth", 1.2),
-                    alpha=params.get("time_marker_alpha", 0.8),
-                )
+            self.draw_time_markers(ax, params)
 
             return
 
@@ -316,6 +320,7 @@ class PlotRenderer:
         ax.grid(True, alpha=0.3)
         ax.legend()
         self.apply_x_range(ax, panel.params)
+        self.draw_time_markers(ax, panel.params)
 
     def plot_regular_panel(
         self,
@@ -331,12 +336,21 @@ class PlotRenderer:
 
         normalized_name = PlotRegistry.normalize_name(descriptor.name)
 
+        panel_with_markers = PlotPanel(
+            descriptor=panel.descriptor,
+            params=params,
+            data=panel.data,
+            column=panel.column,
+            panel_name=panel.panel_name,
+            map_times=panel.map_times,
+        )
+
         if normalized_name == "omni" and panel.params.get("fields"):
-            self.plot_omni_group_panel(ax, panel)
+            self.plot_omni_group_panel(ax, panel_with_markers)
             return
 
         if normalized_name in {"cosmic ray", "cosmic rays"} and column is None:
-            self.plot_cosmic_ray_single_panel(ax, panel)
+            self.plot_cosmic_ray_single_panel(ax, panel_with_markers)
             return
 
         if descriptor.plot_type == "histogram":
@@ -375,3 +389,4 @@ class PlotRenderer:
         ax.grid(True, alpha=0.3)
         ax.legend()
         self.apply_x_range(ax, panel.params)
+        self.draw_time_markers(ax, panel.params)
