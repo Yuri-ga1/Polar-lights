@@ -38,3 +38,24 @@ def set_plt_def_params():
         'ytick.minor.width' : 2.5,
     }
     plt.rcParams.update(PLOTTING_PARAMS)
+
+def set_constructor_def_params():
+    plt.style.use('seaborn-v0_8-whitegrid')
+    PLOTTING_PARAMS = {
+        'font.size': 20,
+        'figure.dpi': DPI,
+        'font.weight': 'light',
+        'legend.frameon': True,
+        'font.variant' : 'small-caps',
+        'axes.titlesize' : 24,
+        'axes.labelsize' : 20,
+        'xtick.labelsize' : 16,
+        'ytick.labelsize' : 16,
+        'xtick.major.pad': 5,
+        'ytick.major.pad': 5,
+        'xtick.major.width' : 2.5,
+        'ytick.major.width' : 2.5,
+        'xtick.minor.width' : 2.5,
+        'ytick.minor.width' : 2.5,
+    }
+    plt.rcParams.update(PLOTTING_PARAMS)
