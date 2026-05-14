@@ -31,6 +31,11 @@ class KyotoDstDownloader(BaseDownloader):
     def download(self, date_str: str, filename: Optional[str] = None,
                  versions: Optional[Iterable[str]] = None) -> str:
         date = datetime.strptime(date_str, "%Y-%m-%d")
+        save_name = filename or f"dst_{date.strftime('%Y%m')}.for"
+        existing_file = self._get_existing_file(save_name)
+        if existing_file:
+            return existing_file
+
         try_versions = list(versions) if versions is not None else list(self.DEFAULT_VERSIONS)
         urls = self._build_urls(date, try_versions)
         last_exc: Optional[Exception] = None
@@ -41,10 +46,6 @@ class KyotoDstDownloader(BaseDownloader):
                     data = resp.text
                     if not data.strip():
                         raise RuntimeError(f"Получен пустой файл с {url}")
-                    if filename is None:
-                        save_name = f"dst_{date.strftime('%Y%m')}.for"
-                    else:
-                        save_name = filename
                     return self._write_text_file(save_name, data)
             except Exception as exc:
                 last_exc = exc

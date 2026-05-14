@@ -97,9 +97,13 @@ class GfzDownloader(BaseDownloader):
             dr = DateRange(start=d1, end=d2)
             default_name = f"gfz_kp_{dr.start.strftime('%Y%m%d')}-{dr.end.strftime('%Y%m%d')}.txt"
 
+        save_name = filename or default_name
+        existing_file = self._get_existing_file(save_name)
+        if existing_file:
+            return existing_file
+
         # --- Запрос ---
         data_text = self._request_kp(dr, fmt)
 
         # --- Сохранение ---
-        save_name = filename or default_name
         return self._write_text_file(save_name, data_text)

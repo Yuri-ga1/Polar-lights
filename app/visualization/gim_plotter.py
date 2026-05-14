@@ -79,9 +79,6 @@ def plot_gim_maps(
     nrows = max(1, ceil(len(plot_times) / ncols))
     marks = panel_labels(nrows * ncols)
 
-    lon_locator = (-180, -90, 0, 90, 180)
-    lat_locator = (-80, -40, 0, 40, 80)
-
     fig, axs = plt.subplots(
         figsize=(FIGSIZE_WIDTH, 16),
         nrows=nrows,
@@ -105,23 +102,13 @@ def plot_gim_maps(
             color='black'
         )
 
-        prepare_layout(ax, lon_locator, lat_locator)
-
         arr = data[t]
-        lats, lons, grid = _to_grid(arr)
-
-        extent = (float(lons.min()), float(lons.max()), float(lats.min()), float(lats.max()))
-        img = ax.imshow(
-            grid,
-            extent=extent,
-            origin="lower",
+        img = plot_gim_map_on_ax(
+            ax,
+            arr,
+            title=t.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
             cmap=cmap,
-            vmin=GIM_TEC_LIMITS.vmin,
-            vmax=GIM_TEC_LIMITS.vmax,
-            transform=ccrs.PlateCarree(),
         )
-
-        ax.set_title(t.strftime(TIME_FORMAT_TITLE)[:-7] + " UT")
         add_panel_label(ax, marks[idx])
 
         if (idx + 1) % ncols == 0:
@@ -134,3 +121,31 @@ def plot_gim_maps(
     fig.savefig(save_path)
     
     return fig
+
+
+def plot_gim_map_on_ax(
+    ax: plt.Axes,
+    arr: NDArray,
+    *,
+    title: str,
+    cmap: str = "jet",
+):
+    """Draw one GIM map on existing map axis."""
+    lon_locator = (-180, -90, 0, 90, 180)
+    lat_locator = (-80, -40, 0, 40, 80)
+
+    prepare_layout(ax, lon_locator, lat_locator)
+    lats, lons, grid = _to_grid(arr)
+    extent = (float(lons.min()), float(lons.max()), float(lats.min()), float(lats.max()))
+
+    img = ax.imshow(
+        grid,
+        extent=extent,
+        origin="lower",
+        cmap=cmap,
+        vmin=GIM_TEC_LIMITS.vmin,
+        vmax=GIM_TEC_LIMITS.vmax,
+        transform=ccrs.PlateCarree(),
+    )
+    ax.set_title(title)
+    return img

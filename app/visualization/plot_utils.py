@@ -4,13 +4,13 @@ from typing import Iterable
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import cartopy.crs as ccrs
 from cartopy import feature
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
 
 import math
 
 import pandas as pd
+import numpy as np
 
 
 def panel_labels(n: int) -> list[str]:
@@ -166,3 +166,80 @@ def add_colorbar_right(fig: plt.Figure, ax: plt.Axes, mappable, label: str) -> N
     )
     cbar = fig.colorbar(mappable, cax=cax)
     cbar.ax.set_ylabel(label, rotation=-90, va="bottom")
+
+
+def plot_kp_bars(
+    ax: plt.Axes,
+    kp_df: pd.DataFrame,
+    *,
+    x_col: str = "datetime",
+    y_col: str = "kp",
+    width: float = 0.115,
+    set_xlabel: bool = False,
+) -> None:
+    """Draw Kp bars with standard Polar Lights styling."""
+    if kp_df is None or kp_df.empty:
+        raise ValueError("kp_df is empty")
+    if x_col not in kp_df.columns or y_col not in kp_df.columns:
+        raise ValueError(f"kp_df must contain '{x_col}' and '{y_col}' columns")
+
+    data = kp_df.copy()
+    data[x_col] = pd.to_datetime(data[x_col], errors="coerce")
+    data = data.dropna(subset=[x_col, y_col])
+    if data.empty:
+        raise ValueError("kp_df has no valid rows after datetime/value coercion")
+
+    colors = kp_colors(data[y_col])
+    ax.bar(data[x_col], data[y_col], color=colors, width=width)
+    ax.set_ylim(0, 9)
+    ax.set_yticks([0, 3, 6, 9])
+    ax.set_ylabel("Kp", fontweight="bold")
+    if set_xlabel:
+        ax.set_xlabel("Day", fontweight="bold")
+
+
+def plot_timeseries_on_ax(
+    ax: plt.Axes,
+    df: pd.DataFrame,
+    *,
+    time_col: str,
+    value_col: str,
+    color: str = "tab:blue",
+    linewidth: float = 1.5,
+    title: str | None = None,
+    ylabel: str | None = None,
+) -> None:
+    """Plot a standard time series on an existing axis."""
+    if df is None or df.empty:
+        raise ValueError("DataFrame is empty")
+    if time_col not in df.columns or value_col not in df.columns:
+        raise ValueError(f"DataFrame must contain '{time_col}' and '{value_col}'")
+
+    x = pd.to_datetime(df[time_col], errors="coerce")
+    y = pd.to_numeric(df[value_col], errors="coerce")
+
+    ax.plot(x, y, color=color, linewidth=linewidth)
+    ax.grid(True, alpha=0.3)
+    if title:
+        ax.set_title(title)
+    ax.set_ylabel(ylabel or value_col)
+
+
+def plot_histogram_on_ax(
+    ax: plt.Axes,
+    values: pd.Series | np.ndarray,
+    *,
+    bins: int = 9,
+    color: str = "tab:green",
+    title: str | None = None,
+    ylabel: str = "Count",
+) -> None:
+    """Plot histogram on existing axis."""
+    series = pd.Series(values).dropna()
+    if series.empty:
+        raise ValueError("No values to plot histogram")
+    ax.hist(series, bins=bins, color=color)
+    if title:
+        ax.set_title(title)
+    ax.set_ylabel(ylabel)
+

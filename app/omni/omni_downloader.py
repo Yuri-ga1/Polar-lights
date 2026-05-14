@@ -81,13 +81,17 @@ class OmniDownloader(BaseDownloader):
 
         month_end = (next_month_start - timedelta(days=1)).replace(hour=23)
 
+        if filename is None:
+            filename = f"omni_{month_start.strftime('%Y%m')}.txt"
+
+        existing_file = self._get_existing_file(filename)
+        if existing_file:
+            return existing_file
+
         params = self._build_query(month_start, month_end, self.DEFAULT_VAR_IDS)
         data_text = self._retrieve_text(params)
 
         if not data_text or not data_text.strip():
             raise RuntimeError("OMNIWeb вернул пустой ответ или формат неизвестен.")
-
-        if filename is None:
-            filename = f"omni_{month_start.strftime('%Y%m')}.txt"
 
         return self._write_text_file(filename, data_text)

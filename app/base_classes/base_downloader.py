@@ -20,6 +20,13 @@ class BaseDownloader:
             f.write(content)
         return file_path
 
+    def _get_existing_file(self, filename: str, min_size_bytes: int = 1) -> Optional[str]:
+        """Возвращает путь к уже скачанному файлу, если он существует и не пустой."""
+        file_path = os.path.join(self.out_dir, filename)
+        if os.path.exists(file_path) and os.path.getsize(file_path) >= min_size_bytes:
+            return file_path
+        return None
+
     def _download_result(
         self,
         url: str,
@@ -30,9 +37,15 @@ class BaseDownloader:
         chunk_size: int = 1024 * 1024,
     ) -> str:
         """Скачивает файл с докачкой до полного получения."""
-        print(f"Downloading results from {url}")
         filename = os.path.basename(url) if filename is None else filename
         file_path = os.path.join(self.out_dir, filename)
+        
+        existing_file = self._get_existing_file(filename)
+        if existing_file:
+            print(f"Using cached file: {existing_file}")
+            return existing_file
+        
+        print(f"Downloading results from {url}")
 
         def _extract_total_size(resp: requests.Response, offset: int) -> Optional[int]:
             content_range = resp.headers.get("Content-Range")

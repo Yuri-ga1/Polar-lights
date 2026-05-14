@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 from typing import Optional, Tuple
 
@@ -22,6 +24,8 @@ class NmdbProcessor(BaseProcessor):
 
     Значения 'null' конвертируются в NaN.
     """
+
+    METADATA_FILENAME = "nmdb_station_metadata.json"
 
     def __init__(self, folder_path: str) -> None:
         super().__init__(folder_path)
@@ -229,6 +233,32 @@ class NmdbProcessor(BaseProcessor):
 
         df = df.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
         return df
+    
+    def _load_station_metadata(self) -> dict[str, dict[str, float]]:
+        path = self._full_path(self.METADATA_FILENAME)
+
+        if not os.path.exists(path):
+            return {}
+
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                raw_metadata = json.load(file)
+        except Exception:
+            return {}
+
+        metadata: dict[str, dict[str, float]] = {}
+
+        for station, values in raw_metadata.items():
+            try:
+                metadata[station] = {
+                    "lat": float(values["lat"]),
+                    "lon": float(values["lon"]),
+                    "alt": float(values["alt"]),
+                }
+            except Exception:
+                continue
+
+        return metadata
 
     # ---------- public ----------
 
@@ -258,6 +288,16 @@ class NmdbProcessor(BaseProcessor):
                 return None
 
             df = self._to_amplitude(df, baseline="median", absolute=False)
+            
+            station_cols = [c for c in df.columns if c != "datetime"]
+            station_metadata = self._load_station_metadata()
+
+            df.attrs["station_metadata"] = {
+                station: station_metadata[station]
+                for station in station_cols
+                if station in station_metadata
+            }
+
             return df
         except Exception:
             return None
