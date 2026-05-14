@@ -9,6 +9,7 @@ from app.visualization.plot_constructor_pack.models import (
     MAP_PLOT_NAMES,
     SOURCE_PLOT_NAMES,
     TIME_COLUMN_CANDIDATES,
+    SERVICE_COLUMNS,
     PlotDescriptor,
 )
 
@@ -52,6 +53,16 @@ class PlotRegistry:
 
         return bool(dtype_names and {"lat", "lon", "vals"}.issubset(set(dtype_names)))
 
+    @staticmethod
+    def is_service_column(column: str) -> bool:
+        normalized_column = PlotRegistry.normalize_name(str(column))
+        normalized_service_columns = {
+            PlotRegistry.normalize_name(str(service_column))
+            for service_column in SERVICE_COLUMNS
+        }
+
+        return normalized_column in normalized_service_columns
+
     def _build_registry(self) -> dict[str, PlotDescriptor]:
         registry: dict[str, PlotDescriptor] = {}
 
@@ -82,7 +93,7 @@ class PlotRegistry:
                     )
 
                 for column in data.columns:
-                    if column in TIME_COLUMN_CANDIDATES:
+                    if self.is_service_column(column):
                         continue
 
                     normalized_col = self.normalize_name(column)

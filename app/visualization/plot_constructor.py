@@ -12,6 +12,12 @@ from app.visualization.plot_constructor_pack.panels import PlotPanelBuilder
 from app.visualization.plot_constructor_pack.registry import PlotRegistry
 from app.visualization.plot_constructor_pack.renderers import PlotRenderer
 
+try:
+    from IPython.display import Markdown, display
+except ImportError:
+    Markdown = None
+    display = None
+
 
 class PlotConstructor:
     """Build stacked plots from processor outputs using plot names."""
@@ -24,8 +30,21 @@ class PlotConstructor:
         self.panel_builder = PlotPanelBuilder()
         self.renderer = PlotRenderer(self.registry, self.processor_results)
 
-    def available_plots(self, with_details: bool = True) -> list[str | dict[str, Any]]:
-        return self.metadata_builder.available_plots(with_details=with_details)
+    def available_plots(
+        self,
+        with_details: bool = True,
+        as_markdown: bool = True,
+    ) -> list[str | dict[str, Any]] | str | None:
+        if not as_markdown:
+            return self.metadata_builder.available_plots(with_details=with_details)
+
+        markdown_text = self.metadata_builder.available_plots_markdown()
+
+        if display is not None and Markdown is not None:
+            display(Markdown(markdown_text))
+            return None
+
+        return markdown_text
 
     @staticmethod
     def _parse_time_markers(raw_time: Any) -> list[pd.Timestamp]:

@@ -11,6 +11,22 @@ from app.base_classes.base_processor import BaseProcessor
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
+class SimurgData(dict):
+    """SIMuRG data dictionary with source-file time metadata."""
+
+    def __init__(
+        self,
+        *args,
+        time_start: datetime | None = None,
+        time_end: datetime | None = None,
+        time_step: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.time_start = time_start
+        self.time_end = time_end
+        self.time_step = time_step
+
 class DataProduct(str, Enum):
     ROTI = "roti"
     TEC_ADJUSTED = "tec_adjusted"
@@ -94,6 +110,33 @@ class SimurgProcessor(BaseProcessor):
             selected_keys.append(nearest_key)
 
         return selected_keys
+    
+    @classmethod
+    def _build_time_metadata(cls, time_keys: list[str]) -> dict[str, object]:
+        if not time_keys:
+            return {
+                "time_start": None,
+                "time_end": None,
+                "time_step": None,
+            }
+
+        parsed_times = sorted(cls._parse_time(key) for key in time_keys)
+
+        time_step = None
+        if len(parsed_times) > 1:
+            steps = [
+                parsed_times[idx + 1] - parsed_times[idx]
+                for idx in range(len(parsed_times) - 1)
+            ]
+
+            most_common_step = max(set(steps), key=steps.count)
+            time_step = str(most_common_step)
+
+        return {
+            "time_start": parsed_times[0],
+            "time_end": parsed_times[-1],
+            "time_step": time_step,
+        }
 
     def _find_file(
         self,
@@ -121,7 +164,8 @@ class SimurgProcessor(BaseProcessor):
         if not self._is_non_empty_file(file_path):
             return None
 
-        data: Dict[datetime, NDArray] = {}
+        data: SimurgData = SimurgData()
+        time_metadata: dict[str, object] = {}
 
         try:
             with h5py.File(file_path, "r") as handle:
@@ -129,6 +173,7 @@ class SimurgProcessor(BaseProcessor):
                     return None
 
                 data_group = handle["data"]
+                time_metadata = self._build_time_metadata(list(data_group.keys()))
 
                 if times is None:
                     selected_keys = list(data_group.keys())
@@ -145,4 +190,12 @@ class SimurgProcessor(BaseProcessor):
         except Exception:
             return None
 
-        return data or None
+        if not data:
+            return None
+
+        return SimurgData(
+            data,
+            time_start=time_metadata.get("time_start"),
+            time_end=time_metadata.get("time_end"),
+            time_step=time_metadata.get("time_step"),
+        )

@@ -27,7 +27,6 @@ IONOSONDE_COLUMNS = ("dfoF2", "dhmF2")
 
 SERVICE_COLUMNS = {
     "datetime",
-    "DateTime",
     "time",
     "timestamp",
     "date",
