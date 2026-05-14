@@ -62,6 +62,6 @@ Downloaded data files are stored in:
 
 ## Run in Google Colab
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/jupyter-notebook/notebooks/00_examples_and_run.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/main/notebooks/00_examples_and_run.ipynb)
 
 > После открытия в Colab: **File → Save a copy in Drive**, чтобы получить свою копию и спокойно редактировать.
