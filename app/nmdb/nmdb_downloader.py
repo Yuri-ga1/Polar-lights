@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
 from datetime import datetime
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from typing import  List, Optional, Sequence, Union
 
 import requests
 
@@ -21,6 +25,8 @@ class NmdbDownloader(BaseDownloader):
 
     #: URL конечной точки API NMDB, предоставляющей как графики, так и ASCII‐данные
     BASE_URL: str = "https://www.nmdb.eu/nest/draw_graph.php"
+    STATIONS_URL: str = "https://www.nmdb.eu/nest/help.php#helpstations"
+    METADATA_FILENAME: str = "nmdb_station_metadata.json"
 
     def __init__(self, out_dir: str = ".") -> None:
         super().__init__(out_dir=out_dir)
@@ -51,6 +57,78 @@ class NmdbDownloader(BaseDownloader):
         raise ValueError(
             f"Неверный формат даты: {dt!r}. Ожидается 'YYYY-MM-DD' или 'YYYY-MM-DD HH:MM'."
         )
+
+    @staticmethod
+    def _parse_station_metadata_table(html: str) -> dict[str, dict[str, float]]:
+        metadata: dict[str, dict[str, float]] = {}
+
+        content_pattern = re.compile(
+            r"var\s+contentString(?P<code>[A-Z0-9]{3,6})\s*=\s*['\"]"
+            r".*?"
+            r"Coord:\s*</b>\s*(?P<lat>-?\d+(?:\.\d+)?)\s*,\s*"
+            r"(?P<lon>-?\d+(?:\.\d+)?)"
+            r".*?"
+            r"Alt:\s*</b>\s*(?P<alt>-?\d+(?:\.\d+)?)\s*m",
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+        for match in content_pattern.finditer(html):
+            code = match.group("code").upper()
+
+            try:
+                lat = float(match.group("lat"))
+                lon = float(match.group("lon"))
+                alt = float(match.group("alt"))
+            except ValueError:
+                continue
+
+            if -90 <= lat <= 90 and -180 <= lon <= 180 and -500 <= alt <= 6000:
+                metadata[code] = {
+                    "lat": lat,
+                    "lon": lon,
+                    "alt": alt,
+                }
+
+        return metadata
+    
+    def _metadata_file_exists(self) -> bool:
+        path = Path(self.out_dir) / self.METADATA_FILENAME
+        return path.exists() and path.stat().st_size > 2
+
+    def _download_station_metadata(self) -> dict[str, dict[str, float]]:
+        response = requests.get(self.STATIONS_URL, timeout=120)
+        response.raise_for_status()
+
+        metadata = self._parse_station_metadata_table(response.text)
+
+        return metadata
+
+    def _save_station_metadata(
+        self,
+        metadata: dict[str, dict[str, float]],
+    ) -> str:
+        path = Path(self.out_dir) / self.METADATA_FILENAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(metadata, file, ensure_ascii=False, indent=2)
+
+        return str(path)
+    
+    def _ensure_station_metadata_file(self) -> None:
+        if self._metadata_file_exists():
+            return
+
+        try:
+            station_metadata = self._download_station_metadata()
+
+            if not station_metadata:
+                print("NMDB station metadata warning: no station metadata parsed")
+                return
+
+            self._save_station_metadata(station_metadata)
+        except Exception as exc:
+            print(f"NMDB station metadata warning: {exc}")
 
     def download(
         self,
@@ -94,19 +172,16 @@ class NmdbDownloader(BaseDownloader):
         if end_dt < start_dt:
             raise ValueError("Конечная дата не может быть раньше начальной даты.")
 
-        # Формируем параметры запроса в соответствии с API NMDB
         params: dict[str, Union[str, int, List[str]]] = {
             "formchk": 1,
             "tabchoice": tabchoice,
             "dtype": dtype,
             "date_choice": "bydate",
-            # дата начала
             "start_year": start_dt.year,
             "start_month": f"{start_dt.month:02d}",
             "start_day": f"{start_dt.day:02d}",
             "start_hour": f"{start_dt.hour:02d}",
             "start_min": f"{start_dt.minute:02d}",
-            # дата окончания
             "end_year": end_dt.year,
             "end_month": f"{end_dt.month:02d}",
             "end_day": f"{end_dt.day:02d}",
@@ -115,22 +190,21 @@ class NmdbDownloader(BaseDownloader):
             "output": "ascii",
             "yunits": yunits,
         }
-        # Добавляем параметр усреднения только если не ноль
+
         if tresolution:
             params["tresolution"] = tresolution
 
         if stations and len(stations) > 0:
-            # Множественный параметр stations[] — requests сам повторит ключ
             params["stations[]"] = list(stations)
         else:
             params["allstations"] = 1
 
         if filename is None:
-            # генерируем имя на основе станций и дат
             if not stations or len(stations) == 0:
                 station_part = "all"
             else:
                 station_part = "_".join(stations)
+
             filename = (
                 f"nmdb_{station_part}_"
                 f"{start_dt.strftime('%Y%m%d%H%M')}-"
@@ -139,6 +213,7 @@ class NmdbDownloader(BaseDownloader):
 
         existing_file = self._get_existing_file(filename)
         if existing_file:
+            self._ensure_station_metadata_file()
             return existing_file
 
         try:
@@ -150,5 +225,7 @@ class NmdbDownloader(BaseDownloader):
         text: str = response.text
         if not text or not text.strip():
             raise RuntimeError("NMDB вернул пустой ответ.")
+
+        self._ensure_station_metadata_file()
 
         return self._write_text_file(filename, text)

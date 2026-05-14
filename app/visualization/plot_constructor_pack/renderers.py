@@ -80,6 +80,36 @@ class PlotRenderer:
     @staticmethod
     def format_map_title(name: str, plot_time: datetime) -> str:
         return f"{name} for {plot_time.strftime('%d %b %Y at %H:%M:%S UTC')}"
+    
+    @staticmethod
+    def _format_coord(value: float, positive: str, negative: str) -> str:
+        suffix = positive if value >= 0 else negative
+        return f"{abs(value):.2f}°{suffix}"
+
+    @classmethod
+    def format_cosmic_ray_station_label(
+        cls,
+        station: str,
+        station_metadata: dict[str, dict[str, float]],
+    ) -> str:
+        meta = station_metadata.get(station)
+        if not meta:
+            return station
+
+        lat = meta.get("lat")
+        lon = meta.get("lon")
+        alt = meta.get("alt")
+
+        if lat is None or lon is None:
+            return station
+
+        lat_text = cls._format_coord(lat, "N", "S")
+        lon_text = cls._format_coord(lon, "E", "W")
+
+        if alt is None:
+            return f"{station} ({lat_text}, {lon_text})"
+
+        return f"{station} ({lat_text}, {lon_text}, {alt:.0f} m)"
 
     def _find_field_source(self, field: str) -> tuple[pd.DataFrame, str, str]:
         normalized_field = PlotRegistry.normalize_name(field)
@@ -315,12 +345,14 @@ class PlotRenderer:
                 f"but none found in '{panel.descriptor.source_key}'."
             )
 
+        station_metadata = panel.data.attrs.get("station_metadata", {})
+
         for station in stations:
             ax.plot(
                 panel.data[time_col],
                 panel.data[station],
                 linewidth=panel.params.get("linewidth", 1.5),
-                label=station,
+                label=self.format_cosmic_ray_station_label(station, station_metadata),
             )
 
         ax.set_title(panel.panel_name or panel.descriptor.name)
