@@ -40,6 +40,8 @@ from app.observation.aurorasaurus_downloader import AurorasaurusDownloader
 # attempt to locate a file with this name in the current working
 # directory or common sub‑directories such as ``data`` and ``files``.
 DEFAULT_DATAFILE_NAME = "web_observations_2014-08-01_to_2025-08-02_cleaned.csv"
+AURORASAURUS_START_DATE = date_cls(2014, 8, 1)
+AURORASAURUS_END_DATE = date_cls(2025, 8, 2)
 
 # Mapping of truncated colour codes used by the Aurorasaurus dataset
 # into full colour names.  If a code is not present in this mapping,
@@ -60,6 +62,15 @@ FORM_MAP = {
     "patc": "Patches",
 }
 
+def _validate_date_range(day: date_cls) -> None:
+    """Validate that requested date is covered by Aurorasaurus dataset."""
+    if not (AURORASAURUS_START_DATE <= day <= AURORASAURUS_END_DATE):
+        raise ValueError(
+            "Aurorasaurus Web Observations dataset covers only "
+            f"{AURORASAURUS_START_DATE.isoformat()} — "
+            f"{AURORASAURUS_END_DATE.isoformat()}. "
+            f"Requested date: {day.isoformat()}."
+        )
 
 def _locate_dataset(
     data_path: Optional[str],
@@ -252,6 +263,7 @@ def fetch_and_process_aurorasaurus(
     list of dict
         A list of processed observations corresponding to the input date.
     """
+    _validate_date_range(day)
     # Resolve the dataset path
     dataset_file = _locate_dataset(data_path, download_dir=download_dir, auto_download=auto_download)
 
