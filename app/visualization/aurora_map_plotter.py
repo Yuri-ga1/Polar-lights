@@ -71,6 +71,59 @@ def plot_aurora_observations_on_ax(
             )
             ax.add_patch(wedge)
 
+    # --- Легенда для точек наблюдения ---
+    handles, labels = ax.get_legend_handles_labels()
+
+    colors_series = df["colors"].dropna().apply(lambda s: s.split(";") if isinstance(s, str) else s)
+
+    legend_colors = max(colors_series, key=len)
+    legend_colors = legend_colors[:7]
+
+    # создаем объект для многокрасочной легенды
+    auroras_patch = MulticolorPatch(legend_colors)
+
+    # добавляем в handles и labels
+    handles.append(auroras_patch)
+    labels.append("Auroras")
+
+    # создаем легенду с кастомным handler
+    ax.legend(
+        handles=handles,
+        labels=labels,
+        loc="lower left",
+        handler_map={MulticolorPatch: MulticolorPatchHandler()},
+        handlelength=1.5,
+        handleheight=1.5,
+        fontsize=24
+    )
+
+class MulticolorPatch(object):
+        def __init__(self, colors):
+            self.colors = colors
+
+class MulticolorPatchHandler(object):
+    def legend_artist(self, legend, orig_handle, fontsize, handlebox):
+        width, height = handlebox.width, handlebox.height
+        cx, cy = width/2 - handlebox.xdescent, height/2 - handlebox.ydescent
+        radius = min(width, height) / 2
+        n = len(orig_handle.colors)
+        angle_per_sector = 360 / n
+        wedges = []
+
+        for i, c in enumerate(orig_handle.colors):
+            wedge = Wedge(
+                (cx, cy),
+                radius,
+                i * angle_per_sector,
+                (i + 1) * angle_per_sector,
+                facecolor=c,
+                edgecolor='black',
+                linewidth=0.5
+            )
+            wedges.append(wedge)
+            handlebox.add_artist(wedge)
+
+        return wedges
 
 class AuroraMapPlotter:
     def __init__(
