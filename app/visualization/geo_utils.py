@@ -97,22 +97,45 @@ def solar_terminator(
     time=None,
     color="black",
     alpha=0.5,
-    zorder=3
+    zorder=3,
+    height_km: float = 300.0,
+    earth_radius_km: float = 6371.0,
 ):
     """
-    Plot a fill on the dark side of the Earth (solar terminator).
+    Plot a fill on the dark side of the Earth (solar terminator)
+    with an altitude correction.
 
     Parameters
     ----------
     ax : cartopy.mpl.geoaxes.GeoAxes
-        Axes to plot on
+        Axes to plot on.
     time : datetime
-        UTC time
+        UTC time.
     color : str
-        Fill color
+        Fill color.
     alpha : float
-        Transparency
+        Transparency.
+    zorder : int
+        Drawing order.
+    height_km : float
+        Height above the Earth's surface in kilometers.
+        Default is 300 km, representative of the ionospheric F region.
+    earth_radius_km : float
+        Mean Earth radius in kilometers.
+
+    Notes
+    -----
+    At height h, the illuminated region is larger than at the Earth's surface.
+    The angular correction is:
+
+        delta = arccos(R / (R + h))
+
+    where R is the Earth radius and h is the selected ionospheric height.
+    Atmospheric refraction is not taken into account.
     """
+
+    if height_km < 0:
+        raise ValueError("height_km must be non-negative.")
 
     lat, lon = get_subsolar_latlon(time)
 
@@ -127,10 +150,17 @@ def solar_terminator(
     rotated_pole = ccrs.RotatedPole(
         pole_latitude=pole_lat,
         pole_longitude=pole_lng,
-        central_rotated_longitude=central_rot_lng
+        central_rotated_longitude=central_rot_lng,
     )
 
-    x = [-90] * 181 + [90] * 181 + [-90]
+    delta_deg = np.degrees(
+        np.arccos(earth_radius_km / (earth_radius_km + height_km))
+    )
+
+
+    terminator_lon = 90.0 + delta_deg
+
+    x = [-terminator_lon] * 181 + [terminator_lon] * 181 + [-terminator_lon]
     y = list(range(-90, 91)) + list(range(90, -91, -1)) + [-90]
 
     ax.fill(
@@ -139,5 +169,5 @@ def solar_terminator(
         transform=rotated_pole,
         color=color,
         alpha=alpha,
-        zorder=zorder
+        zorder=zorder,
     )
