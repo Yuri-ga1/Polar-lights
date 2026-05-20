@@ -79,7 +79,7 @@ class PlotRenderer:
 
     @staticmethod
     def format_map_title(name: str, plot_time: datetime) -> str:
-        return f"{name} for {plot_time.strftime('%d %b %Y at %H:%M:%S UTC')}"
+        return f"{name}. {plot_time.strftime('%d %B %Y %H:%M:%S UT')}"
     
     @staticmethod
     def _format_coord(value: float, positive: str, negative: str) -> str:
@@ -164,6 +164,8 @@ class PlotRenderer:
             show_terminator=params.get("show_terminator", True),
             show_geomagnetic_lines=params.get("show_geomagnetic_lines", True),
             geomagnetic_levels=params.get("geomagnetic_levels", [-50, -30, 0, 30, 50]),
+            show_colorbar=params.get("show_colorbar", True),
+            cbar_ax=params.get("cbar_ax"),
         )
 
     def plot_map_panel(
@@ -182,18 +184,20 @@ class PlotRenderer:
 
         inner_grid = GridSpecFromSubplotSpec(
             1,
-            ncols,
+            ncols + 1,
             subplot_spec=subplot_spec,
+            width_ratios=[1] * ncols + [0.035],
             wspace=0.08,
             hspace=0.25,
         )
 
         axes: list[plt.Axes] = []
+        cbar_ax = fig.add_subplot(inner_grid[0, -1])
 
         for map_idx, plot_time in enumerate(map_times):
             if len(map_times) == 1 and ncols_requested > 1:
                 ax = fig.add_subplot(
-                    inner_grid[0, :],
+                    inner_grid[0, :ncols],
                     projection=ccrs.PlateCarree(),
                 )
             else:
@@ -202,12 +206,20 @@ class PlotRenderer:
                     projection=ccrs.PlateCarree(),
                 )
 
+            params = dict(panel.params)
+
+            if map_idx == len(map_times) - 1:
+                params["cbar_ax"] = cbar_ax
+                params["show_colorbar"] = True
+            else:
+                params["show_colorbar"] = False
+
             self.draw_map_on_axis(
                 ax=ax,
                 descriptor=panel.descriptor,
                 data=panel.data,
                 plot_time=plot_time,
-                params=panel.params,
+                params=params,
             )
 
             axes.append(ax)

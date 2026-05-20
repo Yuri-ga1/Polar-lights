@@ -138,18 +138,20 @@ def plot_map(
 
 
 def plot_simurg_map_on_ax(
-    ax: plt.Axes,
-    arr: np.ndarray,
-    *,
-    title: str,
-    plot_time: datetime | None = None,
-    cmap: str = "jet",
-    point_size: float = 10,
-    colorbar_limits: tuple[float, float] = (0.0, 1.0),
-    show_terminator: bool = True,
-    show_geomagnetic_lines: bool = True,
-    geomagnetic_levels: Iterable[float] = (-50, -30, 0, 30, 50),
+    ax,
+    arr,
+    title=None,
+    plot_time=None,
+    cmap="jet",
+    point_size=8,
+    colorbar_limits=None,
+    show_terminator=True,
+    show_geomagnetic_lines=True,
+    geomagnetic_levels=None,
+    show_colorbar=True,
+    cbar_ax=None,
 ):
+    ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
@@ -188,5 +190,9 @@ def plot_simurg_map_on_ax(
         cmap=cmap,
         transform=ccrs.PlateCarree(),
     )
+
+    if show_colorbar:
+        plt.colorbar(sctr, cax=cbar_ax, ax=ax)
+
     ax.set_title(title)
     return sctr
