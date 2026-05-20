@@ -90,6 +90,9 @@ class _SimurgDownloader(BaseDownloader):
                     done_ids.append(query_id)
                     continue
 
+                if status_data == 'not_found':
+                    raise RuntimeError(f"Запрос {query_id} был удален или изменен")
+
                 in_progress_keywords = ("new", "prepared", "processed", "plot", "processing")
                 if not any(self.client.status_has_keyword(status, keyword) for keyword in in_progress_keywords):
                     raise RuntimeError(f"Запрос {query_id} имеет неожиданный статус: {status_data}")
