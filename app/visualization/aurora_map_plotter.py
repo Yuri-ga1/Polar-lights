@@ -33,7 +33,7 @@ def plot_aurora_observations_on_ax(
     target_date = time.date()
     data = data[data["date"].dt.date == target_date]
     if data.empty:
-        raise ValueError(f"There is no data for date: {target_date}")
+        raise ValueError(f"There is no aurora data for date: {target_date}")
 
     ax.set_global()
     ax.add_feature(cfeature.LAND, facecolor="lightgray")
@@ -52,21 +52,39 @@ def plot_aurora_observations_on_ax(
     for _, row in data.iterrows():
         x, y = row["lon"], row["lat"]
         colors = row.get("colors")
+
         if pd.isna(colors):
-            colors = []
-        elif isinstance(colors, str):
-            colors = [c.strip() for c in colors.split(";")]
+            continue
+
+        if isinstance(colors, str):
+            colors = [c.strip() for c in colors.split(";") if c.strip()]
+        elif isinstance(colors, (list, tuple, set)):
+            colors = [str(c).strip() for c in colors if str(c).strip()]
+        else:
+            colors = [str(colors).strip()] if str(colors).strip() else []
+
+        colors = [
+            color
+            for color in colors
+            if color.lower() not in {"unknown", "unk", "none", "nan", ""}
+        ]
+
         if not colors:
-            colors = ["black"]
+            continue
 
         angle_per_sector = 360 / len(colors)
         for i, color in enumerate(colors):
+            facecolor = get_dominant_color(color)
+
+            if str(facecolor).lower() in {"unknown", "unk", "none", "nan", ""}:
+                continue
+
             wedge = Wedge(
                 (x, y),
                 point_radius,
                 i * angle_per_sector,
                 (i + 1) * angle_per_sector,
-                facecolor=get_dominant_color(color),
+                facecolor=facecolor,
                 transform=ccrs.PlateCarree(),
             )
             ax.add_patch(wedge)

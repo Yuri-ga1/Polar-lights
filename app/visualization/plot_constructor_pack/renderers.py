@@ -237,6 +237,13 @@ class PlotRenderer:
 
         if normalized_name in {"aurora observation", "aurora"}:
             time_value = params.get("time")
+
+            if isinstance(time_value, (list, tuple, set)):
+                if not time_value:
+                    time_value = None
+                else:
+                    time_value = list(time_value)[0]
+
             if time_value is None:
                 date_col = pd.to_datetime(data.get("date"), errors="coerce").dropna()
                 if date_col.empty:
@@ -244,7 +251,18 @@ class PlotRenderer:
                         f"Map plot '{descriptor.name}' requires a valid 'date' column "
                         "for aurora observations."
                     )
+
                 time_value = pd.Timestamp(date_col.iloc[0]).to_pydatetime()
+            else:
+                time_value = pd.to_datetime(time_value, errors="coerce")
+
+                if pd.isna(time_value):
+                    raise ValueError(
+                        f"Invalid time value for aurora observations map: "
+                        f"{params.get('time')!r}. Use YYYY-MM-DD HH:MM:SS."
+                    )
+
+                time_value = pd.Timestamp(time_value).to_pydatetime()
 
             plot_aurora_observations_on_ax(
                 ax,

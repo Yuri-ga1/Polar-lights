@@ -172,35 +172,29 @@ def _parse_forms(raw: str) -> str:
 
 
 def _process_row(row: pd.Series) -> Dict[str, Any]:
-    """Convert a single Aurorasaurus row into the standard observation format.
-
-    Parameters
-    ----------
-    row : pandas.Series
-        A row from the Aurorasaurus DataFrame.
-
-    Returns
-    -------
-    dict
-        A mapping containing keys ``date``, ``time``, ``duration_min``,
-        ``lat``, ``lon``, ``forms`` and ``colors``.
     """
-    # Use the timestamp column as the primary date/time.  It is stored
-    # as a timezone‑aware ISO string.  Convert to pandas Timestamp.
-    ts = pd.to_datetime(row["timestamp"])
+    Convert a single Aurorasaurus row into the standard observation format.
+
+    date and time are formed from time_start, not timestamp.
+    """
+    ts = pd.to_datetime(
+        row.get("time_start"),
+        format="mixed",
+        utc=True,
+        errors="coerce",
+    )
+
+    if pd.isna(ts):
+        raise ValueError("Aurorasaurus row has invalid time_start value.")
+
     date_str = ts.date().isoformat()
     time_str = ts.time().strftime("%H:%M:%S")
 
-    # Latitude and longitude (geographic coordinates)
     lat = row["st_y"]
     lon = row["st_x"]
 
-    # Duration: either provided directly (in hours) or computed from
-    # start/end times.  Some rows have a pre‑computed ``duration``
-    # column.  Convert hours to minutes.  If not available, attempt
-    # difference between ``time_end`` and ``time_start``.  Otherwise
-    # leave blank (None) similar to ARCTICS loader behaviour.
     dur_min: Optional[float] = None
+
     if pd.notna(row.get("duration")):
         try:
             dur_min = float(row["duration"]) * 60.0
@@ -208,13 +202,24 @@ def _process_row(row: pd.Series) -> Dict[str, Any]:
             dur_min = None
     elif pd.notna(row.get("time_start")) and pd.notna(row.get("time_end")):
         try:
-            t_start = pd.to_datetime(row["time_start"])
-            t_end = pd.to_datetime(row["time_end"])
-            dur_min = (t_end - t_start).total_seconds() / 60.0
+            t_start = pd.to_datetime(
+                row["time_start"],
+                format="mixed",
+                utc=True,
+                errors="coerce",
+            )
+            t_end = pd.to_datetime(
+                row["time_end"],
+                format="mixed",
+                utc=True,
+                errors="coerce",
+            )
+
+            if pd.notna(t_start) and pd.notna(t_end):
+                dur_min = (t_end - t_start).total_seconds() / 60.0
         except Exception:
             dur_min = None
 
-    # Parse colours and forms
     colours = _parse_colors(row.get("colors", ""))
     forms = _parse_forms(row.get("types", ""))
 
@@ -271,7 +276,6 @@ def fetch_and_process_aurorasaurus(
     # minimise memory usage.  The dataset has around 22k rows and 33
     # columns; selecting only the relevant ones speeds up loading.
     usecols = [
-        "timestamp",
         "st_y",
         "st_x",
         "colors",
@@ -286,18 +290,25 @@ def fetch_and_process_aurorasaurus(
     if df["see_aurora"].dtype != bool:
         df["see_aurora"] = df["see_aurora"].astype(str).str.lower().eq("true")
 
-    # Convert timestamp to datetime for filtering
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"],
+    # Convert time_start to datetime for filtering and output CSV date/time.
+    df["time_start"] = pd.to_datetime(
+        df["time_start"],
         format="mixed",
         utc=True,
         errors="coerce",
     )
 
-    df = df.dropna(subset=["timestamp", "st_y", "st_x"])
+    df["time_end"] = pd.to_datetime(
+        df["time_end"],
+        format="mixed",
+        utc=True,
+        errors="coerce",
+    )
 
-    # Filter by date and only keep rows where the observer saw aurora
-    mask = (df["timestamp"].dt.date == day) & (df["see_aurora"] == True)
+    df = df.dropna(subset=["time_start", "st_y", "st_x"])
+
+    # Filter by observation start date and only keep rows where the observer saw aurora.
+    mask = (df["time_start"].dt.date == day) & (df["see_aurora"] == True)
     filtered = df.loc[mask]
 
     observations: List[Dict[str, Any]] = []
@@ -312,6 +323,34 @@ def fetch_and_process_aurorasaurus(
     for _, row in filtered.iterrows():
         obs = _process_row(row)
         observations.append(obs)
+
+    if os.path.exists(csv_path):
+        existing_df = pd.read_csv(csv_path)
+        existing_keys = set(
+            zip(
+                existing_df.get("date", []),
+                existing_df.get("time", []),
+                existing_df.get("lat", []),
+                existing_df.get("lon", []),
+            )
+        )
+    else:
+        existing_keys = set()
+
+    observations = [
+        obs
+        for obs in observations
+        if (
+            obs["date"],
+            obs["time"],
+            obs["lat"],
+            obs["lon"],
+        )
+        not in existing_keys
+    ]
+
+    if not observations:
+        return []
 
     # Write to CSV
     fieldnames = ["date", "time", "duration_min", "lat", "lon", "forms", "colors"]

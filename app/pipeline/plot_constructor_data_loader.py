@@ -8,12 +8,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from app.pipeline.observation_pipeline import (
-    collect_observation_links,
-    load_observations_from_csv,
-    parse_and_save_observations,
-)
-from app.storage.hdf5_storage import ObservationHDF5Storage
+from app.observation.aurorasaurus_loader import fetch_and_process_aurorasaurus
 
 from app.gfz.gfz_downloader import GfzDownloader
 from app.gfz.gfz_processor import GfzProcessor
@@ -77,6 +72,68 @@ class PlotConstructorDataLoader:
             f"Unsupported datetime format: {value}. "
             "Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
         )
+    
+    @classmethod
+    def _parse_plot_time(cls, value: Any) -> datetime:
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None)
+
+        if isinstance(value, pd.Timestamp):
+            return value.to_pydatetime().replace(tzinfo=None)
+
+        if isinstance(value, str):
+            return cls._parse_datetime(value)
+
+        raise ValueError(
+            f"Unsupported map time value type: {type(value)!r}. "
+            "Use YYYY-MM-DD HH:MM:SS."
+        )
+
+    @classmethod
+    def _iter_plot_times(cls, raw_time: Any) -> list[datetime]:
+        if raw_time is None:
+            return []
+
+        if isinstance(raw_time, (list, tuple, set)):
+            return [cls._parse_plot_time(item) for item in raw_time]
+
+        return [cls._parse_plot_time(raw_time)]
+
+    def _validate_map_times_in_range(
+        self,
+        plots: list[str | dict[str, Any]],
+    ) -> None:
+        for item in plots:
+            if isinstance(item, str):
+                continue
+
+            name = self._normalize(str(item.get("name", "")))
+            params = dict(item.get("params", {}))
+
+            if not self._contains(
+                {name},
+                "roti",
+                "gim",
+                "adjusted tec",
+                "tec adjusted",
+                "aurora observation",
+                "aurora",
+                "keogram",
+            ):
+                continue
+
+            plot_times = self._iter_plot_times(params.get("time"))
+
+            for plot_time in plot_times:
+                if self.start_dt <= plot_time <= self.end_dt:
+                    continue
+
+                raise ValueError(
+                    f"Map time '{plot_time:%Y-%m-%d %H:%M:%S}' for plot "
+                    f"'{item.get('name')}' is outside the selected range: "
+                    f"{self.start_dt:%Y-%m-%d %H:%M:%S} — "
+                    f"{self.end_dt:%Y-%m-%d %H:%M:%S}."
+                )
 
     @staticmethod
     def _resolve_daily_dates(start_dt: datetime, end_dt: datetime) -> list[str]:
@@ -300,48 +357,107 @@ class PlotConstructorDataLoader:
 
         return OmniProcessor(folder_path=out_dir).load(self.primary_date_str)
 
-    def _aurora_stub(self, date_str: str) -> pd.DataFrame:
-        download_dir = self.date_dir
-        os.makedirs(download_dir, exist_ok=True)
+    def _aurora_stub(self, date_str: str | None = None) -> pd.DataFrame:
+        """
+        Load aurora observations for the full constructor date range.
 
-        h5_path = os.path.join(download_dir, "spaceweather_observations.h5")
-        csv_path = os.path.join(download_dir, "aurora_data.csv")
+        For PlotConstructor we need all complete calendar days included in
+        DATE_START — DATE_END, not only the first date.
+        """
+        out_dir = os.path.join(self.date_dir, "aurora")
+        os.makedirs(out_dir, exist_ok=True)
 
-        observations: list[dict[str, str]] = []
-        storage = ObservationHDF5Storage(h5_path)
+        csv_path = os.path.join(out_dir, "aurora_data.csv")
 
-        date_iso = date_str
-        date_slash = date_str.replace("-", "/")
+        expected_columns = [
+            "date",
+            "time",
+            "duration_min",
+            "lat",
+            "lon",
+            "forms",
+            "colors",
+        ]
 
-        cached_rows = load_observations_from_csv(csv_path, date_iso)
-        if cached_rows:
-            observations.extend(cached_rows)
+        def empty_observations_df() -> pd.DataFrame:
+            return pd.DataFrame(columns=expected_columns)
 
-        if storage.has_date(date_iso):
-            observations.extend(
-                parse_and_save_observations(
-                    h5_path,
+        def normalize_observations_df(df: pd.DataFrame) -> pd.DataFrame:
+            if df is None or df.empty:
+                return empty_observations_df()
+
+            df = df.copy()
+
+            for column in expected_columns:
+                if column not in df.columns:
+                    df[column] = ""
+
+            df = df[expected_columns].copy()
+
+            df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            df["time"] = df["time"].fillna("").astype(str)
+
+            df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+            df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+            df["duration_min"] = pd.to_numeric(df["duration_min"], errors="coerce")
+
+            df["forms"] = df["forms"].fillna("").astype(str)
+            df["colors"] = (
+                df["colors"]
+                .fillna("")
+                .astype(str)
+                .str.replace(",", ";", regex=False)
+                .str.strip()
+            )
+
+            df = df[
+                df["date"].isin(self.download_dates)
+                & df["lat"].notna()
+                & df["lon"].notna()
+            ].copy()
+
+            if df.empty:
+                return empty_observations_df()
+
+            df = df.drop_duplicates(
+                subset=["date", "time", "lat", "lon", "forms", "colors"],
+                keep="first",
+            ).reset_index(drop=True)
+
+            return df
+
+        all_rows: list[dict[str, Any]] = []
+
+        for current_date_str in self.download_dates:
+            target_date = datetime.strptime(current_date_str, "%Y-%m-%d").date()
+
+            rows = self._safe_download(
+                lambda d=target_date: fetch_and_process_aurorasaurus(
+                    d,
                     csv_path,
-                    dates=[date_iso],
+                    download_dir=out_dir,
+                    auto_download=True,
                 )
             )
 
-        collect_observation_links(date_slash, h5_path)
+            if rows:
+                all_rows.extend(rows)
 
-        observations.extend(
-            parse_and_save_observations(
-                h5_path,
-                csv_path,
-                dates=[date_iso],
-            )
+        if all_rows:
+            return normalize_observations_df(pd.DataFrame(all_rows))
+
+        if os.path.exists(csv_path):
+            return normalize_observations_df(pd.read_csv(csv_path))
+
+        print(
+            "No aurora observations found for date range: "
+            f"{self.download_dates[0]} — {self.download_dates[-1]}"
         )
-
-        if not observations:
-            return pd.DataFrame(columns=["date", "time", "lat", "lon", "colors"])
-
-        return pd.DataFrame(observations)
+        return empty_observations_df()
 
     def load_for_requested_plots(self, plots: list[str | dict[str, Any]]) -> dict[str, Any]:
+        self._validate_map_times_in_range(plots)
+        
         names = {
             self._normalize(item if isinstance(item, str) else item.get("name", ""))
             for item in plots
@@ -370,7 +486,7 @@ class PlotConstructorDataLoader:
             results["GIM"] = self._load_gim(params_by_plot.get("gim"))
 
         if self._contains(names, "aurora observation", "aurora"):
-            results["Aurora Observation"] = self._aurora_stub(self.primary_date_str)
+            results["Aurora Observation"] = self._aurora_stub()
 
         if self._contains(names, "ionosonde"):
             results["Ionosonde"] = self._load_ionosonde(params_by_plot.get("ionosonde"))
