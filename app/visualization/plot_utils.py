@@ -224,6 +224,48 @@ def plot_timeseries_on_ax(
         ax.set_title(title)
     ax.set_ylabel(ylabel or value_col)
 
+def should_fill_below_zero(name: str | None) -> bool:
+    if not name:
+        return False
+
+    normalized = str(name).lower().replace("_", "-").replace(" ", "-")
+
+    return normalized in {"dst", "sym-h", "symh"}
+
+
+def fill_negative_values(
+    ax: plt.Axes,
+    x: pd.Series,
+    y: pd.Series,
+    *,
+    label: str | None = None,
+    color: str = "lightskyblue",
+    alpha: float = 0.45,
+) -> None:
+    if not should_fill_below_zero(label):
+        return
+
+    x = pd.to_datetime(x, errors="coerce")
+    y = pd.to_numeric(y, errors="coerce")
+
+    valid = x.notna() & y.notna()
+    x = x[valid]
+    y = y[valid]
+
+    if x.empty or y.empty:
+        return
+
+    ax.fill_between(
+        x,
+        y,
+        0,
+        where=y < 0,
+        color=color,
+        alpha=alpha,
+        interpolate=True,
+        zorder=0,
+    )
+
 
 def plot_histogram_on_ax(
     ax: plt.Axes,

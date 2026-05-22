@@ -19,6 +19,7 @@ from app.visualization.plot_constructor_pack.models import (
 from app.visualization.plot_constructor_pack.panels import PlotPanelBuilder
 from app.visualization.plot_constructor_pack.registry import PlotRegistry
 from app.visualization.plot_utils import (
+    fill_negative_values,
     plot_histogram_on_ax,
     plot_kp_bars,
     plot_timeseries_on_ax,
@@ -467,11 +468,21 @@ class PlotRenderer:
                     f"Field '{field}' source '{source_name}' has no time column."
                 )
 
+            fill_negative_values(
+                ax,
+                source_df[time_col],
+                source_df[source_column],
+                label=source_column,
+                color=panel.params.get("fill_color", "lightskyblue"),
+                alpha=panel.params.get("fill_alpha", 0.45),
+            )
+
             ax.plot(
                 source_df[time_col],
                 source_df[source_column],
                 linewidth=panel.params.get("linewidth", 1.5),
                 label=source_column,
+                zorder=2,
             )
 
         ax.set_title(panel.panel_name or panel.descriptor.name)

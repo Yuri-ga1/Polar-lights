@@ -141,7 +141,7 @@ def plot_sw_symh_dst_kp(
 
     # --- c) SYM-H + Dst ---
     ax = axes[2]
-    ax.plot(sw_df["datetime"], sw_df["symh"], color="r", label="SYM-H")
+    ax.plot(sw_df["datetime"], sw_df["symh"], color="r", label="SYM-H", zorder=2)
     ax.set_ylabel("SYM-H, nT", fontweight="bold")
     ax.yaxis.label.set_color("r")
     ax.tick_params(axis="y", colors="r")
@@ -151,9 +151,20 @@ def plot_sw_symh_dst_kp(
     ax.set_ylim(yl, yh)
     ax.set_yticks(yt)
 
+    ax.fill_between(
+        sw_df["datetime"],
+        sw_df["symh"],
+        0,
+        where=sw_df["symh"] < 0,
+        color="lightskyblue",
+        alpha=0.45,
+        interpolate=True,
+        zorder=0,
+    )
+
     ax_r = ax.twinx()
     ax._right_axis_for_label_alignment = ax_r
-    ax_r.plot(dst_df["datetime"], dst_df["dst"], color="k", label="Dst")
+    ax_r.plot(dst_df["datetime"], dst_df["dst"], color="k", label="Dst", zorder=3)
     ax_r.yaxis.labelpad = 16
     ax_r.set_ylabel("Dst, nT", fontweight="bold")
 
