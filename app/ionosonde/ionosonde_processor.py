@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 import glob
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -118,6 +120,108 @@ class IonosondeProcessor(BaseProcessor):
         return df
 
     @staticmethod
+    def _extract_station_code_from_path(path: str | None) -> str | None:
+        if not path:
+            return None
+
+        filename = os.path.basename(path)
+        station_code = filename.split("_", maxsplit=1)[0].strip()
+
+        if re.fullmatch(r"[A-Z]{2}\d{3}", station_code):
+            return station_code
+
+        return None
+
+    @staticmethod
+    def _parse_coord_token(token: str) -> tuple[float, str] | None:
+        if not token:
+            return None
+
+        match = re.fullmatch(
+            r"\s*(?P<value>\d+(?:\.\d+)?)(?P<hemisphere>[NSEW])\s*",
+            str(token).upper(),
+        )
+
+        if not match:
+            return None
+
+        return float(match.group("value")), match.group("hemisphere")
+
+    @classmethod
+    def _normalize_geo_coordinate(cls, token: str, axis: str) -> float | None:
+        parsed = cls._parse_coord_token(token)
+        if parsed is None:
+            return None
+
+        value, hemisphere = parsed
+        axis = axis.lower().strip()
+
+        if axis == "lat":
+            if hemisphere not in {"N", "S"}:
+                raise ValueError(f"Invalid latitude hemisphere: {hemisphere}")
+
+            if not 0 <= value <= 90:
+                raise ValueError(f"Latitude out of range: {value}")
+
+            return value if hemisphere == "N" else -value
+
+        if axis == "lon":
+            if hemisphere not in {"E", "W"}:
+                raise ValueError(f"Invalid longitude hemisphere: {hemisphere}")
+
+            if not 0 <= value <= 360:
+                raise ValueError(f"Longitude out of range: {value}")
+
+            signed_value = value if hemisphere == "E" else -value
+
+            if signed_value > 180:
+                signed_value -= 360
+
+            if signed_value < -180:
+                signed_value += 360
+
+            return signed_value
+
+        raise ValueError(f"Unsupported coordinate axis: {axis}")
+    
+    @classmethod
+    def _extract_station_metadata(
+        cls,
+        raw: str,
+        path: str | None = None,
+    ) -> dict[str, str | float | None]:
+        station_code = cls._extract_station_code_from_path(path)
+        station_name = None
+        lat = None
+        lon = None
+
+        location_pattern = re.compile(
+            r"#\s*Location:\s*GEO\s+"
+            r"(?P<lat>\d+(?:\.\d+)?[NS])\s+"
+            r"(?P<lon>\d+(?:\.\d+)?[EW]),\s*"
+            r"URSI-Code\s+(?P<code>[A-Z]{2}\d{3})"
+            r"(?:\s+(?P<name>.*))?"
+        )
+
+        for line in raw.splitlines():
+            match = location_pattern.match(line.strip())
+            if not match:
+                continue
+
+            lat = cls._normalize_geo_coordinate(match.group("lat"), "lat")
+            lon = cls._normalize_geo_coordinate(match.group("lon"), "lon")
+            station_code = match.group("code") or station_code
+            station_name = (match.group("name") or "").strip() or None
+            break
+
+        return {
+            "code": station_code,
+            "name": station_name,
+            "lat": lat,
+            "lon": lon,
+        }
+
+    @staticmethod
     def _compute_q_local_time_mean(
         df_window: pd.DataFrame,
         target_day: date,
@@ -204,6 +308,8 @@ class IonosondeProcessor(BaseProcessor):
                 raw = f.read()
         except Exception:
             return None
+        
+        station_metadata = self._extract_station_metadata(raw, path)
 
         df = self._parse_downloaded_text(raw)
         if df.empty:
@@ -242,5 +348,10 @@ class IonosondeProcessor(BaseProcessor):
             .sort_values("datetime")
             .reset_index(drop=True)
         )
+
+        out.attrs["station_code"] = station_metadata.get("code")
+        out.attrs["station_name"] = station_metadata.get("name")
+        out.attrs["station_lat"] = station_metadata.get("lat")
+        out.attrs["station_lon"] = station_metadata.get("lon")
 
         return out

@@ -10,6 +10,7 @@ from matplotlib.gridspec import GridSpecFromSubplotSpec
 
 from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
 from app.visualization.gim_plotter import plot_gim_map_on_ax
+from app.visualization.ionosonde_plotter import plot_ionosonde_series_on_ax
 from app.visualization.plot_constructor_pack.models import (
     TIME_COLUMN_CANDIDATES,
     PlotDescriptor,
@@ -335,6 +336,25 @@ class PlotRenderer:
 
             if y_col is None:
                 raise ValueError(f"No value column found for timeseries '{descriptor.name}'.")
+            
+            if PlotRegistry.normalize_name(descriptor.source_key) == "ionosonde":
+                plot_ionosonde_series_on_ax(
+                    ax,
+                    data,
+                    time_col=time_col,
+                    value_col=y_col,
+                    value_label=params.get("value_label", y_col),
+                    x_as_hours=False,
+                    color=params.get("color", "black"),
+                    linewidth=params.get("linewidth", 1.5),
+                    ylabel=params.get("ylabel", y_col),
+                    show_min=params.get("show_min", True),
+                    show_max=params.get("show_max", True),
+                    show_extrema=params.get("show_extrema"),
+                )
+                self.apply_x_range(ax, params)
+                self.draw_time_markers(ax, params)
+                return
 
             plot_timeseries_on_ax(
                 ax,

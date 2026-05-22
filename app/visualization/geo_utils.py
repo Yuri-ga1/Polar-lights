@@ -171,3 +171,20 @@ def solar_terminator(
         alpha=alpha,
         zorder=zorder,
     )
+
+def format_geo_coord(value: float, axis: str) -> str:
+    axis = axis.lower().strip()
+
+    if axis == "lat":
+        if not -90 <= value <= 90:
+            raise ValueError(f"Latitude out of range: {value}")
+
+        return f"{abs(value):.2f}°{'N' if value >= 0 else 'S'}"
+
+    if axis == "lon":
+        if not -180 <= value <= 180:
+            raise ValueError(f"Longitude out of range: {value}")
+
+        return f"{abs(value):.2f}°{'E' if value >= 0 else 'W'}"
+
+    raise ValueError(f"Unsupported coordinate axis: {axis}")

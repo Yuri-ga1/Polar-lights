@@ -60,6 +60,9 @@ def run_misc_pipeline(
     plots_dir: str,
     ionosonde_code: str | None,
     cosmic_stations: Sequence[str] | None,
+    ionosonde_show_min: bool = True,
+    ionosonde_show_max: bool = True,
+    ionosonde_show_extrema: bool | None = None,
 ) -> None:
     os.makedirs(download_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
@@ -84,7 +87,13 @@ def run_misc_pipeline(
         station=ionosonde_code,
     )
     if ionosonde_df is not None and not ionosonde_df.empty:
-        plot_ionosonde(ionosonde_df, save_dir=plots_dir)
+        plot_ionosonde(
+            ionosonde_df,
+            save_dir=plots_dir,
+            show_min=ionosonde_show_min,
+            show_max=ionosonde_show_max,
+            show_extrema=ionosonde_show_extrema,
+        )
 
     nmdb_dir = os.path.join(download_dir, "nmdb")
     os.makedirs(nmdb_dir, exist_ok=True)
