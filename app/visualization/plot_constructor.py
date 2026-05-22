@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import string
 from typing import Any, Mapping, Sequence
 
 import cartopy.crs as ccrs
@@ -62,6 +63,40 @@ class PlotConstructor:
             markers.append(pd.Timestamp(ts))
 
         return markers
+    
+    @staticmethod
+    def _panel_label(index: int) -> str:
+        letters = string.ascii_lowercase
+        label = ""
+
+        while True:
+            index, remainder = divmod(index, len(letters))
+            label = letters[remainder] + label
+
+            if index == 0:
+                return label
+
+            index -= 1
+
+    @staticmethod
+    def _add_panel_label(ax: plt.Axes, label: str) -> None:
+        ax.text(
+            0.02,
+            0.96,
+            label,
+            transform=ax.transAxes,
+            fontsize=18,
+            fontweight="bold",
+            va="top",
+            ha="left",
+            bbox={
+                "boxstyle": "round,pad=0.25",
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.75,
+            },
+            zorder=100,
+        )
 
     def _collect_map_time_markers(self, parsed: list[ParsedPlot]) -> list[pd.Timestamp]:
         markers: list[pd.Timestamp] = []
@@ -126,18 +161,26 @@ class PlotConstructor:
         outer_grid = fig.add_gridspec(len(panels), 1)
 
         axes: list[plt.Axes] = []
+        label_index = 0
 
         for idx, panel in enumerate(panels):
             subplot_spec = outer_grid[idx]
 
             if panel.descriptor.plot_type == "map" and panel.map_times:
-                axes.extend(
-                    self.renderer.plot_map_panel(
-                        fig=fig,
-                        subplot_spec=subplot_spec,
-                        panel=panel,
-                    )
+                map_axes = self.renderer.plot_map_panel(
+                    fig=fig,
+                    subplot_spec=subplot_spec,
+                    panel=panel,
                 )
+
+                for ax in map_axes:
+                    self._add_panel_label(
+                        ax,
+                        self._panel_label(label_index),
+                    )
+                    label_index += 1
+
+                axes.extend(map_axes)
                 continue
 
             if panel.descriptor.plot_type == "map":
@@ -157,6 +200,13 @@ class PlotConstructor:
                     data=panel.data,
                     params=panel.params,
                 )
+
+                self._add_panel_label(
+                    ax,
+                    self._panel_label(label_index),
+                )
+                label_index += 1
+
                 axes.append(ax)
                 continue
 
@@ -167,6 +217,13 @@ class PlotConstructor:
                 panel=panel,
                 time_markers=time_markers,
             )
+
+            self._add_panel_label(
+                ax,
+                self._panel_label(label_index),
+            )
+            label_index += 1
+
             axes.append(ax)
 
         fig.tight_layout()
