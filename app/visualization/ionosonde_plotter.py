@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels, style_axes
+from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels, style_axes, align_ylabels
 from app.visualization.geo_utils import format_geo_coord
 
 
@@ -171,6 +171,7 @@ def plot_ionosonde(
     axes[-1].set_xlabel("Time, UT", fontweight="bold")
 
     fig.suptitle(format_ionosonde_title(df), fontweight="bold")
+    align_ylabels(axes, left_x=-0.075, right_x=1.07)
     fig.subplots_adjust(hspace=0.5, top=0.92, bottom=0.1, left=0.08, right=0.97)
 
     os.makedirs(save_dir, exist_ok=True)

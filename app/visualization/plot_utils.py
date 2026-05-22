@@ -243,3 +243,24 @@ def plot_histogram_on_ax(
         ax.set_title(title)
     ax.set_ylabel(ylabel)
 
+def align_ylabels(
+    axes,
+    *,
+    left_x: float = -0.055,
+    right_x: float = 1.055,
+) -> None:
+    """
+    Align y-axis labels across stacked plots.
+
+    left_x and right_x are in axes coordinates.
+    """
+    if not isinstance(axes, (list, tuple, np.ndarray)):
+        axes = [axes]
+
+    for ax in axes:
+        ax.yaxis.set_label_coords(left_x, 0.5)
+
+    for ax in axes:
+        if hasattr(ax, "_right_axis_for_label_alignment"):
+            ax_right = ax._right_axis_for_label_alignment
+            ax_right.yaxis.set_label_coords(right_x, 0.5)

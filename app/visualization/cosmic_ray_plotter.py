@@ -8,6 +8,17 @@ import matplotlib.dates as mdates
 
 from app.visualization.plot_utils import *
 
+def _format_month_title(start: pd.Timestamp, end: pd.Timestamp) -> str:
+    start = pd.to_datetime(start)
+    end = pd.to_datetime(end)
+
+    if start.year == end.year and start.month == end.month:
+        return start.strftime("%B %Y")
+
+    if start.year == end.year:
+        return f"{start.strftime('%d %B')}–{end.strftime('%d %B')} {start.year}"
+
+    return f"{start.strftime('%B %Y')}–{end.strftime('%B %Y')}"
 
 def plot_cosmic_ray_variations(
     cr_df: pd.DataFrame,
@@ -61,9 +72,10 @@ def plot_cosmic_ray_variations(
     style_axes(ax_kp)
     ax_kp.set_title(labels[-1], loc="left", x=0.0125, y=0.75, weight="bold")
 
-    # TODO: сделать автоматический нейминг в зависимости от даты
-    fig.suptitle('November 2025', fontsize=30, y=0.995)
-    fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.97)
+
+    fig.suptitle(_format_month_title(x_start, x_end), fontsize=30, y=0.995)
+    align_ylabels(axes, left_x=-0.055)
+    fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.1, right=0.97)
 
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "Cosmic_Ray.png")

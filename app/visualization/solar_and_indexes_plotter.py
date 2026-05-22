@@ -71,6 +71,7 @@ def _plot_twin_auto(
 
     # right
     ax_r = ax.twinx()
+    ax._right_axis_for_label_alignment = ax_r
     l2 = ax_r.plot(x, y_right, color=right_color, label=right_ylabel)
     ax_r.set_ylabel(right_ylabel, fontweight="bold")
 
@@ -151,6 +152,7 @@ def plot_sw_symh_dst_kp(
     ax.set_yticks(yt)
 
     ax_r = ax.twinx()
+    ax._right_axis_for_label_alignment = ax_r
     ax_r.plot(dst_df["datetime"], dst_df["dst"], color="k", label="Dst")
     ax_r.yaxis.labelpad = 16
     ax_r.set_ylabel("Dst, nT", fontweight="bold")
@@ -177,7 +179,8 @@ def plot_sw_symh_dst_kp(
     ax.set_title(labels[-1], loc="left", x=0.0125, y=0.75, weight="bold")
 
     # layout + save
-    fig.subplots_adjust(hspace=0.5, top=0.97, bottom=0.08, left=0.08, right=0.85)
+    align_ylabels(axes, left_x=-0.075, right_x=1.07)
+    fig.subplots_adjust(hspace=0.5, top=1.15, bottom=0.08, left=0.12, right=0.86)
 
     os.makedirs(save_dir, exist_ok=True)
 
