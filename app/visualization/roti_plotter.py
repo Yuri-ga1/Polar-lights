@@ -175,13 +175,15 @@ def plot_map(
 
     nrows = max(1, ceil(len(plot_times) / ncols))
     subplot_marks = panel_labels(nrows * ncols)
+    fig_height = max(5.2, 5.7 * nrows)
 
     fig, axs = plt.subplots(
-        figsize=(18, 16),
+        figsize=(18, fig_height),
         nrows=nrows,
         ncols=ncols,
         subplot_kw={"projection": ccrs.PlateCarree()}
     )
+    fig.subplots_adjust(hspace=0.28, wspace=0.22)
 
     axs = axs.flatten() if nrows * ncols > 1 else [axs]
 

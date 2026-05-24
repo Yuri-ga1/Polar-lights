@@ -194,12 +194,12 @@ def plot_ionosonde(
         axes[-1].set_xlabel("Time, UT", fontweight="bold")
 
     fig.suptitle(format_ionosonde_title(df), fontweight="bold")
-    align_ylabels(axes, left_x=-0.075, right_x=1.07)
-    fig.subplots_adjust(hspace=0.5, top=0.92, bottom=0.1, left=0.08, right=0.97)
+    align_ylabels(axes, left_x=-0.055, right_x=1.055)
+    fig.subplots_adjust(hspace=0.5, top=0.92, bottom=0.1, left=0.12, right=0.96)
 
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "ionosonde.png")
 
-    fig.savefig(save_path)
+    fig.savefig(save_path, bbox_inches="tight", pad_inches=0.12)
 
     return fig
