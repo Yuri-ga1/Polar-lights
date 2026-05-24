@@ -6,6 +6,7 @@ from datetime import datetime
 from enum import Enum
 from math import ceil
 from typing import Iterable, NamedTuple
+import pandas as pd
 
 import cartopy.crs as ccrs
 from cartopy import feature
@@ -42,7 +43,7 @@ class DataProducts(DataProduct, Enum):
     tec_adjusted = DataProduct(
         "TEC Adjusted",
         "tec_adjusted",
-        ColorLimits(0, 80, "TECU"),
+        ColorLimits(0, 80, "TEC, TECU"),
     )
 
 
@@ -55,12 +56,100 @@ def _resolve_product(product_type: str) -> DataProduct:
         supported = ", ".join(DataProducts.__members__.keys())
         raise ValueError(f"Неизвестный тип продукта: {product_type}. Поддерживаются: {supported}") from error
 
+def _format_available_times(times: list[datetime]) -> str:
+    return ", ".join(t.strftime("%Y-%m-%d %H:%M:%S") for t in times)
+
+
+def _nearest_times(
+    target: datetime,
+    available_times: list[datetime],
+    count: int = 2,
+) -> list[datetime]:
+    return sorted(
+        available_times,
+        key=lambda t: abs((t - target).total_seconds()),
+    )[:count]
+
+
+def _parse_plot_time_value(value, base_date: datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None)
+
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime().replace(tzinfo=None)
+
+    if isinstance(value, str):
+        text = value.strip()
+
+        # Format: "HH:MM:SS"
+        if len(text) == 8 and text.count(":") == 2:
+            parsed_time = datetime.strptime(text, "%H:%M:%S").time()
+            return datetime.combine(base_date.date(), parsed_time)
+
+        # Format: "YYYY-MM-DD HH:MM:SS" or pandas-compatible datetime
+        parsed = pd.to_datetime(text, errors="coerce")
+        if pd.isna(parsed):
+            raise ValueError(
+                f"Invalid plot time '{value}'. Use 'HH:MM:SS' or "
+                "'YYYY-MM-DD HH:MM:SS'."
+            )
+
+        return pd.Timestamp(parsed).to_pydatetime().replace(tzinfo=None)
+
+    raise ValueError(
+        f"Unsupported plot time type: {type(value)!r}. Use datetime, "
+        "pd.Timestamp, 'HH:MM:SS' or 'YYYY-MM-DD HH:MM:SS'."
+    )
+
+
+def resolve_plot_times(
+    data: dict[datetime, np.ndarray],
+    plot_times,
+) -> list[datetime]:
+    if not data:
+        raise ValueError("SIMuRG data is empty.")
+
+    available_times = sorted(t.replace(tzinfo=None) for t in data.keys())
+    data_by_time = {t.replace(tzinfo=None): t for t in data.keys()}
+    base_date = available_times[0]
+
+    if plot_times is None:
+        return available_times
+
+    if isinstance(plot_times, (str, datetime, pd.Timestamp)):
+        raw_times = [plot_times]
+    else:
+        raw_times = list(plot_times)
+
+    if not raw_times:
+        raise ValueError("plot_times is empty.")
+
+    resolved_times: list[datetime] = []
+
+    for raw_time in raw_times:
+        requested_time = _parse_plot_time_value(raw_time, base_date)
+
+        if requested_time not in data_by_time:
+            nearest = _nearest_times(requested_time, available_times, count=2)
+
+            raise ValueError(
+                "Requested map time is not available in SIMuRG data.\n"
+                f"Requested: {requested_time:%Y-%m-%d %H:%M:%S}\n"
+                "SIMuRG data step is usually 30 seconds, but some moments "
+                "may be absent because of source data gaps.\n"
+                f"Nearest available times: {_format_available_times(nearest)}"
+            )
+
+        resolved_times.append(data_by_time[requested_time])
+
+    return resolved_times
+
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: list[datetime],
     product_type: str = "roti",
     save_dir: str = os.path.join("files", "graphs"),
-) -> None:
+) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
     """
@@ -81,14 +170,9 @@ def plot_map(
     if not data:
         raise ValueError("Данные SIMuRG пустые.")
 
-    if not plot_times:
-        raise ValueError("plot_times пустой.")
-
-    plot_times = [t for t in plot_times if t in data]
-    if not plot_times:
-        raise ValueError("Нет данных для указанных plot_times.")
-
+    plot_times = resolve_plot_times(data, plot_times)
     plot_times = sorted(plot_times)
+
     nrows = max(1, ceil(len(plot_times) / ncols))
     subplot_marks = panel_labels(nrows * ncols)
 
@@ -110,6 +194,7 @@ def plot_map(
 
         color_limits = scale_color_limits(product, colorbar_limit_scaling)
         arr = data[time]
+
         sctr = plot_simurg_map_on_ax(
             ax1,
             arr,
@@ -118,23 +203,32 @@ def plot_map(
             point_size=map_params.point_size,
             plot_time=time,
             colorbar_limits=(color_limits.min, color_limits.max),
+            show_colorbar=False,
         )
+
         add_panel_label(ax=ax1, label=subplot_marks[axs_index])
 
-        if (axs_index + 1) % ncols == 0:
+        is_right_column = (axs_index + 1) % ncols == 0
+        is_last_plot = axs_index == len(plot_times) - 1
+
+        if is_right_column or is_last_plot:
             cbar_label = product.color_limits.units
             add_colorbar_right(
                 fig=fig,
                 ax=ax1,
                 mappable=sctr,
-                label=cbar_label
+                label=cbar_label,
             )
 
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, f"{product.hdf_name.upper()}.png")
 
-    fig.savefig(save_path)
-    plt.close(fig)
+    fig.savefig(
+        save_path,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+    return fig
 
 
 def plot_simurg_map_on_ax(
@@ -147,7 +241,7 @@ def plot_simurg_map_on_ax(
     colorbar_limits=None,
     show_terminator=True,
     show_geomagnetic_lines=True,
-    geomagnetic_levels=None,
+    geomagnetic_levels=[-60, -15, 0, 15, 60],
     show_colorbar=True,
     cbar_ax=None,
 ):
