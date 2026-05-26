@@ -36,6 +36,9 @@ from app.visualization.roti_plotter import (
 
 
 class PlotRenderer:
+    LEFT_YLABEL_X = -0.075
+    RIGHT_YLABEL_X = 1.075
+
     def __init__(self, registry: PlotRegistry, processor_results: dict[str, Any]) -> None:
         self.registry = registry
         self.processor_results = processor_results
@@ -116,8 +119,9 @@ class PlotRenderer:
 
         return " / ".join(labels)
     
-    @staticmethod
+    @classmethod
     def _make_colored_ylabel_box(
+        cls,
         ax: plt.Axes,
         labels: list[str],
         colors: list[str],
@@ -125,6 +129,11 @@ class PlotRenderer:
         side: str,
     ) -> AnchoredOffsetbox:
         children = []
+        textprops = {
+            "fontsize": plt.rcParams["axes.labelsize"],
+            "fontweight": plt.rcParams["axes.labelweight"],
+            "rotation": 90,
+        }
 
         for idx, (label, color) in enumerate(zip(labels, colors)):
             if idx > 0:
@@ -132,9 +141,8 @@ class PlotRenderer:
                     TextArea(
                         " / ",
                         textprops={
+                            **textprops,
                             "color": "black",
-                            "fontweight": "bold",
-                            "rotation": 90,
                         },
                     )
                 )
@@ -143,9 +151,8 @@ class PlotRenderer:
                 TextArea(
                     label,
                     textprops={
+                        **textprops,
                         "color": color,
-                        "fontweight": "bold",
-                        "rotation": 90,
                     },
                 )
             )
@@ -159,21 +166,21 @@ class PlotRenderer:
 
         if side == "right":
             return AnchoredOffsetbox(
-                loc="center right",
+                loc="center left",
                 child=box,
                 pad=0,
                 frameon=False,
-                bbox_to_anchor=(1.12, 0.5),
+                bbox_to_anchor=(cls.RIGHT_YLABEL_X, 0.5),
                 bbox_transform=ax.transAxes,
                 borderpad=0,
             )
 
         return AnchoredOffsetbox(
-            loc="center left",
+            loc="center right",
             child=box,
             pad=0,
             frameon=False,
-            bbox_to_anchor=(-0.12, 0.5),
+            bbox_to_anchor=(cls.LEFT_YLABEL_X, 0.5),
             bbox_transform=ax.transAxes,
             borderpad=0,
         )
@@ -210,6 +217,16 @@ class PlotRenderer:
         ax.add_artist(ylabel_box)
 
     @classmethod
+    def align_ylabels(cls, ax: plt.Axes) -> None:
+        ax.yaxis.set_label_coords(cls.LEFT_YLABEL_X, 0.5)
+
+        if hasattr(ax, "_right_axis_for_label_alignment"):
+            ax._right_axis_for_label_alignment.yaxis.set_label_coords(
+                cls.RIGHT_YLABEL_X,
+                0.5,
+            )
+
+    @classmethod
     def apply_x_range(cls, ax: plt.Axes, params: dict[str, Any]) -> None:
         x_range = cls.resolve_x_range(params)
         if x_range is None:
@@ -221,6 +238,42 @@ class PlotRenderer:
     @staticmethod
     def _format_constructor_date_label(value: pd.Timestamp) -> str:
         return value.strftime("%d %b %Y")
+
+    @classmethod
+    def _build_date_axis_ticks(
+        cls,
+        x_start: pd.Timestamp,
+        x_end: pd.Timestamp,
+    ) -> tuple[list[pd.Timestamp], list[str]]:
+        ticks: list[pd.Timestamp] = []
+        labels: list[str] = []
+
+        for day_start in pd.date_range(x_start.normalize(), x_end.normalize(), freq="D"):
+            visible_start = max(x_start, pd.Timestamp(day_start))
+            visible_end = min(x_end, pd.Timestamp(day_start) + pd.Timedelta(days=1))
+
+            if visible_end <= visible_start:
+                continue
+
+            ticks.append(visible_start + (visible_end - visible_start) / 2)
+            labels.append(cls._format_constructor_date_label(pd.Timestamp(day_start)))
+
+        return ticks, labels
+
+    @classmethod
+    def _apply_date_axis_labels(
+        cls,
+        ax: plt.Axes,
+        x_start: pd.Timestamp,
+        x_end: pd.Timestamp,
+    ) -> None:
+        ticks, labels = cls._build_date_axis_ticks(x_start, x_end)
+        date_axis = ax.secondary_xaxis("bottom")
+        date_axis.spines["bottom"].set_position(("outward", 28))
+        date_axis.spines["bottom"].set_visible(False)
+        date_axis.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
+        date_axis.xaxis.set_major_formatter(FixedFormatter(labels))
+        date_axis.tick_params(axis="x", length=0, pad=3, labelbottom=True)
 
     @staticmethod
     def _choose_hour_step(days_count: int) -> int:
@@ -270,20 +323,7 @@ class PlotRenderer:
 
         ticks = sorted(set(ticks))
 
-        labels: list[str] = []
-        labeled_dates: set[pd.Timestamp] = set()
-
-        for tick in ticks:
-            date_key = tick.normalize()
-            hour_label = tick.strftime("%H")
-
-            if date_key not in labeled_dates:
-                date_label = cls._format_constructor_date_label(tick)
-                labeled_dates.add(date_key)
-            else:
-                date_label = ""
-
-            labels.append(f"{hour_label}\n{date_label}")
+        labels = [tick.strftime("%H") for tick in ticks]
 
         return ticks, labels
 
@@ -326,7 +366,8 @@ class PlotRenderer:
         ax.set_xlim(x_start_padded.to_pydatetime(), x_end_padded.to_pydatetime())
         ax.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
         ax.xaxis.set_major_formatter(FixedFormatter(labels))
-        ax.tick_params(axis="x", pad=12, labelbottom=True)
+        ax.tick_params(axis="x", pad=5, labelbottom=True)
+        cls._apply_date_axis_labels(ax, x_start, x_end)
 
     @classmethod
     def apply_time_xaxis_format(
@@ -359,7 +400,8 @@ class PlotRenderer:
         ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
         ax.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
         ax.xaxis.set_major_formatter(FixedFormatter(labels))
-        ax.tick_params(axis="x", pad=12, labelbottom=True)
+        ax.tick_params(axis="x", pad=5, labelbottom=True)
+        cls._apply_date_axis_labels(ax, x_start, x_end)
 
     @staticmethod
     def draw_time_markers(ax: plt.Axes, params: dict[str, Any]) -> None:
@@ -603,8 +645,16 @@ class PlotRenderer:
             if not isinstance(data, pd.DataFrame):
                 raise ValueError("Kp plot requires pandas DataFrame data.")
 
-            plot_kp_bars(ax=ax, kp_df=data, set_xlabel=False)
-            ax.set_title(descriptor.name)
+            plot_kp_bars(
+                ax=ax,
+                kp_df=data,
+                set_xlabel=False,
+                label_kwargs={
+                    "fontsize": plt.rcParams["axes.labelsize"],
+                    "fontweight": plt.rcParams["axes.labelweight"],
+                },
+            )
+            ax.set_title("Kp")
 
             time_col = self.registry.find_time_column(data)
             if time_col is not None:
@@ -860,13 +910,13 @@ class PlotRenderer:
 
             h1, l1 = ax.get_legend_handles_labels()
             h2, l2 = ax_r.get_legend_handles_labels()
-            ax.legend(
+            ax_r.legend(
                 h1 + h2,
                 l1 + l2,
-                loc=panel.params.get("legend_loc", "lower left"),
+                loc=panel.params.get("legend_loc", "upper right"),
             )
         else:
-            ax.legend(loc=panel.params.get("legend_loc", "lower left"))
+            ax.legend(loc=panel.params.get("legend_loc", "upper right"))
 
         ax.set_title(panel.panel_name or panel.descriptor.name)
 

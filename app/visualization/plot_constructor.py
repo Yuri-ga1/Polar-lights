@@ -85,8 +85,8 @@ class PlotConstructor:
             0.96,
             label,
             transform=ax.transAxes,
-            fontsize=18,
-            fontweight="bold",
+            fontsize=plt.rcParams["font.size"],
+            fontweight=plt.rcParams["font.weight"],
             va="top",
             ha="left",
             bbox={
@@ -217,6 +217,7 @@ class PlotConstructor:
                 panel=panel,
                 time_markers=time_markers,
             )
+            self.renderer.align_ylabels(ax)
 
             self._add_panel_label(
                 ax,

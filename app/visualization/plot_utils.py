@@ -176,6 +176,7 @@ def plot_kp_bars(
     y_col: str = "kp",
     width: float = 0.115,
     set_xlabel: bool = False,
+    label_kwargs: dict | None = None,
 ) -> None:
     """Draw Kp bars with standard Polar Lights styling."""
     if kp_df is None or kp_df.empty:
@@ -193,9 +194,10 @@ def plot_kp_bars(
     ax.bar(data[x_col], data[y_col], color=colors, width=width)
     ax.set_ylim(0, 9)
     ax.set_yticks([0, 3, 6, 9])
-    ax.set_ylabel("Kp", fontweight="bold")
+    resolved_label_kwargs = {"fontweight": "bold"} if label_kwargs is None else label_kwargs
+    ax.set_ylabel("Kp", **resolved_label_kwargs)
     if set_xlabel:
-        ax.set_xlabel("Day", fontweight="bold")
+        ax.set_xlabel("Day", **resolved_label_kwargs)
 
 
 def plot_timeseries_on_ax(
