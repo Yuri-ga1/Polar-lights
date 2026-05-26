@@ -23,6 +23,11 @@ except ImportError:
 class PlotConstructor:
     """Build stacked plots from processor outputs using plot names."""
 
+    PANEL_LABEL_ALPHABETS = {
+        "en": string.ascii_lowercase,
+        "ru": "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+    }
+
     def __init__(self, processor_results: Mapping[str, Any]) -> None:
         self.processor_results = dict(processor_results)
 
@@ -64,9 +69,17 @@ class PlotConstructor:
 
         return markers
     
-    @staticmethod
-    def _panel_label(index: int) -> str:
-        letters = string.ascii_lowercase
+    @classmethod
+    def _panel_label(cls, index: int, language: str = "en") -> str:
+        try:
+            letters = cls.PANEL_LABEL_ALPHABETS[language.lower()]
+        except KeyError as exc:
+            supported_languages = ", ".join(sorted(cls.PANEL_LABEL_ALPHABETS))
+            raise ValueError(
+                f"Unsupported panel label language '{language}'. "
+                f"Use one of: {supported_languages}."
+            ) from exc
+
         label = ""
 
         while True:
@@ -149,10 +162,12 @@ class PlotConstructor:
         plots: Sequence[str | Mapping[str, Any]],
         *,
         figsize: tuple[float, float] | None = None,
+        label_language: str = "en",
     ) -> tuple[plt.Figure, list[plt.Axes]]:
         if not plots:
             raise ValueError("plots list is empty.")
 
+        self._panel_label(0, label_language)
         parsed = self._parse_plots(plots)
         time_markers = self._collect_map_time_markers(parsed)
         panels = self.panel_builder.expand(parsed)
@@ -176,7 +191,7 @@ class PlotConstructor:
                 for ax in map_axes:
                     self._add_panel_label(
                         ax,
-                        self._panel_label(label_index),
+                        self._panel_label(label_index, label_language),
                     )
                     label_index += 1
 
@@ -203,7 +218,7 @@ class PlotConstructor:
 
                 self._add_panel_label(
                     ax,
-                    self._panel_label(label_index),
+                    self._panel_label(label_index, label_language),
                 )
                 label_index += 1
 
@@ -221,7 +236,7 @@ class PlotConstructor:
 
             self._add_panel_label(
                 ax,
-                self._panel_label(label_index),
+                self._panel_label(label_index, label_language),
             )
             label_index += 1
 
