@@ -6,7 +6,12 @@ from typing import Any, Sequence
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import pandas as pd
+import math
+
+import matplotlib.dates as mdates
+from matplotlib.ticker import FixedLocator, FixedFormatter
 from matplotlib.gridspec import GridSpecFromSubplotSpec
+from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
 
 from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
 from app.visualization.gim_plotter import plot_gim_map_on_ax
@@ -24,7 +29,10 @@ from app.visualization.plot_utils import (
     plot_kp_bars,
     plot_timeseries_on_ax,
 )
-from app.visualization.roti_plotter import plot_simurg_map_on_ax
+from app.visualization.roti_plotter import (
+    get_product_colorbar_config,
+    plot_simurg_map_on_ax,
+)
 
 
 class PlotRenderer:
@@ -56,6 +64,150 @@ class PlotRenderer:
             )
 
         return pd.Timestamp(x_start), pd.Timestamp(x_end)
+    
+    @staticmethod
+    def format_timeseries_label(name: str) -> str:
+        normalized = PlotRegistry.normalize_name(name)
+
+        labels = {
+            "dst": "Dst",
+            "symh": "SYM-H",
+            "sym h": "SYM-H",
+            "speed": "Vsw",
+            "density": "Density",
+            "flow pressure": "Flow pressure",
+            "bx": "Bx",
+            "by": "By",
+            "bz": "Bz",
+        }
+
+        return labels.get(normalized, str(name))
+
+    @staticmethod
+    def get_timeseries_unit(name: str) -> str | None:
+        normalized = PlotRegistry.normalize_name(name)
+
+        units = {
+            "dst": "nT",
+            "symh": "nT",
+            "sym h": "nT",
+            "bx": "nT",
+            "by": "nT",
+            "bz": "nT",
+            "speed": "km/s",
+            "density": "cm⁻³",
+            "flow pressure": "nPa",
+        }
+
+        return units.get(normalized)
+
+    @classmethod
+    def format_timeseries_ylabel(cls, fields: list[str], side: str | None = None) -> str:
+        labels: list[str] = []
+
+        for field in fields:
+            label = cls.format_timeseries_label(field)
+            unit = cls.get_timeseries_unit(field)
+
+            if unit:
+                labels.append(f"{label}, {unit}")
+            else:
+                labels.append(label)
+
+        return " / ".join(labels)
+    
+    @staticmethod
+    def _make_colored_ylabel_box(
+        ax: plt.Axes,
+        labels: list[str],
+        colors: list[str],
+        *,
+        side: str,
+    ) -> AnchoredOffsetbox:
+        children = []
+
+        for idx, (label, color) in enumerate(zip(labels, colors)):
+            if idx > 0:
+                children.append(
+                    TextArea(
+                        " / ",
+                        textprops={
+                            "color": "black",
+                            "fontweight": "bold",
+                            "rotation": 90,
+                        },
+                    )
+                )
+
+            children.append(
+                TextArea(
+                    label,
+                    textprops={
+                        "color": color,
+                        "fontweight": "bold",
+                        "rotation": 90,
+                    },
+                )
+            )
+
+        box = HPacker(
+            children=children,
+            align="center",
+            pad=0,
+            sep=2,
+        )
+
+        if side == "right":
+            return AnchoredOffsetbox(
+                loc="center right",
+                child=box,
+                pad=0,
+                frameon=False,
+                bbox_to_anchor=(1.12, 0.5),
+                bbox_transform=ax.transAxes,
+                borderpad=0,
+            )
+
+        return AnchoredOffsetbox(
+            loc="center left",
+            child=box,
+            pad=0,
+            frameon=False,
+            bbox_to_anchor=(-0.12, 0.5),
+            bbox_transform=ax.transAxes,
+            borderpad=0,
+        )
+
+    @classmethod
+    def set_colored_timeseries_ylabel(
+        cls,
+        ax: plt.Axes,
+        fields: list[str],
+        colors: list[str],
+        *,
+        side: str = "left",
+    ) -> None:
+        labels = []
+
+        for field in fields:
+            label = cls.format_timeseries_label(field)
+            unit = cls.get_timeseries_unit(field)
+
+            if unit:
+                labels.append(f"{label}, {unit}")
+            else:
+                labels.append(label)
+
+        ax.set_ylabel("")
+
+        ylabel_box = cls._make_colored_ylabel_box(
+            ax,
+            labels,
+            colors,
+            side=side,
+        )
+
+        ax.add_artist(ylabel_box)
 
     @classmethod
     def apply_x_range(cls, ax: plt.Axes, params: dict[str, Any]) -> None:
@@ -65,6 +217,149 @@ class PlotRenderer:
 
         x_start, x_end = x_range
         ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
+
+    @staticmethod
+    def _format_constructor_date_label(value: pd.Timestamp) -> str:
+        return value.strftime("%d %b %Y")
+
+    @staticmethod
+    def _choose_hour_step(days_count: int) -> int:
+        if days_count <= 2:
+            return 3
+
+        if days_count <= 5:
+            return 6
+
+        return 12
+
+    @classmethod
+    def _build_time_axis_ticks(
+        cls,
+        x_start: pd.Timestamp,
+        x_end: pd.Timestamp,
+        hour_step: int | None = None,
+    ) -> tuple[list[pd.Timestamp], list[str]]:
+        if x_end <= x_start:
+            return [x_start], [x_start.strftime("%H") + "\n" + cls._format_constructor_date_label(x_start)]
+
+        day_starts = pd.date_range(
+            x_start.normalize(),
+            x_end.normalize(),
+            freq="D",
+        )
+
+        days_count = max(1, len(day_starts))
+        if hour_step is None:
+            hour_step = cls._choose_hour_step(days_count)
+
+        hour_ticks = pd.date_range(
+            x_start.floor("h"),
+            x_end.ceil("h"),
+            freq=f"{hour_step}h",
+        )
+
+        ticks: list[pd.Timestamp] = []
+
+        for tick in hour_ticks:
+            if x_start <= tick <= x_end:
+                ticks.append(pd.Timestamp(tick))
+
+        for day_start in day_starts:
+            if x_start <= day_start <= x_end:
+                ticks.append(pd.Timestamp(day_start))
+
+        ticks = sorted(set(ticks))
+
+        labels: list[str] = []
+        labeled_dates: set[pd.Timestamp] = set()
+
+        for tick in ticks:
+            date_key = tick.normalize()
+            hour_label = tick.strftime("%H")
+
+            if date_key not in labeled_dates:
+                date_label = cls._format_constructor_date_label(tick)
+                labeled_dates.add(date_key)
+            else:
+                date_label = ""
+
+            labels.append(f"{hour_label}\n{date_label}")
+
+        return ticks, labels
+
+    @classmethod
+    def apply_bar_time_xaxis_format(
+        cls,
+        ax: plt.Axes,
+        params: dict[str, Any],
+        *,
+        time_values: pd.Series | pd.DatetimeIndex | None = None,
+        pad_hours: float = 1.5,
+    ) -> None:
+        x_range = cls.resolve_x_range(params)
+
+        if x_range is None:
+            if time_values is None:
+                return
+
+            values = pd.to_datetime(time_values, errors="coerce")
+            values = pd.Series(values).dropna()
+
+            if values.empty:
+                return
+
+            x_start = pd.Timestamp(values.min())
+            x_end = pd.Timestamp(values.max())
+        else:
+            x_start, x_end = x_range
+
+        pad = pd.Timedelta(hours=pad_hours)
+        x_start_padded = x_start - pad
+        x_end_padded = x_end + pad
+
+        ticks, labels = cls._build_time_axis_ticks(
+            x_start,
+            x_end,
+            hour_step=params.get("bar_hour_step", 6),
+        )
+
+        ax.set_xlim(x_start_padded.to_pydatetime(), x_end_padded.to_pydatetime())
+        ax.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
+        ax.xaxis.set_major_formatter(FixedFormatter(labels))
+        ax.tick_params(axis="x", pad=12, labelbottom=True)
+
+    @classmethod
+    def apply_time_xaxis_format(
+        cls,
+        ax: plt.Axes,
+        params: dict[str, Any],
+        *,
+        hour_step: int | None = None,
+        time_values: pd.Series | pd.DatetimeIndex | None = None,
+    ) -> None:
+        x_range = cls.resolve_x_range(params)
+
+        if x_range is None:
+            if time_values is None:
+                return
+
+            values = pd.to_datetime(time_values, errors="coerce")
+            values = pd.Series(values).dropna()
+
+            if values.empty:
+                return
+
+            x_start = pd.Timestamp(values.min())
+            x_end = pd.Timestamp(values.max())
+        else:
+            x_start, x_end = x_range
+
+        ticks, labels = cls._build_time_axis_ticks(x_start, x_end, hour_step=hour_step)
+
+        ax.set_xlim(x_start.to_pydatetime(), x_end.to_pydatetime())
+        ax.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
+        ax.xaxis.set_major_formatter(FixedFormatter(labels))
+        ax.tick_params(axis="x", pad=12, labelbottom=True)
 
     @staticmethod
     def draw_time_markers(ax: plt.Axes, params: dict[str, Any]) -> None:
@@ -149,11 +444,13 @@ class PlotRenderer:
             )
             return
 
-        limits = (
-            (0.0, 80.0)
+        product_type = (
+            "tec_adjusted"
             if normalized_name in {"adjusted tec", "tec adjusted"}
-            else (0.0, 1.0)
+            else "roti"
         )
+
+        colorbar_config = get_product_colorbar_config(product_type)
 
         plot_simurg_map_on_ax(
             ax,
@@ -162,7 +459,8 @@ class PlotRenderer:
             plot_time=plot_time,
             cmap=params.get("cmap", "jet"),
             point_size=params.get("s", 8),
-            colorbar_limits=limits,
+            colorbar_limits=(colorbar_config.min, colorbar_config.max),
+            colorbar_label=params.get("colorbar_label", colorbar_config.units),
             show_terminator=params.get("show_terminator", True),
             show_geomagnetic_lines=params.get("show_geomagnetic_lines", True),
             geomagnetic_levels=params.get("geomagnetic_levels", [-50, -30, 0, 30, 50]),
@@ -302,10 +600,24 @@ class PlotRenderer:
             series = pd.Series(data)
 
         if PlotRegistry.normalize_name(descriptor.name) == "kp":
-            if isinstance(data, pd.DataFrame):
-                plot_kp_bars(ax=ax, kp_df=data, set_xlabel=False)
-                ax.set_title(descriptor.name)
-                return
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError("Kp plot requires pandas DataFrame data.")
+
+            plot_kp_bars(ax=ax, kp_df=data, set_xlabel=False)
+            ax.set_title(descriptor.name)
+
+            time_col = self.registry.find_time_column(data)
+            if time_col is not None:
+                self.apply_bar_time_xaxis_format(
+                    ax,
+                    params,
+                    time_values=data[time_col],
+                    pad_hours=params.get("bar_x_pad_hours", 1.5),
+                )
+            else:
+                self.apply_x_range(ax, params)
+
+            return
 
         plot_histogram_on_ax(
             ax,
@@ -314,7 +626,15 @@ class PlotRenderer:
             color=params.get("color", "tab:green"),
             title=descriptor.name,
         )
-        self.apply_x_range(ax, params)
+
+        if isinstance(data, pd.DataFrame):
+            time_col = self.registry.find_time_column(data)
+            if time_col is not None:
+                self.apply_time_xaxis_format(ax, params, time_values=data[time_col])
+            else:
+                self.apply_x_range(ax, params)
+        else:
+            self.apply_x_range(ax, params)
 
     def plot_timeseries(
         self,
@@ -353,7 +673,7 @@ class PlotRenderer:
                     show_max=params.get("show_max", True),
                     show_extrema=params.get("show_extrema"),
                 )
-                self.apply_x_range(ax, params)
+                self.apply_time_xaxis_format(ax, params, time_values=data[time_col])
                 self.draw_time_markers(ax, params)
                 return
 
@@ -367,7 +687,7 @@ class PlotRenderer:
                 title=descriptor.name,
                 ylabel=y_col,
             )
-            self.apply_x_range(ax, params)
+            self.apply_time_xaxis_format(ax, params, time_values=data[time_col])
 
             self.draw_time_markers(ax, params)
 
@@ -410,7 +730,7 @@ class PlotRenderer:
         ax.set_ylabel(panel.params.get("ylabel", "%"))
         ax.grid(True, alpha=0.3)
         ax.legend()
-        self.apply_x_range(ax, panel.params)
+        self.apply_time_xaxis_format(ax, panel.params, time_values=panel.data[time_col])
         self.draw_time_markers(ax, panel.params)
 
     def plot_regular_panel(
@@ -459,35 +779,124 @@ class PlotRenderer:
         if not fields:
             raise ValueError(f"OMNI group '{panel.panel_name}' has no fields.")
 
-        for field in fields:
+        default_colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+        resolved_fields: list[tuple[pd.DataFrame, str, str, str]] = []
+
+        for idx, field in enumerate(fields):
             source_df, source_column, source_name = self._find_field_source(str(field))
 
-            time_col = self.registry.find_time_column(source_df)
-            if time_col is None:
-                raise ValueError(
-                    f"Field '{field}' source '{source_name}' has no time column."
+            colors_param = panel.params.get("colors", {})
+            color = None
+
+            if isinstance(colors_param, dict):
+                for key, value in colors_param.items():
+                    if PlotRegistry.normalize_name(key) == PlotRegistry.normalize_name(source_column):
+                        color = value
+                        break
+
+            if color is None:
+                color = default_colors[idx % len(default_colors)] if default_colors else "black"
+
+            resolved_fields.append((source_df, source_column, source_name, color))
+
+        split_index = (len(resolved_fields) + 1) // 2
+
+        left_fields = resolved_fields[:split_index]
+        right_fields = resolved_fields[split_index:]
+
+        def _plot_fields_on_axis(
+            target_ax: plt.Axes,
+            items: list[tuple[pd.DataFrame, str, str, str]],
+        ) -> None:
+            for source_df, source_column, _source_name, color in items:
+                time_col = self.registry.find_time_column(source_df)
+                if time_col is None:
+                    raise ValueError(
+                        f"Field '{source_column}' source has no time column."
+                    )
+
+                label = self.format_timeseries_label(source_column)
+
+                fill_negative_values(
+                    target_ax,
+                    source_df[time_col],
+                    source_df[source_column],
+                    label=source_column,
+                    color=panel.params.get("fill_color", "lightskyblue"),
+                    alpha=panel.params.get("fill_alpha", 0.45),
                 )
 
-            fill_negative_values(
-                ax,
-                source_df[time_col],
-                source_df[source_column],
-                label=source_column,
-                color=panel.params.get("fill_color", "lightskyblue"),
-                alpha=panel.params.get("fill_alpha", 0.45),
-            )
+                target_ax.plot(
+                    source_df[time_col],
+                    source_df[source_column],
+                    color=color,
+                    linewidth=panel.params.get("linewidth", 1.5),
+                    label=label,
+                    zorder=2,
+                )
 
-            ax.plot(
-                source_df[time_col],
-                source_df[source_column],
-                linewidth=panel.params.get("linewidth", 1.5),
-                label=source_column,
-                zorder=2,
+        _plot_fields_on_axis(ax, left_fields)
+
+        if right_fields:
+            ax_r = ax.twinx()
+            ax._right_axis_for_label_alignment = ax_r
+
+            _plot_fields_on_axis(ax_r, right_fields)
+
+            right_ylabel = panel.params.get("right_ylabel")
+
+            if right_ylabel:
+                ax_r.set_ylabel(right_ylabel)
+            else:
+                self.set_colored_timeseries_ylabel(
+                    ax_r,
+                    [source_column for _, source_column, _, _ in right_fields],
+                    [color for _, _, _, color in right_fields],
+                    side="right",
+                )
+
+            ax_r.grid(False)
+            ax_r.spines["top"].set_visible(False)
+
+            h1, l1 = ax.get_legend_handles_labels()
+            h2, l2 = ax_r.get_legend_handles_labels()
+            ax.legend(
+                h1 + h2,
+                l1 + l2,
+                loc=panel.params.get("legend_loc", "lower left"),
             )
+        else:
+            ax.legend(loc=panel.params.get("legend_loc", "lower left"))
 
         ax.set_title(panel.panel_name or panel.descriptor.name)
-        ax.set_ylabel(panel.params.get("ylabel", "value"))
+
+        left_ylabel = panel.params.get("ylabel")
+
+        if left_ylabel:
+            ax.set_ylabel(left_ylabel)
+        else:
+            self.set_colored_timeseries_ylabel(
+                ax,
+                [source_column for _, source_column, _, _ in left_fields],
+                [color for _, _, _, color in left_fields],
+                side="left",
+            )
+
         ax.grid(True, alpha=0.3)
-        ax.legend()
-        self.apply_x_range(ax, panel.params)
+
+        first_df, _, _ = self._find_field_source(str(fields[0]))
+        first_time_col = self.registry.find_time_column(first_df)
+
+        if first_time_col is not None:
+            self.apply_time_xaxis_format(
+                ax,
+                panel.params,
+                time_values=first_df[first_time_col],
+            )
+        else:
+            self.apply_x_range(ax, panel.params)
+
+        if right_fields:
+            ax_r.set_xlim(ax.get_xlim())
+
         self.draw_time_markers(ax, panel.params)

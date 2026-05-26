@@ -56,6 +56,10 @@ def _resolve_product(product_type: str) -> DataProduct:
         supported = ", ".join(DataProducts.__members__.keys())
         raise ValueError(f"Неизвестный тип продукта: {product_type}. Поддерживаются: {supported}") from error
 
+def get_product_colorbar_config(product_type: str) -> ColorLimits:
+    product = _resolve_product(product_type)
+    return product.color_limits
+
 def _format_available_times(times: list[datetime]) -> str:
     return ", ".join(t.strftime("%Y-%m-%d %H:%M:%S") for t in times)
 
@@ -239,6 +243,7 @@ def plot_simurg_map_on_ax(
     cmap="jet",
     point_size=8,
     colorbar_limits=None,
+    colorbar_label: str | None = None,
     show_terminator=True,
     show_geomagnetic_lines=True,
     geomagnetic_levels=[-60, -15, 0, 15, 60],
@@ -286,7 +291,9 @@ def plot_simurg_map_on_ax(
     )
 
     if show_colorbar:
-        plt.colorbar(sctr, cax=cbar_ax, ax=ax)
+        cbar = plt.colorbar(sctr, cax=cbar_ax, ax=ax)
+        if colorbar_label:
+            cbar.set_label(colorbar_label)
 
     ax.set_title(title)
     return sctr
