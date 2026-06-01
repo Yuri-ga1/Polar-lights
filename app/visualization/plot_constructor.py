@@ -172,8 +172,24 @@ class PlotConstructor:
         time_markers = self._collect_map_time_markers(parsed)
         panels = self.panel_builder.expand(parsed)
 
-        fig = plt.figure(figsize=figsize or (16, 4 * len(panels)))
-        outer_grid = fig.add_gridspec(len(panels), 1)
+        height_ratios = [
+            2.2 if panel.descriptor.plot_type == "keogram" else 1.0
+            for panel in panels
+        ]
+
+        default_height = sum(
+            6.5 if panel.descriptor.plot_type == "keogram" else 4.0
+            for panel in panels
+        )
+
+        fig = plt.figure(figsize=figsize or (16, default_height))
+
+        outer_grid = fig.add_gridspec(
+            len(panels),
+            1,
+            height_ratios=height_ratios,
+            hspace=0.45,
+        )
 
         axes: list[plt.Axes] = []
         label_index = 0

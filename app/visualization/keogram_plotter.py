@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Literal, Optional
 
 import matplotlib.pyplot as plt
@@ -39,6 +39,18 @@ class KeogramData:
 def _normalize_utc(dt_: datetime) -> datetime:
     return dt_.replace(tzinfo=dt_.tzinfo or timezone.utc).astimezone(timezone.utc)
 
+def _as_datetime_start(value: date | datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value
+
+    return datetime.combine(value, time.min)
+
+
+def _as_datetime_finish(value: date | datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value
+
+    return datetime.combine(value, time.max)
 
 def _date_range(d0: date, d1: date) -> list[date]:
     if d1 < d0:
@@ -82,15 +94,23 @@ def _build_lat_grid(cfg: KeogramConfig) -> tuple[np.ndarray, np.ndarray]:
 
 def resolve_keogram_times(
     available_times: Iterable[datetime],
-    day_start: date,
-    day_finish: date,
+    day_start: date | datetime,
+    day_finish: date | datetime,
     cfg: KeogramConfig,
 ) -> list[datetime]:
+    start_dt = _normalize_utc(_as_datetime_start(day_start))
+    finish_dt = _normalize_utc(_as_datetime_finish(day_finish))
+
+    if finish_dt < start_dt:
+        raise ValueError("day_finish must be greater than or equal to day_start")
+
     available_utc = {_normalize_utc(t) for t in available_times}
+
     return [
         t
-        for t in _build_times_utc(day_start, day_finish, cfg)
-        if _normalize_utc(t) in available_utc
+        for t in _build_times_utc(start_dt.date(), finish_dt.date(), cfg)
+        if start_dt <= _normalize_utc(t) <= finish_dt
+        and _normalize_utc(t) in available_utc
     ]
 
 
@@ -133,8 +153,8 @@ def _build_keogram_column(
 
 def build_keogram_matrix(
     data: dict[datetime, np.ndarray],
-    day_start: date,
-    day_finish: date,
+    day_start: date | datetime,
+    day_finish: date | datetime,
     cfg: KeogramConfig,
 ) -> tuple[np.ndarray, list[datetime], np.ndarray]:
     if not data:
@@ -156,8 +176,8 @@ def build_keogram_matrix(
 def build_keogram_matrix_from_slices(
     time_slices: Iterable[tuple[datetime, np.ndarray]],
     available_times: Iterable[datetime],
-    day_start: date,
-    day_finish: date,
+    day_start: date | datetime,
+    day_finish: date | datetime,
     cfg: KeogramConfig,
 ) -> tuple[np.ndarray, list[datetime], np.ndarray]:
     times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
@@ -234,7 +254,7 @@ def plot_keogram_on_ax(
     for idx, position in enumerate(tick_pos):
         current_time = times[position]
         if idx % 2 == 0:
-            tick_labels.append(current_time.strftime("%H:%M\n%d %B %Y"))
+            tick_labels.append(current_time.strftime("%H:%M\n%d %b %Y"))
         else:
             tick_labels.append(current_time.strftime("%H:%M"))
 

@@ -264,15 +264,28 @@ class PlotConstructorDataLoader:
         out_dir = os.path.join(self.date_dir, "simurg")
         os.makedirs(out_dir, exist_ok=True)
 
-        self._safe_download(
-            lambda: RotiDownloader(client=client, out_dir=out_dir).download(
-                self.primary_date_str
-            )
+        processor = SimurgProcessor(folder_path=out_dir)
+
+        target_date = (
+            datetime.strptime(self.primary_date_str, "%Y-%m-%d").date()
+            - timedelta(days=1)
         )
 
-        target_date = datetime.strptime(self.primary_date_str, "%Y-%m-%d").date() - timedelta(days=1)
+        cached_file = processor.find_file(
+            target_date,
+            product_type=DataProduct.ROTI,
+        )
 
-        return SimurgProcessor(folder_path=out_dir).load(
+        if cached_file is not None:
+            print(f"Using cached SIMuRG ROTI file: {cached_file}")
+        else:
+            self._safe_download(
+                lambda: RotiDownloader(client=client, out_dir=out_dir).download(
+                    self.primary_date_str
+                )
+            )
+
+        return processor.load(
             target_date,
             product_type=DataProduct.ROTI,
             times=params.get("time"),
@@ -316,8 +329,8 @@ class PlotConstructorDataLoader:
         if not available_times:
             return None
 
-        day_start = self.start_dt.date()
-        day_finish = self.end_dt.date()
+        day_start = self.start_dt
+        day_finish = self.end_dt
         keogram_times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
 
         matrix, times, lat_centers = build_keogram_matrix_from_slices(
@@ -350,13 +363,23 @@ class PlotConstructorDataLoader:
         out_dir = os.path.join(self.date_dir, "simurg")
         os.makedirs(out_dir, exist_ok=True)
 
-        self._safe_download(
-            lambda: AdjustedTecDownloader(client=client, out_dir=out_dir).download(
-                self.primary_date_str
-            )
+        processor = SimurgProcessor(folder_path=out_dir)
+
+        cached_file = processor.find_file(
+            self.primary_date_str,
+            product_type=DataProduct.TEC_ADJUSTED,
         )
 
-        return SimurgProcessor(folder_path=out_dir).load(
+        if cached_file is not None:
+            print(f"Using cached SIMuRG adjusted TEC file: {cached_file}")
+        else:
+            self._safe_download(
+                lambda: AdjustedTecDownloader(client=client, out_dir=out_dir).download(
+                    self.primary_date_str
+                )
+            )
+
+        return processor.load(
             self.primary_date_str,
             product_type=DataProduct.TEC_ADJUSTED,
             times=params.get("time"),

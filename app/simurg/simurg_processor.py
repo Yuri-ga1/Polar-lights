@@ -139,7 +139,7 @@ class SimurgProcessor(BaseProcessor):
             "time_step": time_step,
         }
 
-    def _find_file(
+    def find_file(
         self,
         target_date: date,
         product_type: DataProduct,
@@ -160,7 +160,7 @@ class SimurgProcessor(BaseProcessor):
     ) -> Optional[Dict[datetime, NDArray]]:
         target_date = self._coerce_date(date_value)
         normalized_product = self._normalize_product(product_type)
-        file_path = self._find_file(target_date, normalized_product)
+        file_path = self.find_file(target_date, normalized_product)
 
         if not self._is_non_empty_file(file_path):
             return None
@@ -208,7 +208,7 @@ class SimurgProcessor(BaseProcessor):
     ) -> list[datetime]:
         target_date = self._coerce_date(date_value)
         normalized_product = self._normalize_product(product_type)
-        file_path = self._find_file(target_date, normalized_product)
+        file_path = self.find_file(target_date, normalized_product)
 
         if not self._is_non_empty_file(file_path):
             return []
@@ -230,7 +230,7 @@ class SimurgProcessor(BaseProcessor):
     ) -> Iterator[tuple[datetime, NDArray]]:
         target_date = self._coerce_date(date_value)
         normalized_product = self._normalize_product(product_type)
-        file_path = self._find_file(target_date, normalized_product)
+        file_path = self.find_file(target_date, normalized_product)
 
         if not self._is_non_empty_file(file_path):
             return
