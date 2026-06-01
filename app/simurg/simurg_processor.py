@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from pathlib import Path
 from enum import Enum
+from collections.abc import Iterator
 from typing import Dict, Optional, Union
 
 import h5py
@@ -199,3 +200,58 @@ class SimurgProcessor(BaseProcessor):
             time_end=time_metadata.get("time_end"),
             time_step=time_metadata.get("time_step"),
         )
+
+    def available_times(
+        self,
+        date_value: Union[str, date, datetime],
+        product_type: str | DataProduct = DataProduct.ROTI,
+    ) -> list[datetime]:
+        target_date = self._coerce_date(date_value)
+        normalized_product = self._normalize_product(product_type)
+        file_path = self._find_file(target_date, normalized_product)
+
+        if not self._is_non_empty_file(file_path):
+            return []
+
+        try:
+            with h5py.File(file_path, "r") as handle:
+                if "data" not in handle:
+                    return []
+
+                return sorted(self._parse_time(key) for key in handle["data"].keys())
+        except Exception:
+            return []
+
+    def iter_slices(
+        self,
+        date_value: Union[str, date, datetime],
+        product_type: str | DataProduct = DataProduct.ROTI,
+        times: Optional[list[str | datetime]] = None,
+    ) -> Iterator[tuple[datetime, NDArray]]:
+        target_date = self._coerce_date(date_value)
+        normalized_product = self._normalize_product(product_type)
+        file_path = self._find_file(target_date, normalized_product)
+
+        if not self._is_non_empty_file(file_path):
+            return
+
+        try:
+            with h5py.File(file_path, "r") as handle:
+                if "data" not in handle:
+                    return
+
+                data_group = handle["data"]
+
+                if times is None:
+                    selected_keys = list(data_group.keys())
+                else:
+                    selected_keys = self._resolve_time_keys(
+                        data_group=data_group,
+                        times=times,
+                    )
+
+                for str_time in selected_keys:
+                    yield self._parse_time(str_time), data_group[str_time][:]
+
+        except Exception:
+            return

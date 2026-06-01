@@ -1,14 +1,14 @@
 from __future__ import annotations
+
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
-from app.visualization.plot_settings import set_plt_def_params
 from app.visualization.plot_utils import add_colorbar_right
 
 
@@ -28,6 +28,14 @@ class KeogramConfig:
     colorbar_label: str = "<ROTI>,\nTECU/min"
 
 
+@dataclass(frozen=True)
+class KeogramData:
+    matrix: np.ndarray
+    times: list[datetime]
+    lat_centers: np.ndarray
+    cfg: KeogramConfig
+
+
 def _normalize_utc(dt_: datetime) -> datetime:
     return dt_.replace(tzinfo=dt_.tzinfo or timezone.utc).astimezone(timezone.utc)
 
@@ -40,7 +48,6 @@ def _date_range(d0: date, d1: date) -> list[date]:
 
 
 def _build_times_utc(day_start: date, day_finish: date, cfg: KeogramConfig) -> list[datetime]:
-    """Генерирует сетку времени, как в старом Keogram.py (каждые time_step_min минут)."""
     times: list[datetime] = []
     for d in _date_range(day_start, day_finish):
         for hh in range(cfg.hour_min, cfg.hour_max):
@@ -60,10 +67,68 @@ def _hemisphere_mask(lon: np.ndarray, hemi: Hemisphere) -> np.ndarray:
 def _require_fields(arr: np.ndarray, fields: tuple[str, ...] = ("lat", "lon", "vals")) -> None:
     names = getattr(arr.dtype, "names", None)
     if not names:
-        raise ValueError("Ожидается structured numpy array с полями lat/lon/vals, но dtype.names отсутствует.")
-    missing = [f for f in fields if f not in names]
+        raise ValueError("Expected a structured numpy array with lat/lon/vals fields.")
+    missing = [field for field in fields if field not in names]
     if missing:
-        raise ValueError(f"В данных отсутствуют поля: {missing}. Есть только: {list(names)}")
+        raise ValueError(f"Missing fields in SIMuRG data: {missing}. Available: {list(names)}")
+
+
+def _build_lat_grid(cfg: KeogramConfig) -> tuple[np.ndarray, np.ndarray]:
+    step = float(cfg.lat_step_deg)
+    edges = np.arange(90.0, -90.0 - 1e-9, -step)
+    lat_centers = (edges[:-1] + edges[1:]) / 2.0
+    return edges, lat_centers
+
+
+def resolve_keogram_times(
+    available_times: Iterable[datetime],
+    day_start: date,
+    day_finish: date,
+    cfg: KeogramConfig,
+) -> list[datetime]:
+    available_utc = {_normalize_utc(t) for t in available_times}
+    return [
+        t
+        for t in _build_times_utc(day_start, day_finish, cfg)
+        if _normalize_utc(t) in available_utc
+    ]
+
+
+def _build_keogram_column(
+    arr: np.ndarray,
+    edges: np.ndarray,
+    cfg: KeogramConfig,
+) -> np.ndarray:
+    _require_fields(arr)
+
+    lat = arr["lat"]
+    lon = arr["lon"]
+    val = arr["vals"]
+
+    good = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(val) & (val != 0)
+    good &= _hemisphere_mask(lon, cfg.hemisphere)
+
+    column = np.full(len(edges) - 1, np.nan, dtype=float)
+    if not np.any(good):
+        return column
+
+    lat_g = np.asarray(lat[good], dtype=float)
+    val_g = np.asarray(val[good], dtype=float)
+
+    bin_index = np.floor((90.0 - lat_g) / float(cfg.lat_step_deg)).astype(np.int64)
+    in_range = (bin_index >= 0) & (bin_index < column.size)
+    if not np.any(in_range):
+        return column
+
+    bin_index = bin_index[in_range]
+    val_g = val_g[in_range]
+
+    sums = np.bincount(bin_index, weights=val_g, minlength=column.size)
+    counts = np.bincount(bin_index, minlength=column.size)
+    has_values = counts > 0
+    column[has_values] = sums[has_values] / counts[has_values]
+
+    return column
 
 
 def build_keogram_matrix(
@@ -72,71 +137,76 @@ def build_keogram_matrix(
     day_finish: date,
     cfg: KeogramConfig,
 ) -> tuple[np.ndarray, list[datetime], np.ndarray]:
-    """
-    Возвращает:
-    - matrix: shape (n_lat_bins, n_times), значения ROTI (nanmean по точкам в широтной полосе)
-    - times: список datetime (UTC) по оси X
-    - lat_centers: центры широтных полос по оси Y
-    """
     if not data:
-        raise ValueError("Данные SIMuRG пустые.")
+        raise ValueError("SIMuRG data is empty.")
 
-    first_arr = next(iter(data.values()))
-    _require_fields(first_arr)
-
-    times_all = _build_times_utc(day_start, day_finish, cfg)
-
-    times = [t for t in times_all if _normalize_utc(t) in data]
+    times = resolve_keogram_times(data.keys(), day_start, day_finish, cfg)
     if not times:
-        raise ValueError("В выбранном диапазоне времени нет данных (ключей datetime) в словаре data.")
+        raise ValueError("No SIMuRG data is available in the selected time range.")
 
-    step = float(cfg.lat_step_deg)
-    edges = np.arange(90.0, -90.0 - 1e-9, -step)
-    lat_centers = (edges[:-1] + edges[1:]) / 2.0
-
+    edges, lat_centers = _build_lat_grid(cfg)
     matrix = np.full((len(lat_centers), len(times)), np.nan, dtype=float)
 
     for ti, t in enumerate(times):
-        arr = data[_normalize_utc(t)]
-        lat = np.asarray(arr["lat"], dtype=float)
-        lon = np.asarray(arr["lon"], dtype=float)
-        val = np.asarray(arr["vals"], dtype=float)
-
-        good = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(val) & (val != 0)
-        good &= _hemisphere_mask(lon, cfg.hemisphere)
-
-        if not np.any(good):
-            continue
-
-        lat_g = lat[good]
-        val_g = val[good]
-
-        for li in range(len(lat_centers)):
-            top = edges[li]
-            bot = edges[li + 1]
-            in_band = (lat_g <= top) & (lat_g > bot)
-            if np.any(in_band):
-                matrix[li, ti] = float(np.nanmean(val_g[in_band]))
+        matrix[:, ti] = _build_keogram_column(data[_normalize_utc(t)], edges, cfg)
 
     return matrix, times, lat_centers
 
 
-def plot_keogram(
-    data: dict[datetime, np.ndarray],
+def build_keogram_matrix_from_slices(
+    time_slices: Iterable[tuple[datetime, np.ndarray]],
+    available_times: Iterable[datetime],
     day_start: date,
     day_finish: date,
+    cfg: KeogramConfig,
+) -> tuple[np.ndarray, list[datetime], np.ndarray]:
+    times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
+    if not times:
+        raise ValueError("No SIMuRG data is available in the selected time range.")
+
+    edges, lat_centers = _build_lat_grid(cfg)
+    matrix = np.full((len(lat_centers), len(times)), np.nan, dtype=float)
+    time_to_index = {_normalize_utc(t): idx for idx, t in enumerate(times)}
+
+    for slice_time, arr in time_slices:
+        column_index = time_to_index.get(_normalize_utc(slice_time))
+        if column_index is None:
+            continue
+
+        matrix[:, column_index] = _build_keogram_column(arr, edges, cfg)
+
+    return matrix, times, lat_centers
+
+
+def plot_keogram_matrix(
+    matrix: np.ndarray,
+    times: list[datetime],
+    lat_centers: np.ndarray,
     cfg: Optional[KeogramConfig] = None,
     save_dir: str = os.path.join("files", "graphs"),
 ) -> plt.Figure:
-    """
-    Строит и сохраняет кеограмму из данных SIMuRG (как roti_plotter: вход — dict[datetime, NDArray]).
-    """
     cfg = cfg or KeogramConfig()
-
-    matrix, times, lat_centers = build_keogram_matrix(data, day_start, day_finish, cfg)
 
     fig = plt.figure(figsize=(30, 15))
     ax = plt.axes()
+    plot_keogram_on_ax(ax, matrix, times, lat_centers, cfg=cfg)
+    fig.subplots_adjust(right=0.90)
+
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "keogram.png")
+    fig.savefig(save_path, bbox_inches="tight", pad_inches=0.1)
+
+    return fig
+
+
+def plot_keogram_on_ax(
+    ax: plt.Axes,
+    matrix: np.ndarray,
+    times: list[datetime],
+    lat_centers: np.ndarray,
+    cfg: Optional[KeogramConfig] = None,
+) -> None:
+    cfg = cfg or KeogramConfig()
 
     extent = (0, len(times), float(lat_centers.min()), float(lat_centers.max()))
 
@@ -155,35 +225,33 @@ def plot_keogram(
     ax.set_yticks(np.arange(-90, 91, 30))
     ax.set_xlabel("Time, UT")
 
-    # --- X axis ticks: always 7 labels, evenly spaced ---
     n_labels = 7
     x_min = 0
     x_max = len(times) - 1
-
     tick_pos = np.linspace(x_min, x_max, n_labels, dtype=int)
 
     tick_labels: list[str] = []
-    for i, p in enumerate(tick_pos):
-        t = times[p]
-
-        if i % 2 == 0:
-            label = t.strftime("%H:%M\n%d %B %Y")
+    for idx, position in enumerate(tick_pos):
+        current_time = times[position]
+        if idx % 2 == 0:
+            tick_labels.append(current_time.strftime("%H:%M\n%d %B %Y"))
         else:
-            label = t.strftime("%H:%M")
-
-        tick_labels.append(label)
+            tick_labels.append(current_time.strftime("%H:%M"))
 
     ax.set_xticks(tick_pos)
     ax.set_xticklabels(tick_labels)
     ax.tick_params(axis="x", pad=18)
 
-    add_colorbar_right(fig=fig, ax=ax, mappable=im, label=cfg.colorbar_label)
-    fig.subplots_adjust(right=0.90)
+    add_colorbar_right(fig=ax.figure, ax=ax, mappable=im, label=cfg.colorbar_label)
 
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "keogram.png")
 
-    fig.savefig(save_path, bbox_inches="tight", pad_inches=0.1)
-
-    return fig
-
+def plot_keogram(
+    data: dict[datetime, np.ndarray],
+    day_start: date,
+    day_finish: date,
+    cfg: Optional[KeogramConfig] = None,
+    save_dir: str = os.path.join("files", "graphs"),
+) -> plt.Figure:
+    cfg = cfg or KeogramConfig()
+    matrix, times, lat_centers = build_keogram_matrix(data, day_start, day_finish, cfg)
+    return plot_keogram_matrix(matrix, times, lat_centers, cfg=cfg, save_dir=save_dir)

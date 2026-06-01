@@ -16,6 +16,7 @@ from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
 from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
 from app.visualization.gim_plotter import plot_gim_map_on_ax
 from app.visualization.ionosonde_plotter import plot_ionosonde_series_on_ax
+from app.visualization.keogram_plotter import KeogramData, plot_keogram_on_ax
 from app.visualization.plot_constructor_pack.models import (
     TIME_COLUMN_CANDIDATES,
     PlotDescriptor,
@@ -796,6 +797,20 @@ class PlotRenderer:
         params["time_markers"] = time_markers
 
         normalized_name = PlotRegistry.normalize_name(descriptor.name)
+
+        if descriptor.plot_type == "keogram":
+            if not isinstance(data, KeogramData):
+                raise ValueError("Keogram panel requires KeogramData.")
+
+            plot_keogram_on_ax(
+                ax,
+                data.matrix,
+                data.times,
+                data.lat_centers,
+                cfg=data.cfg,
+            )
+            ax.set_title(panel.panel_name or descriptor.name)
+            return
 
         panel_with_markers = PlotPanel(
             descriptor=panel.descriptor,

@@ -22,6 +22,12 @@ from app.simurg.gim_processor import GimProcessor
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader, AdjustedTecDownloader
 from app.simurg.simurg_processor import SimurgProcessor, DataProduct
+from app.visualization.keogram_plotter import (
+    KeogramConfig,
+    KeogramData,
+    build_keogram_matrix_from_slices,
+    resolve_keogram_times,
+)
 
 from app.ionosonde.ionosonde_downloader import IonosondeDownloader
 from app.ionosonde.ionosonde_processor import IonosondeProcessor
@@ -272,6 +278,67 @@ class PlotConstructorDataLoader:
             times=params.get("time"),
         )
 
+    def _load_keogram(self, params: dict[str, Any] | None = None):
+        params = params or {}
+
+        client = self._simurg_client(params.get("email"))
+        if client is None:
+            print("SIMURG email is missing, skip ROTI keogram download")
+            return None
+
+        out_dir = os.path.join(self.date_dir, "simurg")
+        os.makedirs(out_dir, exist_ok=True)
+
+        self._safe_download(
+            lambda: RotiDownloader(client=client, out_dir=out_dir).download(
+                self.primary_date_str
+            )
+        )
+
+        cfg = KeogramConfig(
+            lat_step_deg=float(params.get("lat_step_deg", KeogramConfig.lat_step_deg)),
+            time_step_min=int(params.get("time_step_min", KeogramConfig.time_step_min)),
+            hour_min=int(params.get("hour_min", KeogramConfig.hour_min)),
+            hour_max=int(params.get("hour_max", KeogramConfig.hour_max)),
+            hemisphere=params.get("hemisphere", KeogramConfig.hemisphere),
+            cmap=params.get("cmap", KeogramConfig.cmap),
+            vmin=float(params.get("vmin", KeogramConfig.vmin)),
+            vmax=float(params.get("vmax", KeogramConfig.vmax)),
+            colorbar_label=params.get("colorbar_label", KeogramConfig.colorbar_label),
+        )
+
+        target_date = datetime.strptime(self.primary_date_str, "%Y-%m-%d").date() - timedelta(days=1)
+        processor = SimurgProcessor(folder_path=out_dir)
+        available_times = processor.available_times(
+            target_date,
+            product_type=DataProduct.ROTI,
+        )
+        if not available_times:
+            return None
+
+        day_start = self.start_dt.date()
+        day_finish = self.end_dt.date()
+        keogram_times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
+
+        matrix, times, lat_centers = build_keogram_matrix_from_slices(
+            time_slices=processor.iter_slices(
+                target_date,
+                product_type=DataProduct.ROTI,
+                times=keogram_times,
+            ),
+            available_times=available_times,
+            day_start=day_start,
+            day_finish=day_finish,
+            cfg=cfg,
+        )
+
+        return KeogramData(
+            matrix=matrix,
+            times=times,
+            lat_centers=lat_centers,
+            cfg=cfg,
+        )
+
     def _load_adjusted_tec(self, params: dict[str, Any] | None = None):
         params = params or {}
 
@@ -473,8 +540,11 @@ class PlotConstructorDataLoader:
         if self._contains(names, "dst") or "dst" in group_fields:
             results["Dst"] = self._load_dst()
 
-        if self._contains(names, "roti", "keogram"):
+        if self._contains(names, "roti"):
             results["ROTI"] = self._load_roti(params_by_plot.get("roti"))
+
+        if self._contains(names, "keogram"):
+            results["Keogram"] = self._load_keogram(params_by_plot.get("keogram"))
 
         if self._contains(names, "adjusted tec", "tec adjusted"):
             results["Adjusted TEC"] = self._load_adjusted_tec(

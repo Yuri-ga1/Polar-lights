@@ -6,6 +6,7 @@ import pandas as pd
 
 from app.visualization.plot_constructor_pack.models import (
     HIST_PLOT_NAMES,
+    KEOGRAM_PLOT_NAMES,
     MAP_PLOT_NAMES,
     SOURCE_PLOT_NAMES,
     TIME_COLUMN_CANDIDATES,
@@ -29,6 +30,9 @@ class PlotRegistry:
 
         if normalized in MAP_PLOT_NAMES:
             return "map"
+
+        if normalized in KEOGRAM_PLOT_NAMES:
+            return "keogram"
 
         if normalized in HIST_PLOT_NAMES:
             return "histogram"

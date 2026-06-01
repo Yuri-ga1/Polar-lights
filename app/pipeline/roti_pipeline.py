@@ -7,8 +7,13 @@ from datetime import datetime, timedelta
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader
 from app.simurg.simurg_processor import DataProduct, SimurgProcessor
+from app.visualization.keogram_plotter import (
+    KeogramConfig,
+    build_keogram_matrix_from_slices,
+    plot_keogram_matrix,
+    resolve_keogram_times,
+)
 from app.visualization.roti_plotter import plot_map
-from app.visualization.keogram_plotter import plot_keogram
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +40,7 @@ def run_roti_pipeline(
     simurg_client: SimurgClient | None,
 ) -> None:
     if simurg_client is None:
-        logger.warning("SimurgClient не создан. Поток ROTI пропущен.")
+        logger.warning("SimurgClient is not configured. ROTI pipeline skipped.")
         return
 
     simurg_dir = os.path.join(download_dir, "simurg")
@@ -46,18 +51,45 @@ def run_roti_pipeline(
 
     target_date = datetime.strptime(date_str, "%Y-%m-%d")
     file_start_date = (target_date - timedelta(days=1)).date()
+    processor = SimurgProcessor(folder_path=simurg_dir)
 
-    data = SimurgProcessor(folder_path=simurg_dir).load(
+    available_times = processor.available_times(
         file_start_date,
         product_type=DataProduct.ROTI,
     )
-    if not data:
-        logger.warning("Не удалось загрузить данные ROTI для %s.", date_str)
+    if not available_times:
+        logger.warning("Failed to load ROTI data for %s.", date_str)
         return
-    
-    keys = data.keys()
-    day_start = min(keys)
-    day_finish = max(keys)
 
-    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="roti", save_dir=plots_dir)
-    plot_keogram(data=data, day_start=day_start, day_finish=day_finish, save_dir=plots_dir)
+    plot_times = _pick_plot_times({plot_time: None for plot_time in available_times})
+    map_data = processor.load(
+        file_start_date,
+        product_type=DataProduct.ROTI,
+        times=plot_times,
+    )
+    if map_data:
+        plot_map(data=map_data, plot_times=plot_times, product_type="roti", save_dir=plots_dir)
+
+    cfg = KeogramConfig()
+    day_start = min(available_times).date()
+    day_finish = max(available_times).date()
+    keogram_times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
+
+    matrix, times, lat_centers = build_keogram_matrix_from_slices(
+        time_slices=processor.iter_slices(
+            file_start_date,
+            product_type=DataProduct.ROTI,
+            times=keogram_times,
+        ),
+        available_times=available_times,
+        day_start=day_start,
+        day_finish=day_finish,
+        cfg=cfg,
+    )
+    plot_keogram_matrix(
+        matrix=matrix,
+        times=times,
+        lat_centers=lat_centers,
+        cfg=cfg,
+        save_dir=plots_dir,
+    )

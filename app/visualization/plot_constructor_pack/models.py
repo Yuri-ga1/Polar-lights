@@ -10,10 +10,10 @@ MAP_PLOT_NAMES = {
     "gim",
     "adjusted tec",
     "tec adjusted",
-    "keogram",
     "aurora observation",
     "aurora",
 }
+KEOGRAM_PLOT_NAMES = {"keogram"}
 HIST_PLOT_NAMES = {"kp"}
 SOURCE_PLOT_NAMES = {
     "ionosonde",
