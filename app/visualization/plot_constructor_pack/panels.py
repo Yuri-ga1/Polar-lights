@@ -48,6 +48,16 @@ class PlotPanelBuilder:
     ) -> list[datetime]:
         plot_times = params.get("time")
 
+        if (
+            params.get("plot_all_times")
+            or params.get("all_times")
+            or (
+                isinstance(plot_times, str)
+                and PlotRegistry.normalize_name(plot_times) in {"all", "available", "*"}
+            )
+        ):
+            return sorted(data.keys())
+
         if plot_times is None:
             plot_times = [sorted(data.keys())[0]]
 

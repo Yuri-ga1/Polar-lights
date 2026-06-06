@@ -60,6 +60,28 @@ Downloaded data files are stored in:
 
 - `files/`
 
+To render every available ROTI or adjusted TEC map from a notebook, stream the
+SIMuRG slices into `plot_all_maps`. The helper splits output into several PNG
+files instead of trying to place the whole time range into one oversized figure.
+
+```python
+from app.simurg.simurg_processor import DataProduct, SimurgProcessor
+from app.visualization.roti_plotter import plot_all_maps
+
+processor = SimurgProcessor(folder_path="files/2025-04-16/simurg")
+
+output_dir = plot_all_maps(
+    data=processor.iter_slices("2025-04-16", product_type=DataProduct.TEC_ADJUSTED),
+    product_type="tec_adjusted",
+    save_dir="results/2025-04-16",
+    maps_per_figure=4,
+    show_noon_line=True,
+    terminator_height_km=0,
+)
+```
+
+For `PlotConstructor`, use `time="all"` or `plot_all_times=True` in map params.
+
 ## Run in Google Colab
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/main/notebooks/00_examples_and_run.ipynb)

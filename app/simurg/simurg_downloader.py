@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
@@ -45,6 +46,35 @@ class _SimurgDownloader(BaseDownloader):
             end_dt = start_date + timedelta(days=1) - timedelta(minutes=1)
         return self._to_simurg_date(start_date), self._to_simurg_date(end_dt)
 
+    def _find_existing_hdf5_result(self, start_iso: str) -> str | None:
+        options = self._args.get("options", {})
+
+        if options.get("format") != "hdf5":
+            return None
+
+        product_type = options.get("product_type")
+        if not product_type:
+            return None
+
+        file_date = datetime.strptime(start_iso, "%Y-%m-%d %H:%M").date()
+        year = file_date.year
+        doy = file_date.timetuple().tm_yday
+        prefix = f"{product_type}_{year}_{doy:03d}_-90_90_N_-180_180_E_"
+
+        if not os.path.isdir(self.out_dir):
+            return None
+
+        for filename in sorted(os.listdir(self.out_dir)):
+            if not filename.startswith(prefix) or not filename.endswith(".h5"):
+                continue
+
+            existing_file = self._get_existing_file(filename)
+            if existing_file:
+                print(f"Using local cached SIMuRG file: {existing_file}")
+                return existing_file
+
+        return None
+
     def download(self, date_str: str, end_date: Optional[str] = None) -> str:
         """Запускает формирование запроса и скачивает результат.
 
@@ -54,6 +84,10 @@ class _SimurgDownloader(BaseDownloader):
         :returns: путь к результату
         """
         start_iso, end_iso = self._make_time_range(date_str, end_date)
+        existing_file = self._find_existing_hdf5_result(start_iso)
+        if existing_file:
+            return existing_file
+
         query_ids = self.client.create_or_reuse_query_ids(
             start_time=start_iso,
             end_time=end_iso,

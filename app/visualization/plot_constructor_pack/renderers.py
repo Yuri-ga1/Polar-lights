@@ -31,6 +31,7 @@ from app.visualization.plot_utils import (
     plot_timeseries_on_ax,
 )
 from app.visualization.roti_plotter import (
+    format_simurg_map_title,
     get_product_colorbar_config,
     plot_simurg_map_on_ax,
 )
@@ -419,7 +420,7 @@ class PlotRenderer:
 
     @staticmethod
     def format_map_title(name: str, plot_time: datetime) -> str:
-        return f"{name}. {plot_time.strftime('%d %B %Y %H:%M:%S UT')}"
+        return f"{plot_time.strftime('%d %B %Y %H:%M:%S UT')}\n{name}"
     
     @staticmethod
     def _format_coord(value: float, positive: str, negative: str) -> str:
@@ -494,14 +495,15 @@ class PlotRenderer:
         )
 
         colorbar_config = get_product_colorbar_config(product_type)
+        product_title = "TEC Adjusted" if product_type == "tec_adjusted" else "ROTI"
 
         plot_simurg_map_on_ax(
             ax,
             arr,
-            title=self.format_map_title(descriptor.name, plot_time),
+            title=format_simurg_map_title(product_title, plot_time),
             plot_time=plot_time,
             cmap=params.get("cmap", "jet"),
-            point_size=params.get("s", 8),
+            point_size=params.get("s", params.get("point_size", 6)),
             colorbar_limits=(colorbar_config.min, colorbar_config.max),
             colorbar_label=params.get("colorbar_label", colorbar_config.units),
             show_terminator=params.get("show_terminator", True),
@@ -509,6 +511,14 @@ class PlotRenderer:
             geomagnetic_levels=params.get("geomagnetic_levels", [-50, -30, 0, 30, 50]),
             show_colorbar=params.get("show_colorbar", True),
             cbar_ax=params.get("cbar_ax"),
+            show_noon_line=params.get("show_noon_line", False),
+            noon_line_color=params.get("noon_line_color", "purple"),
+            noon_line_linestyle=params.get("noon_line_linestyle", "--"),
+            noon_line_linewidth=params.get("noon_line_linewidth", 1.2),
+            noon_line_alpha=params.get("noon_line_alpha", 0.9),
+            terminator_height_km=params.get("terminator_height_km", 300.0),
+            hide_zero_values=params.get("hide_zero_values", True),
+            high_values_on_top=params.get("high_values_on_top", True),
         )
 
     def plot_map_panel(
