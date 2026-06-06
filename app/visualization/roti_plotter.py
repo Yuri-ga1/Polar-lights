@@ -17,11 +17,13 @@ import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 
 from app.visualization.geo_utils import solar_terminator, geomagnetic_lines
 from app.visualization.plot_utils import (
     add_colorbar_right,
     add_panel_label,
+    normalize_map_projection,
     panel_labels,
     prepare_layout,
     resolve_map_projection,
@@ -186,6 +188,53 @@ def format_simurg_map_title(product_name: str, plot_time: datetime) -> str:
     return f"{plot_time.strftime(TIME_FORMAT_TITLE)[:-7]} UT\n{product_name}"
 
 
+def format_simurg_time_title(plot_time: datetime) -> str:
+    return f"{plot_time.strftime(TIME_FORMAT_TITLE)[:-7]} UT"
+
+
+def format_projection_title(map_projection: str | None) -> str:
+    projection_name = normalize_map_projection(map_projection)
+    labels = {
+        "north_pole": "North polar projection",
+        "south_pole": "South polar projection",
+    }
+    return labels.get(projection_name, "Global projection")
+
+
+def _format_geomagnetic_levels(
+    levels: Iterable[float],
+    map_projection: str | None,
+) -> str:
+    projection_name = normalize_map_projection(map_projection)
+    unique_levels = {float(level) for level in levels if float(level) != 0.0}
+
+    if projection_name == "north_pole":
+        ordered_levels = sorted(
+            (level for level in unique_levels if level > 0),
+            reverse=True,
+        )
+    elif projection_name == "south_pole":
+        ordered_levels = sorted(level for level in unique_levels if level < 0)
+    else:
+        ordered_levels = sorted(unique_levels)
+
+    labels = []
+    for level in ordered_levels:
+        value = int(level) if level.is_integer() else level
+        suffix = "N" if level > 0 else "S"
+        labels.append(f"{abs(value):g}{suffix}")
+    return ", ".join(labels)
+
+
+def _polar_center_lat(map_projection: str | None) -> float | None:
+    projection_name = normalize_map_projection(map_projection)
+    if projection_name == "north_pole":
+        return 90.0
+    if projection_name == "south_pole":
+        return -90.0
+    return None
+
+
 def _normalize_longitude(value: float) -> float:
     return ((value + 180) % 360) - 180
 
@@ -224,6 +273,93 @@ def draw_solar_noon_line_on_ax(
     )
 
 
+def draw_polar_center_on_ax(
+    ax,
+    map_projection: str | None,
+    *,
+    color: str = "purple",
+    label: str = "Projection center",
+) -> None:
+    center_lat = _polar_center_lat(map_projection)
+    if center_lat is None:
+        return
+
+    ax.scatter(
+        [0],
+        [center_lat],
+        marker="*",
+        s=220,
+        facecolors=color,
+        edgecolors="black",
+        linewidths=2.0,
+        zorder=8,
+        transform=ccrs.PlateCarree(),
+        label=label,
+    )
+
+
+def add_polar_legend(
+    fig: Figure,
+    *,
+    map_projection: str | None,
+    geomagnetic_levels: Iterable[float],
+    show_noon_line: bool,
+    noon_line_color: str,
+    noon_line_linestyle: str,
+    noon_line_linewidth: float,
+) -> None:
+    handles = [
+        Line2D(
+            [0],
+            [0],
+            color="black",
+            linewidth=2.0,
+            label="Geomagnetic equator (0°)",
+        ),
+        Line2D(
+            [0],
+            [0],
+            color="black",
+            linestyle="--",
+            linewidth=1.2,
+            label=(
+                "Geomagnetic lines "
+                f"({_format_geomagnetic_levels(geomagnetic_levels, map_projection)})"
+            ),
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="*",
+            markersize=13,
+            markerfacecolor=noon_line_color,
+            markeredgecolor="black",
+            linestyle="None",
+            label="Projection center",
+        ),
+    ]
+
+    if show_noon_line:
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                color=noon_line_color,
+                linestyle=noon_line_linestyle,
+                linewidth=noon_line_linewidth,
+                label="Local noon line",
+            )
+        )
+
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=len(handles),
+        frameon=True,
+    )
+
+
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: Iterable[datetime | str] | datetime | str | pd.Timestamp | None = None,
@@ -240,6 +376,8 @@ def plot_map(
     point_size: float | None = None,
     map_projection: str | None = None,
     projection: str | None = None,
+    geomagnetic_levels: Iterable[float] = (-60, -15, 0, 15, 60),
+    show_polar_legend: bool = True,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
@@ -249,7 +387,6 @@ def plot_map(
     ncols = 2
     map_params = MapParams()
     colorbar_limit_scaling = 1
-    fig_width = FIGSIZE_WIDTH
 
     def scale_color_limits(data_product: DataProduct, scale: float) -> ColorLimits:
         return ColorLimits(
@@ -263,19 +400,29 @@ def plot_map(
 
     plot_times = resolve_plot_times(data, plot_times)
     plot_times = sorted(plot_times)
-    resolved_projection_name = map_projection or projection
+    resolved_projection_name = normalize_map_projection(map_projection or projection)
+    is_polar_projection = resolved_projection_name in {"north_pole", "south_pole"}
+    effective_show_noon_line = show_noon_line or is_polar_projection
     ncols = min(ncols, len(plot_times))
 
     nrows = max(1, ceil(len(plot_times) / ncols))
     subplot_marks = panel_labels(nrows * ncols)
 
-    fig = Figure(figsize=(18, 16))
+    fig = Figure(figsize=(FIGSIZE_WIDTH, 16))
     FigureCanvasAgg(fig)
+    if is_polar_projection:
+        fig.suptitle(
+            f"{product.long_name} - {format_projection_title(resolved_projection_name)}",
+            y=0.98,
+        )
+
     axs = fig.subplots(
         nrows=nrows,
         ncols=ncols,
         subplot_kw={"projection": resolve_map_projection(resolved_projection_name)},
     )
+    if is_polar_projection:
+        fig.subplots_adjust(top=0.9, bottom=0.12 if show_polar_legend else 0.11)
 
     axs = np.atleast_1d(axs).ravel().tolist()
 
@@ -292,18 +439,23 @@ def plot_map(
         sctr = plot_simurg_map_on_ax(
             ax1,
             arr,
-            title=format_simurg_map_title(product.long_name, time),
+            title=(
+                format_simurg_time_title(time)
+                if is_polar_projection
+                else format_simurg_map_title(product.long_name, time)
+            ),
             cmap=map_params.cmap,
             point_size=point_size if point_size is not None else map_params.point_size,
             plot_time=time,
             colorbar_limits=(color_limits.min, color_limits.max),
             show_colorbar=False,
-            show_noon_line=show_noon_line,
+            show_noon_line=effective_show_noon_line,
             noon_line_color=noon_line_color,
             terminator_height_km=terminator_height_km,
             hide_zero_values=hide_zero_values,
             high_values_on_top=high_values_on_top,
             map_projection=resolved_projection_name,
+            geomagnetic_levels=geomagnetic_levels,
         )
 
         if show_panel_labels:
@@ -320,6 +472,17 @@ def plot_map(
                 mappable=sctr,
                 label=cbar_label,
             )
+
+    if is_polar_projection and show_polar_legend:
+        add_polar_legend(
+            fig,
+            map_projection=resolved_projection_name,
+            geomagnetic_levels=geomagnetic_levels,
+            show_noon_line=effective_show_noon_line,
+            noon_line_color=noon_line_color,
+            noon_line_linestyle="--",
+            noon_line_linewidth=2.5,
+        )
 
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, save_name or f"{product.hdf_name.upper()}.png")
@@ -346,6 +509,7 @@ def plot_all_maps(
     point_size: float | None = None,
     map_projection: str | None = None,
     projection: str | None = None,
+    show_polar_legend: bool = True,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
 ) -> str:
@@ -389,6 +553,7 @@ def plot_all_maps(
                 high_values_on_top=high_values_on_top,
                 point_size=point_size,
                 map_projection=map_projection or projection,
+                show_polar_legend=show_polar_legend,
             )
             wrote_any = True
 
@@ -484,6 +649,12 @@ def plot_simurg_map_on_ax(
                 alpha=noon_line_alpha,
             )
 
+    draw_polar_center_on_ax(
+        ax,
+        map_projection or projection,
+        color=noon_line_color,
+    )
+
     points = arr
     if hide_zero_values:
         points = points[points["vals"] != 0]
@@ -510,5 +681,6 @@ def plot_simurg_map_on_ax(
         if colorbar_label:
             cbar.set_label(colorbar_label)
 
-    ax.set_title(title)
+    if title is not None:
+        ax.set_title(title)
     return sctr

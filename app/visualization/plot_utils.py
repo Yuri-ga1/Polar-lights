@@ -106,6 +106,22 @@ def kp_colors(kp_values: pd.Series) -> list[str]:
     return colors
 
 
+def _format_cardinal_latitude(value: float, _pos: int | None = None) -> str:
+    if value == 0:
+        return "0"
+
+    suffix = "N" if value > 0 else "S"
+    return f"{abs(value):g}{suffix}"
+
+
+def _format_cardinal_longitude(value: float, _pos: int | None = None) -> str:
+    if value == 0:
+        return "0"
+
+    suffix = "E" if value > 0 else "W"
+    return f"{abs(value):g}{suffix}"
+
+
 def normalize_map_projection(map_projection: str | None = None) -> str:
     """Normalize supported map projection names."""
     if map_projection is None:
@@ -172,6 +188,7 @@ def prepare_layout(
 ) -> None:
     """add coastline/borders/gridlines and format map axes."""
     normalized_projection = normalize_map_projection(map_projection)
+    is_polar_projection = normalized_projection in {"north_pole", "south_pole"}
     gl = ax.gridlines(
         linewidth=2,
         color="gray",
@@ -179,10 +196,33 @@ def prepare_layout(
         draw_labels=True,
         linestyle="--",
     )
+
     gl.top_labels = False
     gl.right_labels = False
-    gl.xformatter = LONGITUDE_FORMATTER
-    gl.yformatter = LATITUDE_FORMATTER
+    if is_polar_projection:
+        gl.xformatter = mticker.FuncFormatter(_format_cardinal_longitude)
+        gl.yformatter = mticker.FuncFormatter(_format_cardinal_latitude)
+    else:
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+    gl.rotate_labels = is_polar_projection
+    if is_polar_projection:
+        gl.x_inline = False
+        gl.y_inline = False
+
+    label_style = {"zorder": 20}
+    if is_polar_projection:
+        label_style["rotation"] = 0
+        label_style["ha"] = "center"
+        label_style["va"] = "center"
+        label_style["bbox"] = {
+            "facecolor": "white",
+            "edgecolor": "none",
+            "alpha": 0.8,
+            "pad": 1.5,
+        }
+    gl.xlabel_style = label_style
+    gl.ylabel_style = label_style
 
     if lon_locator:
         gl.xlocator = mticker.FixedLocator(list(lon_locator))
