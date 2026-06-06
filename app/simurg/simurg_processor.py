@@ -72,9 +72,24 @@ class SimurgProcessor(BaseProcessor):
             raise ValueError(f"Неизвестный тип продукта: {product_type}. Поддерживаются: {supported}") from error
         
     @classmethod
-    def _format_time_key(cls, value: str | datetime) -> str:
+    def _format_time_key(
+        cls,
+        value: str | datetime,
+        base_date: date | None = None,
+    ) -> str:
         if isinstance(value, str):
-            value = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+            text = value.strip()
+
+            if len(text) == 8 and text.count(":") == 2:
+                if base_date is None:
+                    raise ValueError(
+                        "Time-only values require an available data date."
+                    )
+
+                parsed_time = datetime.strptime(text, "%H:%M:%S").time()
+                value = datetime.combine(base_date, parsed_time)
+            else:
+                value = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
 
         value = cls._normalize_time(value)
 
@@ -87,10 +102,12 @@ class SimurgProcessor(BaseProcessor):
         times: list[str | datetime],
     ) -> list[str]:
         available_keys = set(data_group.keys())
+        available_dates = sorted(cls._parse_time(key).date() for key in available_keys)
+        base_date = available_dates[0] if available_dates else None
         selected_keys: list[str] = []
 
         for value in times:
-            requested_key = cls._format_time_key(value)
+            requested_key = cls._format_time_key(value, base_date=base_date)
 
             if requested_key in available_keys:
                 selected_keys.append(requested_key)

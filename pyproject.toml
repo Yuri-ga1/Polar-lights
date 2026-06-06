@@ -18,7 +18,8 @@ dependencies = [
     "cartopy (>=0.25.0,<0.26.0)",
     "ppigrf (>=2.1.0,<3.0.0)",
     "ionex @ git+https://github.com/gnss-lab/ionex.git",
-    "unlzw3 (>=0.2.3,<0.3.0)"
+    "unlzw3 (>=0.2.3,<0.3.0)",
+    "aacgmv2 (>=2.7.1,<3.0.0)"
 ]
 
 

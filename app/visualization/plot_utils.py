@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
+import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from cartopy import feature
@@ -105,12 +106,72 @@ def kp_colors(kp_values: pd.Series) -> list[str]:
     return colors
 
 
+def normalize_map_projection(map_projection: str | None = None) -> str:
+    """Normalize supported map projection names."""
+    if map_projection is None:
+        return "global"
+
+    normalized = str(map_projection).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "platecarree": "global",
+        "plate_carree": "global",
+        "world": "global",
+        "global": "global",
+        "default": "global",
+        "north": "north_pole",
+        "north_pole": "north_pole",
+        "northern": "north_pole",
+        "arctic": "north_pole",
+        "south": "south_pole",
+        "south_pole": "south_pole",
+        "southern": "south_pole",
+        "antarctic": "south_pole",
+    }
+
+    if normalized not in aliases:
+        supported = ", ".join(["global", "north_pole", "south_pole"])
+        raise ValueError(
+            f"Unsupported map projection '{map_projection}'. Use one of: {supported}."
+        )
+
+    return aliases[normalized]
+
+
+def resolve_map_projection(map_projection: str | None = None) -> ccrs.Projection:
+    """Return a Cartopy projection for map axes."""
+    normalized = normalize_map_projection(map_projection)
+
+    if normalized == "north_pole":
+        return ccrs.NorthPolarStereo()
+    if normalized == "south_pole":
+        return ccrs.SouthPolarStereo()
+
+    return ccrs.PlateCarree()
+
+
+def apply_map_extent(ax: plt.Axes, map_projection: str | None = None) -> None:
+    """Apply visible map extent for global and polar projections."""
+    normalized = normalize_map_projection(map_projection)
+
+    if normalized == "north_pole":
+        ax.set_extent([-180, 180, 0, 90], crs=ccrs.PlateCarree())
+        return
+
+    if normalized == "south_pole":
+        ax.set_extent([-180, 180, -90, 0], crs=ccrs.PlateCarree())
+        return
+
+    ax.set_global()
+
+
 def prepare_layout(
     ax: plt.Axes,
     lon_locator: Iterable[float] | None,
     lat_locator: Iterable[float] | None,
+    map_projection: str | None = None,
 ) -> None:
     """add coastline/borders/gridlines and format map axes."""
+    normalized_projection = normalize_map_projection(map_projection)
     gl = ax.gridlines(
         linewidth=2,
         color="gray",
@@ -128,8 +189,7 @@ def prepare_layout(
     if lat_locator:
         gl.ylocator = mticker.FixedLocator(list(lat_locator))
 
-    ax.set_xlim(-180, 180)
-    ax.set_ylim(-90, 90)
+    apply_map_extent(ax, normalized_projection)
 
     ax.add_feature(feature.COASTLINE, linewidth=2.5)
     ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)

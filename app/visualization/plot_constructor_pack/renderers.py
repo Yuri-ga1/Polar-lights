@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Sequence
 
-import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import pandas as pd
 import math
@@ -29,6 +28,7 @@ from app.visualization.plot_utils import (
     plot_histogram_on_ax,
     plot_kp_bars,
     plot_timeseries_on_ax,
+    resolve_map_projection,
 )
 from app.visualization.roti_plotter import (
     format_simurg_map_title,
@@ -485,6 +485,7 @@ class PlotRenderer:
                 arr,
                 title=self.format_map_title(descriptor.name, plot_time),
                 cmap=params.get("cmap", "jet"),
+                map_projection=params.get("map_projection", params.get("projection")),
             )
             return
 
@@ -519,6 +520,7 @@ class PlotRenderer:
             terminator_height_km=params.get("terminator_height_km", 300.0),
             hide_zero_values=params.get("hide_zero_values", True),
             high_values_on_top=params.get("high_values_on_top", True),
+            map_projection=params.get("map_projection", params.get("projection")),
         )
 
     def plot_map_panel(
@@ -546,17 +548,18 @@ class PlotRenderer:
 
         axes: list[plt.Axes] = []
         cbar_ax = fig.add_subplot(inner_grid[0, -1])
+        map_projection = panel.params.get("map_projection", panel.params.get("projection"))
 
         for map_idx, plot_time in enumerate(map_times):
             if len(map_times) == 1 and ncols_requested > 1:
                 ax = fig.add_subplot(
                     inner_grid[0, :ncols],
-                    projection=ccrs.PlateCarree(),
+                    projection=resolve_map_projection(map_projection),
                 )
             else:
                 ax = fig.add_subplot(
                     inner_grid[0, map_idx],
-                    projection=ccrs.PlateCarree(),
+                    projection=resolve_map_projection(map_projection),
                 )
 
             params = dict(panel.params)
@@ -624,6 +627,7 @@ class PlotRenderer:
                 show_geomagnetic_equator=params.get("show_geomagnetic_equator", True),
                 show_terminator=params.get("show_terminator", True),
                 point_radius=params.get("point_radius", 1.0),
+                map_projection=params.get("map_projection", params.get("projection")),
             )
             ax.set_title(descriptor.name)
             return

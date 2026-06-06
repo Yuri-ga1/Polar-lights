@@ -3,7 +3,6 @@ from __future__ import annotations
 import string
 from typing import Any, Mapping, Sequence
 
-import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -12,6 +11,7 @@ from app.visualization.plot_constructor_pack.models import ParsedPlot
 from app.visualization.plot_constructor_pack.panels import PlotPanelBuilder
 from app.visualization.plot_constructor_pack.registry import PlotRegistry
 from app.visualization.plot_constructor_pack.renderers import PlotRenderer
+from app.visualization.plot_utils import resolve_map_projection
 
 try:
     from IPython.display import Markdown, display
@@ -217,7 +217,9 @@ class PlotConstructor:
             if panel.descriptor.plot_type == "map":
                 ax = fig.add_subplot(
                     subplot_spec,
-                    projection=ccrs.PlateCarree(),
+                    projection=resolve_map_projection(
+                        panel.params.get("map_projection", panel.params.get("projection"))
+                    ),
                 )
 
                 if isinstance(panel.data, dict):

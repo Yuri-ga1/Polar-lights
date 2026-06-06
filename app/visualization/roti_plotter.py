@@ -19,7 +19,13 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from app.visualization.geo_utils import solar_terminator, geomagnetic_lines
-from app.visualization.plot_utils import panel_labels, prepare_layout, add_panel_label, add_colorbar_right
+from app.visualization.plot_utils import (
+    add_colorbar_right,
+    add_panel_label,
+    panel_labels,
+    prepare_layout,
+    resolve_map_projection,
+)
 
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
 FIGSIZE_WIDTH = 18
@@ -232,6 +238,8 @@ def plot_map(
     hide_zero_values: bool = True,
     high_values_on_top: bool = True,
     point_size: float | None = None,
+    map_projection: str | None = None,
+    projection: str | None = None,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
@@ -255,6 +263,7 @@ def plot_map(
 
     plot_times = resolve_plot_times(data, plot_times)
     plot_times = sorted(plot_times)
+    resolved_projection_name = map_projection or projection
     ncols = min(ncols, len(plot_times))
 
     nrows = max(1, ceil(len(plot_times) / ncols))
@@ -265,7 +274,7 @@ def plot_map(
     axs = fig.subplots(
         nrows=nrows,
         ncols=ncols,
-        subplot_kw={"projection": ccrs.PlateCarree()},
+        subplot_kw={"projection": resolve_map_projection(resolved_projection_name)},
     )
 
     axs = np.atleast_1d(axs).ravel().tolist()
@@ -294,6 +303,7 @@ def plot_map(
             terminator_height_km=terminator_height_km,
             hide_zero_values=hide_zero_values,
             high_values_on_top=high_values_on_top,
+            map_projection=resolved_projection_name,
         )
 
         if show_panel_labels:
@@ -334,6 +344,8 @@ def plot_all_maps(
     hide_zero_values: bool = True,
     high_values_on_top: bool = True,
     point_size: float | None = None,
+    map_projection: str | None = None,
+    projection: str | None = None,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
 ) -> str:
@@ -376,6 +388,7 @@ def plot_all_maps(
                 hide_zero_values=hide_zero_values,
                 high_values_on_top=high_values_on_top,
                 point_size=point_size,
+                map_projection=map_projection or projection,
             )
             wrote_any = True
 
@@ -426,13 +439,20 @@ def plot_simurg_map_on_ax(
     terminator_height_km=300.0,
     hide_zero_values=True,
     high_values_on_top=True,
+    map_projection: str | None = None,
+    projection: str | None = None,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
 
-    prepare_layout(ax, lon_locator, lat_locator)
+    prepare_layout(
+        ax,
+        lon_locator,
+        lat_locator,
+        map_projection=map_projection or projection,
+    )
 
     if plot_time is not None:
         native_time = plot_time.replace(tzinfo=None)

@@ -12,7 +12,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from app.visualization.geo_utils import solar_terminator, geomagnetic_lines
-from app.visualization.plot_utils import panel_labels, prepare_layout, add_panel_label, add_colorbar_right
+from app.visualization.plot_utils import (
+    add_colorbar_right,
+    add_panel_label,
+    panel_labels,
+    prepare_layout,
+    resolve_map_projection,
+)
 
 
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
@@ -60,6 +66,8 @@ def plot_gim_maps(
     ncols: int = 2,
     cmap: str = "jet",
     save_dir: str = os.path.join("files", "graphs"),
+    map_projection: str | None = None,
+    projection: str | None = None,
 ) -> str:
     """
     Plot GIM TEC maps for specified times.
@@ -76,6 +84,7 @@ def plot_gim_maps(
         raise ValueError("Нет данных для указанных plot_times.")
 
     plot_times = sorted(plot_times)
+    resolved_projection_name = map_projection or projection
     nrows = max(1, ceil(len(plot_times) / ncols))
     marks = panel_labels(nrows * ncols)
 
@@ -83,7 +92,7 @@ def plot_gim_maps(
         figsize=(FIGSIZE_WIDTH, 16),
         nrows=nrows,
         ncols=ncols,
-        subplot_kw={"projection": ccrs.PlateCarree()},
+        subplot_kw={"projection": resolve_map_projection(resolved_projection_name)},
     )
 
     axs = axs.flatten() if nrows * ncols > 1 else [axs]
@@ -108,6 +117,7 @@ def plot_gim_maps(
             arr,
             title=t.strftime(TIME_FORMAT_TITLE)[:-7] + " UT",
             cmap=cmap,
+            map_projection=resolved_projection_name,
         )
         add_panel_label(ax, marks[idx])
 
@@ -129,12 +139,19 @@ def plot_gim_map_on_ax(
     *,
     title: str,
     cmap: str = "jet",
+    map_projection: str | None = None,
+    projection: str | None = None,
 ):
     """Draw one GIM map on existing map axis."""
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
 
-    prepare_layout(ax, lon_locator, lat_locator)
+    prepare_layout(
+        ax,
+        lon_locator,
+        lat_locator,
+        map_projection=map_projection or projection,
+    )
     lats, lons, grid = _to_grid(arr)
     extent = (float(lons.min()), float(lons.max()), float(lats.min()), float(lats.max()))
 

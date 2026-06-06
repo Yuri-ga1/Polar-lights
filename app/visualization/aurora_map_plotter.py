@@ -11,6 +11,7 @@ from matplotlib.patches import Wedge
 from app.visualization.geo_utils import geomagnetic_lines, solar_terminator
 from app.visualization.color_utils import get_dominant_color
 from app.visualization.plot_settings import POINT_RADIUS
+from app.visualization.plot_utils import apply_map_extent, resolve_map_projection
 
 
 def plot_aurora_observations_on_ax(
@@ -21,6 +22,8 @@ def plot_aurora_observations_on_ax(
     show_geomagnetic_equator: bool = True,
     show_terminator: bool = True,
     point_radius: float = POINT_RADIUS,
+    map_projection: str | None = None,
+    projection: str | None = None,
 ) -> None:
     """Plot aurora observations from DataFrame on an existing map axis."""
     if time is None:
@@ -35,7 +38,7 @@ def plot_aurora_observations_on_ax(
     if data.empty:
         raise ValueError(f"There is no aurora data for date: {target_date}")
 
-    ax.set_global()
+    apply_map_extent(ax, map_projection or projection)
     ax.add_feature(cfeature.LAND, facecolor="lightgray")
     ax.add_feature(cfeature.OCEAN, facecolor="white")
     ax.add_feature(cfeature.COASTLINE, linewidth=0.7)
@@ -150,19 +153,28 @@ class AuroraMapPlotter:
         save_path: str | None = None,
         show_geomagnetic_equator: bool = True,
         show_terminator: bool = True,
+        map_projection: str | None = None,
+        projection: str | None = None,
     ):
         self.csv_path = csv_path
         self.save_path = save_path
         self.show_geomagnetic_equator = show_geomagnetic_equator
         self.show_terminator = show_terminator
+        self.map_projection = map_projection or projection
 
         self.df = pd.read_csv(csv_path)
         self.df["date"] = pd.to_datetime(self.df["date"], errors="coerce")
 
-    def plot(self, time: datetime):
+    def plot(
+        self,
+        time: datetime,
+        map_projection: str | None = None,
+        projection: str | None = None,
+    ):
         """Строит карту мира с наблюдениями."""
         fig = plt.figure(figsize=(14, 7))
-        ax = plt.axes(projection=ccrs.PlateCarree())
+        resolved_projection_name = map_projection or projection or self.map_projection
+        ax = plt.axes(projection=resolve_map_projection(resolved_projection_name))
 
         plot_aurora_observations_on_ax(
             ax,
@@ -171,6 +183,7 @@ class AuroraMapPlotter:
             show_geomagnetic_equator=self.show_geomagnetic_equator,
             show_terminator=self.show_terminator,
             point_radius=POINT_RADIUS,
+            map_projection=resolved_projection_name,
         )
 
         ax.set_title(f"{time.strftime('%d %B %Y')} auroras")

@@ -23,6 +23,7 @@ class MainPipelineConfig:
     ionosonde_code: str | None = None
     cosmic_station_codes: list[str] | None = None
     simurg_email: str | None = None
+    map_projection: str | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
                 "download_dir": date_download_dir,
                 "plots_dir": date_plots_dir,
                 "simurg_client": simurg_client,
+                "map_projection": config.map_projection,
             },
         ),
         ThreadSpec(
@@ -63,12 +65,18 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
                 "download_dir": date_download_dir,
                 "plots_dir": date_plots_dir,
                 "simurg_client": simurg_client,
+                "map_projection": config.map_projection,
             },
         ),
         ThreadSpec(
             name="aurora-map-pipeline",
             target=run_aurora_pipeline,
-            kwargs={"target_date": target_date, "download_dir": date_download_dir, "plots_dir": date_plots_dir},
+            kwargs={
+                "target_date": target_date,
+                "download_dir": date_download_dir,
+                "plots_dir": date_plots_dir,
+                "map_projection": config.map_projection,
+            },
         ),
         ThreadSpec(
             name="misc-pipeline",
@@ -79,6 +87,7 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
                 "plots_dir": date_plots_dir,
                 "ionosonde_code": config.ionosonde_code,
                 "cosmic_stations": config.cosmic_station_codes,
+                "map_projection": config.map_projection,
             },
         ),
     ]

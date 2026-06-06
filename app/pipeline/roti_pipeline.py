@@ -38,6 +38,7 @@ def run_roti_pipeline(
     download_dir: str,
     plots_dir: str,
     simurg_client: SimurgClient | None,
+    map_projection: str | None = None,
 ) -> None:
     if simurg_client is None:
         logger.warning("SimurgClient is not configured. ROTI pipeline skipped.")
@@ -68,7 +69,13 @@ def run_roti_pipeline(
         times=plot_times,
     )
     if map_data:
-        plot_map(data=map_data, plot_times=plot_times, product_type="roti", save_dir=plots_dir)
+        plot_map(
+            data=map_data,
+            plot_times=plot_times,
+            product_type="roti",
+            save_dir=plots_dir,
+            map_projection=map_projection,
+        )
 
     cfg = KeogramConfig()
     day_start = min(available_times).date()

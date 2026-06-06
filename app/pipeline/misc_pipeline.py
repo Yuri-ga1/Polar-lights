@@ -63,6 +63,7 @@ def run_misc_pipeline(
     ionosonde_show_min: bool = True,
     ionosonde_show_max: bool = True,
     ionosonde_show_extrema: bool | None = None,
+    map_projection: str | None = None,
 ) -> None:
     os.makedirs(download_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
@@ -77,7 +78,12 @@ def run_misc_pipeline(
     GimDownloader(out_dir=gim_dir).download(date_str)
     gim_data = GimProcessor(folder_path=gim_dir).load(date_str)
     if gim_data:
-        plot_gim_maps(data=gim_data, plot_times=_pick_plot_times(gim_data), save_dir=plots_dir)
+        plot_gim_maps(
+            data=gim_data,
+            plot_times=_pick_plot_times(gim_data),
+            save_dir=plots_dir,
+            map_projection=map_projection,
+        )
 
     ionosonde_dir = os.path.join(download_dir, "ionosonde")
     os.makedirs(ionosonde_dir, exist_ok=True)

@@ -52,6 +52,7 @@ def run_observation_workflow(
     download_dir: str = "files",
     plots_dir: str = "results",
     plot_time: datetime | None = None,
+    map_projection: str | None = None,
 ) -> list[dict[str, str]]:
     """Run the observation workflow for a single date.
 
@@ -118,6 +119,7 @@ def run_observation_workflow(
         save_path=save_path,
         show_geomagnetic_equator=True,
         show_terminator=True,
+        map_projection=map_projection,
     )
 
     plotter.plot(

@@ -32,6 +32,7 @@ def run_adjusted_tec_pipeline(
     download_dir: str,
     plots_dir: str,
     simurg_client: SimurgClient | None,
+    map_projection: str | None = None,
 ) -> None:
     if simurg_client is None:
         logger.warning("SimurgClient не создан. Поток adjusted TEC пропущен.")
@@ -51,4 +52,10 @@ def run_adjusted_tec_pipeline(
         logger.warning("Не удалось загрузить данные adjusted TEC для %s.", date_str)
         return
 
-    plot_map(data=data, plot_times=_pick_plot_times(data), product_type="tec_adjusted", save_dir=plots_dir)
+    plot_map(
+        data=data,
+        plot_times=_pick_plot_times(data),
+        product_type="tec_adjusted",
+        save_dir=plots_dir,
+        map_projection=map_projection,
+    )
