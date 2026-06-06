@@ -1,6 +1,7 @@
 import numpy as np
 import cartopy.crs as ccrs
 from datetime import datetime, timezone
+import aacgmv2
 import ppigrf
 
 def _dip_latitude(Be, Bn, Bu):
@@ -67,6 +68,86 @@ def geomagnetic_lines(
     )
 
     return cs0, cs30
+
+
+def geographic_to_magnetic(
+    lat,
+    lon,
+    date: datetime,
+    height_km: float = 0.0,
+):
+    """
+    Convert geographic coordinates to AACGM magnetic coordinates.
+
+    Returns magnetic latitude and magnetic longitude arrays/scalars.
+    """
+    native_date = date.replace(tzinfo=None)
+    scalar_input = np.isscalar(lat) and np.isscalar(lon)
+    lat_arr = np.atleast_1d(np.asarray(lat, dtype=float))
+    lon_arr = np.atleast_1d(np.asarray(lon, dtype=float))
+
+    try:
+        magnetic_lat, magnetic_lon, _ = aacgmv2.convert_latlon_arr(
+            lat_arr,
+            lon_arr,
+            height_km,
+            native_date,
+            method_code="G2A",
+        )
+    except AttributeError:
+        converter = np.vectorize(
+            lambda lat_value, lon_value: aacgmv2.convert_latlon(
+                lat_value,
+                lon_value,
+                height_km,
+                native_date,
+                method_code="G2A",
+            )[:2],
+            otypes=[float, float],
+        )
+        magnetic_lat, magnetic_lon = converter(lat_arr, lon_arr)
+
+    magnetic_lat = np.asarray(magnetic_lat, dtype=float)
+    magnetic_lon = ((np.asarray(magnetic_lon, dtype=float) + 180) % 360) - 180
+
+    if scalar_input:
+        return float(magnetic_lat[0]), float(magnetic_lon[0])
+
+    return magnetic_lat, magnetic_lon
+
+
+def magnetic_constant_latitude_lines(
+    ax,
+    levels: list,
+    color: str = "black",
+):
+    lon = np.linspace(-180, 180, 361)
+
+    cs0 = None
+    if 0 in levels:
+        cs0 = ax.plot(
+            lon,
+            np.zeros_like(lon),
+            color=color,
+            linewidth=2.0,
+            transform=ccrs.PlateCarree(),
+        )
+
+    other_levels = [level for level in levels if level != 0]
+    cs_levels = []
+    for level in other_levels:
+        cs_levels.extend(
+            ax.plot(
+                lon,
+                np.full_like(lon, float(level)),
+                color=color,
+                linestyle="--",
+                linewidth=1.2,
+                transform=ccrs.PlateCarree(),
+            )
+        )
+
+    return cs0, cs_levels
 
 
 def get_subsolar_latlon(time: datetime | None = None):

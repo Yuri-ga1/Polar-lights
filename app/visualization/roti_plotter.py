@@ -19,7 +19,12 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
-from app.visualization.geo_utils import solar_terminator, geomagnetic_lines
+from app.visualization.geo_utils import (
+    geographic_to_magnetic,
+    geomagnetic_lines,
+    magnetic_constant_latitude_lines,
+    solar_terminator,
+)
 from app.visualization.plot_utils import (
     add_colorbar_right,
     add_panel_label,
@@ -277,6 +282,8 @@ def draw_polar_center_on_ax(
     ax,
     map_projection: str | None,
     *,
+    plot_time: datetime | None = None,
+    magnetic_coordinates: bool = False,
     color: str = "purple",
     label: str = "Projection center",
 ) -> None:
@@ -284,8 +291,28 @@ def draw_polar_center_on_ax(
     if center_lat is None:
         return
 
+    center_lon = 0.0
+    if magnetic_coordinates:
+        if plot_time is None:
+            raise ValueError("plot_time is required for magnetic projection center.")
+
+        magnetic_lat, magnetic_lon = geographic_to_magnetic(
+            center_lat,
+            center_lon,
+            plot_time,
+        )
+        if not np.isfinite(magnetic_lat) or not np.isfinite(magnetic_lon):
+            fallback_lat = 89.999 if center_lat > 0 else -89.999
+            magnetic_lat, magnetic_lon = geographic_to_magnetic(
+                fallback_lat,
+                center_lon,
+                plot_time,
+            )
+        center_lat = float(np.asarray(magnetic_lat))
+        center_lon = float(np.asarray(magnetic_lon))
+
     ax.scatter(
-        [0],
+        [center_lon],
         [center_lat],
         marker="*",
         s=220,
@@ -378,6 +405,7 @@ def plot_map(
     projection: str | None = None,
     geomagnetic_levels: Iterable[float] = (-60, -15, 0, 15, 60),
     show_polar_legend: bool = True,
+    magnetic_coordinates: bool = False,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
@@ -456,6 +484,7 @@ def plot_map(
             high_values_on_top=high_values_on_top,
             map_projection=resolved_projection_name,
             geomagnetic_levels=geomagnetic_levels,
+            magnetic_coordinates=magnetic_coordinates,
         )
 
         if show_panel_labels:
@@ -510,6 +539,7 @@ def plot_all_maps(
     map_projection: str | None = None,
     projection: str | None = None,
     show_polar_legend: bool = True,
+    magnetic_coordinates: bool = False,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
 ) -> str:
@@ -554,6 +584,7 @@ def plot_all_maps(
                 point_size=point_size,
                 map_projection=map_projection or projection,
                 show_polar_legend=show_polar_legend,
+                magnetic_coordinates=magnetic_coordinates,
             )
             wrote_any = True
 
@@ -606,6 +637,7 @@ def plot_simurg_map_on_ax(
     high_values_on_top=True,
     map_projection: str | None = None,
     projection: str | None = None,
+    magnetic_coordinates: bool = False,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
@@ -632,12 +664,19 @@ def plot_simurg_map_on_ax(
             )
 
         if show_geomagnetic_lines:
-            geomagnetic_lines(
-                ax=ax,
-                date=native_time,
-                levels=list(geomagnetic_levels),
-                color="black",
-            )
+            if magnetic_coordinates:
+                magnetic_constant_latitude_lines(
+                    ax=ax,
+                    levels=list(geomagnetic_levels),
+                    color="black",
+                )
+            else:
+                geomagnetic_lines(
+                    ax=ax,
+                    date=native_time,
+                    levels=list(geomagnetic_levels),
+                    color="black",
+                )
 
         if show_noon_line:
             draw_solar_noon_line_on_ax(
@@ -652,6 +691,8 @@ def plot_simurg_map_on_ax(
     draw_polar_center_on_ax(
         ax,
         map_projection or projection,
+        plot_time=plot_time,
+        magnetic_coordinates=magnetic_coordinates,
         color=noon_line_color,
     )
 
@@ -662,9 +703,21 @@ def plot_simurg_map_on_ax(
     if high_values_on_top:
         points = np.sort(points, order="vals")
 
+    plot_lon = points["lon"]
+    plot_lat = points["lat"]
+    if magnetic_coordinates:
+        if plot_time is None:
+            raise ValueError("plot_time is required for magnetic coordinates.")
+
+        plot_lat, plot_lon = geographic_to_magnetic(
+            plot_lat,
+            plot_lon,
+            plot_time,
+        )
+
     sctr = ax.scatter(
-        points["lon"],
-        points["lat"],
+        plot_lon,
+        plot_lat,
         c=points["vals"],
         alpha=1,
         marker="s",
