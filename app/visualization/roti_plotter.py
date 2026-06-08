@@ -22,7 +22,7 @@ from matplotlib.lines import Line2D
 from app.visualization.geo_utils import (
     geographic_to_magnetic,
     geomagnetic_lines,
-    magnetic_constant_latitude_lines,
+    geomagnetic_lines_in_magnetic_coordinates,
     solar_terminator,
 )
 from app.visualization.plot_utils import (
@@ -206,6 +206,28 @@ def format_projection_title(map_projection: str | None) -> str:
     return labels.get(projection_name, "Global projection")
 
 
+def resolve_map_projection_names(
+    map_projection: str | None = None,
+    projection: str | None = None,
+    map_projections: str | Iterable[str] | None = None,
+) -> list[str]:
+    if map_projections is None:
+        return [normalize_map_projection(map_projection or projection)]
+
+    if isinstance(map_projections, str):
+        normalized = map_projections.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized == "polar":
+            return ["north_pole", "south_pole"]
+
+        return [normalize_map_projection(map_projections)]
+
+    resolved = [normalize_map_projection(value) for value in map_projections]
+    if not resolved:
+        raise ValueError("map_projections must not be empty.")
+
+    return resolved
+
+
 def _format_geomagnetic_levels(
     levels: Iterable[float],
     map_projection: str | None,
@@ -382,9 +404,15 @@ def add_polar_legend(
         handles=handles,
         loc="lower center",
         bbox_to_anchor=(0.5, 0.02),
-        ncol=len(handles),
+        ncol=2,
         frameon=True,
     )
+
+
+def _colorbar_ticks(color_limits: tuple[float, float]) -> list[float]:
+    vmin, vmax = color_limits
+    step = (vmax - vmin) / 4
+    return [vmin + step * idx for idx in range(5)]
 
 
 def plot_map(
@@ -403,6 +431,7 @@ def plot_map(
     point_size: float | None = None,
     map_projection: str | None = None,
     projection: str | None = None,
+    map_projections: str | Iterable[str] | None = None,
     geomagnetic_levels: Iterable[float] = (-60, -15, 0, 15, 60),
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
@@ -428,50 +457,92 @@ def plot_map(
 
     plot_times = resolve_plot_times(data, plot_times)
     plot_times = sorted(plot_times)
-    resolved_projection_name = normalize_map_projection(map_projection or projection)
-    is_polar_projection = resolved_projection_name in {"north_pole", "south_pole"}
+    resolved_projection_names = resolve_map_projection_names(
+        map_projection=map_projection,
+        projection=projection,
+        map_projections=map_projections,
+    )
+    paired_projection_panel = map_projections is not None
+    is_polar_projection = all(
+        projection_name in {"north_pole", "south_pole"}
+        for projection_name in resolved_projection_names
+    )
     effective_show_noon_line = show_noon_line or is_polar_projection
-    ncols = min(ncols, len(plot_times))
 
-    nrows = max(1, ceil(len(plot_times) / ncols))
+    if paired_projection_panel:
+        ncols = len(resolved_projection_names)
+        nrows = len(plot_times)
+    else:
+        ncols = min(ncols, len(plot_times))
+        nrows = max(1, ceil(len(plot_times) / ncols))
+
     subplot_marks = panel_labels(nrows * ncols)
 
-    fig = Figure(figsize=(FIGSIZE_WIDTH, 16))
+    figsize = (17, 22) if paired_projection_panel and is_polar_projection else (FIGSIZE_WIDTH, 16)
+    fig = Figure(figsize=figsize)
     FigureCanvasAgg(fig)
     if is_polar_projection:
+        title_projection = (
+            "Polar projections"
+            if len(resolved_projection_names) > 1
+            else format_projection_title(resolved_projection_names[0])
+        )
         fig.suptitle(
-            f"{product.long_name} - {format_projection_title(resolved_projection_name)}",
+            f"{product.long_name} - {title_projection}",
             y=0.98,
         )
 
-    axs = fig.subplots(
-        nrows=nrows,
-        ncols=ncols,
-        subplot_kw={"projection": resolve_map_projection(resolved_projection_name)},
-    )
+    grid = fig.add_gridspec(nrows, ncols)
     if is_polar_projection:
-        fig.subplots_adjust(top=0.9, bottom=0.12 if show_polar_legend else 0.11)
+        fig.subplots_adjust(
+            top=0.9,
+            bottom=0.14 if show_polar_legend else 0.11,
+            wspace=-0.08 if paired_projection_panel else 0.08,
+            hspace=0.32 if paired_projection_panel else 0.2,
+        )
 
-    axs = np.atleast_1d(axs).ravel().tolist()
+    axis_specs: list[tuple[plt.Axes, datetime, str, int]] = []
 
-    for axs_index, ax1 in enumerate(axs):
-        if axs_index >= len(plot_times):
-            ax1.axis("off")
-            continue
+    for row_idx in range(nrows):
+        for col_idx in range(ncols):
+            flat_idx = row_idx * ncols + col_idx
 
-        time = plot_times[axs_index]
+            if paired_projection_panel:
+                time = plot_times[row_idx]
+                projection_name = resolved_projection_names[col_idx]
+            else:
+                projection_name = resolved_projection_names[0]
+                if flat_idx >= len(plot_times):
+                    ax = fig.add_subplot(
+                        grid[row_idx, col_idx],
+                        projection=resolve_map_projection(projection_name),
+                    )
+                    ax.axis("off")
+                    continue
+
+                time = plot_times[flat_idx]
+
+            ax = fig.add_subplot(
+                grid[row_idx, col_idx],
+                projection=resolve_map_projection(projection_name),
+            )
+            axis_specs.append((ax, time, projection_name, flat_idx))
+
+    for ax1, time, projection_name, axs_index in axis_specs:
 
         color_limits = scale_color_limits(product, colorbar_limit_scaling)
         arr = data[time]
+        panel_title = None
+        if not paired_projection_panel:
+            if is_polar_projection:
+                panel_title = format_simurg_time_title(time)
+            else:
+                panel_title = format_simurg_map_title(product.long_name, time)
 
         sctr = plot_simurg_map_on_ax(
             ax1,
             arr,
-            title=(
-                format_simurg_time_title(time)
-                if is_polar_projection
-                else format_simurg_map_title(product.long_name, time)
-            ),
+            title=panel_title,
             cmap=map_params.cmap,
             point_size=point_size if point_size is not None else map_params.point_size,
             plot_time=time,
@@ -482,7 +553,7 @@ def plot_map(
             terminator_height_km=terminator_height_km,
             hide_zero_values=hide_zero_values,
             high_values_on_top=high_values_on_top,
-            map_projection=resolved_projection_name,
+            map_projection=projection_name,
             geomagnetic_levels=geomagnetic_levels,
             magnetic_coordinates=magnetic_coordinates,
         )
@@ -491,7 +562,7 @@ def plot_map(
             add_panel_label(ax=ax1, label=subplot_marks[axs_index])
 
         is_right_column = (axs_index + 1) % ncols == 0
-        is_last_plot = axs_index == len(plot_times) - 1
+        is_last_plot = axs_index == len(axis_specs) - 1
 
         if is_right_column or is_last_plot:
             cbar_label = product.color_limits.units
@@ -500,12 +571,39 @@ def plot_map(
                 ax=ax1,
                 mappable=sctr,
                 label=cbar_label,
+                ticks=_colorbar_ticks((color_limits.min, color_limits.max)),
+            )
+
+    if paired_projection_panel:
+        for time in plot_times:
+            row_axes = [
+                ax
+                for ax, row_time, _projection_name, _flat_idx in axis_specs
+                if row_time == time
+            ]
+            if not row_axes:
+                continue
+
+            left = min(ax.get_position().x0 for ax in row_axes)
+            right = max(ax.get_position().x1 for ax in row_axes)
+            top = max(ax.get_position().y1 for ax in row_axes)
+            fig.text(
+                (left + right) / 2,
+                top,
+                format_simurg_time_title(time),
+                ha="center",
+                va="bottom",
             )
 
     if is_polar_projection and show_polar_legend:
+        legend_projection = (
+            resolved_projection_names[0]
+            if len(resolved_projection_names) == 1
+            else None
+        )
         add_polar_legend(
             fig,
-            map_projection=resolved_projection_name,
+            map_projection=legend_projection,
             geomagnetic_levels=geomagnetic_levels,
             show_noon_line=effective_show_noon_line,
             noon_line_color=noon_line_color,
@@ -538,6 +636,7 @@ def plot_all_maps(
     point_size: float | None = None,
     map_projection: str | None = None,
     projection: str | None = None,
+    map_projections: str | Iterable[str] | None = None,
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
     keep_figures: bool = False,
@@ -583,6 +682,7 @@ def plot_all_maps(
                 high_values_on_top=high_values_on_top,
                 point_size=point_size,
                 map_projection=map_projection or projection,
+                map_projections=map_projections,
                 show_polar_legend=show_polar_legend,
                 magnetic_coordinates=magnetic_coordinates,
             )
@@ -665,8 +765,9 @@ def plot_simurg_map_on_ax(
 
         if show_geomagnetic_lines:
             if magnetic_coordinates:
-                magnetic_constant_latitude_lines(
+                geomagnetic_lines_in_magnetic_coordinates(
                     ax=ax,
+                    date=native_time,
                     levels=list(geomagnetic_levels),
                     color="black",
                 )

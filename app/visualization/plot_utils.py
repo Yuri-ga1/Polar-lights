@@ -254,7 +254,13 @@ def add_panel_label(ax: plt.Axes, label: str) -> None:
     )
 
 
-def add_colorbar_right(fig: plt.Figure, ax: plt.Axes, mappable, label: str) -> None:
+def add_colorbar_right(
+    fig: plt.Figure,
+    ax: plt.Axes,
+    mappable,
+    label: str,
+    ticks: Iterable[float] | None = None,
+) -> None:
     """place a colorbar to the right of the axes."""
     cax = fig.add_axes(
         [
@@ -265,6 +271,8 @@ def add_colorbar_right(fig: plt.Figure, ax: plt.Axes, mappable, label: str) -> N
         ]
     )
     cbar = fig.colorbar(mappable, cax=cax)
+    if ticks is not None:
+        cbar.set_ticks(list(ticks))
     cbar.ax.set_ylabel(label, rotation=-90, va="bottom")
 
 

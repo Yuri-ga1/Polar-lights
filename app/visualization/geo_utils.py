@@ -150,6 +150,147 @@ def magnetic_constant_latitude_lines(
     return cs0, cs_levels
 
 
+def _remove_contour_set(contour_set) -> None:
+    for collection in getattr(contour_set, "collections", []):
+        collection.remove()
+
+
+def _iter_valid_segments(x: np.ndarray, y: np.ndarray):
+    valid = np.isfinite(x) & np.isfinite(y)
+    if not np.any(valid):
+        return
+
+    start = None
+    previous_index = None
+    for index, is_valid in enumerate(valid):
+        is_jump = (
+            previous_index is not None
+            and abs(x[index] - x[previous_index]) > 180
+        )
+
+        if not is_valid or is_jump:
+            if start is not None and previous_index is not None and previous_index - start >= 1:
+                yield x[start:previous_index + 1], y[start:previous_index + 1]
+            start = None
+            previous_index = None
+            continue
+
+        if start is None:
+            start = index
+        previous_index = index
+
+    if start is not None and previous_index is not None and previous_index - start >= 1:
+        yield x[start:previous_index + 1], y[start:previous_index + 1]
+
+
+def _plot_magnetic_contour_segments(
+    ax,
+    contour_set,
+    date: datetime,
+    *,
+    color: str,
+    linestyle: str,
+    linewidth: float,
+    height_km: float,
+):
+    artists = []
+
+    for level_segments in contour_set.allsegs:
+        for segment in level_segments:
+            if len(segment) < 2:
+                continue
+
+            lon = segment[:, 0]
+            lat = segment[:, 1]
+            magnetic_lat, magnetic_lon = geographic_to_magnetic(
+                lat,
+                lon,
+                date,
+                height_km=height_km,
+            )
+
+            for x_part, y_part in _iter_valid_segments(magnetic_lon, magnetic_lat):
+                artists.extend(
+                    ax.plot(
+                        x_part,
+                        y_part,
+                        color=color,
+                        linestyle=linestyle,
+                        linewidth=linewidth,
+                        transform=ccrs.PlateCarree(),
+                    )
+                )
+
+    return artists
+
+
+def geomagnetic_lines_in_magnetic_coordinates(
+    ax,
+    date: datetime,
+    levels: list = [-30, 30],
+    height_km: float = 0.0,
+    lon_step: float = 1.0,
+    lat_step: float = 0.5,
+    pole_margin_deg: float = 0.5,
+    color: str = "orange",
+):
+    lon = np.arange(-180, 181, lon_step)
+    lat = np.arange(-90.0 + pole_margin_deg, 90.0 - pole_margin_deg + 1e-9, lat_step)
+    Lon, Lat = np.meshgrid(lon, lat)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        Be, Bn, Bu = ppigrf.igrf(Lon, Lat, height_km, date)
+
+    if Be.ndim == 3 and Be.shape[0] == 1:
+        Be, Bn, Bu = Be[0], Bn[0], Bu[0]
+
+    dip = _dip_latitude(Be, Bn, Bu)
+    dip = np.where(np.isfinite(dip), dip, np.nan)
+
+    cs0_raw = ax.contour(
+        lon,
+        lat,
+        dip,
+        levels=[0],
+        linewidths=0,
+        alpha=0,
+        transform=ccrs.PlateCarree(),
+    )
+    cs_raw = ax.contour(
+        lon,
+        lat,
+        dip,
+        levels=levels,
+        linewidths=0,
+        alpha=0,
+        transform=ccrs.PlateCarree(),
+    )
+
+    cs0 = _plot_magnetic_contour_segments(
+        ax,
+        cs0_raw,
+        date,
+        color=color,
+        linestyle="-",
+        linewidth=2.0,
+        height_km=height_km,
+    )
+    cs = _plot_magnetic_contour_segments(
+        ax,
+        cs_raw,
+        date,
+        color=color,
+        linestyle="--",
+        linewidth=1.2,
+        height_km=height_km,
+    )
+
+    _remove_contour_set(cs0_raw)
+    _remove_contour_set(cs_raw)
+
+    return cs0, cs
+
+
 def get_subsolar_latlon(time: datetime | None = None):
     """
     Возвращает широту и долготу подсолнечной точки
