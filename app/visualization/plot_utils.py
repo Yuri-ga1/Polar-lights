@@ -8,6 +8,8 @@ import matplotlib.ticker as mticker
 from cartopy import feature
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
 
+from app.visualization.geomagnetic_continents import plot_geomagnetic_continents
+
 import math
 
 import pandas as pd
@@ -185,6 +187,7 @@ def prepare_layout(
     lon_locator: Iterable[float] | None,
     lat_locator: Iterable[float] | None,
     map_projection: str | None = None,
+    magnetic_coordinates: bool = False,
 ) -> None:
     """add coastline/borders/gridlines and format map axes."""
     normalized_projection = normalize_map_projection(map_projection)
@@ -231,10 +234,13 @@ def prepare_layout(
 
     apply_map_extent(ax, normalized_projection)
 
-    ax.add_feature(feature.COASTLINE, linewidth=2.5)
-    ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)
-    ax.add_feature(feature.LAKES, alpha=0.5)
-    ax.add_feature(feature.RIVERS)
+    if magnetic_coordinates:
+        plot_geomagnetic_continents(ax)
+    else:
+        ax.add_feature(feature.COASTLINE, linewidth=2.5)
+        ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)
+        ax.add_feature(feature.LAKES, alpha=0.5)
+        ax.add_feature(feature.RIVERS)
 
 
 def add_panel_label(ax: plt.Axes, label: str) -> None:

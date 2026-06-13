@@ -22,7 +22,7 @@ from matplotlib.lines import Line2D
 from app.visualization.geo_utils import (
     geographic_to_magnetic,
     geomagnetic_lines,
-    geomagnetic_lines_in_magnetic_coordinates,
+    magnetic_constant_latitude_lines,
     solar_terminator,
 )
 from app.visualization.plot_utils import (
@@ -314,24 +314,6 @@ def draw_polar_center_on_ax(
         return
 
     center_lon = 0.0
-    if magnetic_coordinates:
-        if plot_time is None:
-            raise ValueError("plot_time is required for magnetic projection center.")
-
-        magnetic_lat, magnetic_lon = geographic_to_magnetic(
-            center_lat,
-            center_lon,
-            plot_time,
-        )
-        if not np.isfinite(magnetic_lat) or not np.isfinite(magnetic_lon):
-            fallback_lat = 89.999 if center_lat > 0 else -89.999
-            magnetic_lat, magnetic_lon = geographic_to_magnetic(
-                fallback_lat,
-                center_lon,
-                plot_time,
-            )
-        center_lat = float(np.asarray(magnetic_lat))
-        center_lon = float(np.asarray(magnetic_lon))
 
     ax.scatter(
         [center_lon],
@@ -749,6 +731,7 @@ def plot_simurg_map_on_ax(
         lon_locator,
         lat_locator,
         map_projection=map_projection or projection,
+        magnetic_coordinates=magnetic_coordinates,
     )
 
     if plot_time is not None:
@@ -765,9 +748,8 @@ def plot_simurg_map_on_ax(
 
         if show_geomagnetic_lines:
             if magnetic_coordinates:
-                geomagnetic_lines_in_magnetic_coordinates(
+                magnetic_constant_latitude_lines(
                     ax=ax,
-                    date=native_time,
                     levels=list(geomagnetic_levels),
                     color="black",
                 )
