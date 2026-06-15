@@ -19,6 +19,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
+from app.progress_bar import ProgressBar
 from app.visualization.geo_utils import (
     geographic_to_magnetic,
     geomagnetic_lines,
@@ -623,74 +624,115 @@ def plot_all_maps(
     magnetic_coordinates: bool = False,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
+    show_progress: bool = True,
+    total_maps: int | None = None,
 ) -> str:
     """
     Plot all available SIMuRG maps, split into saved figures for notebook workflows.
 
     Returns the output directory path. Set keep_figures=True to keep figures open for display.
+
+    The total number of maps is detected automatically for dictionaries. Pass
+    total_maps when data is a lazy iterable and its size is known by the caller.
     """
+    if total_maps is not None and total_maps <= 0:
+        raise ValueError("total_maps must be positive.")
+
     product = _resolve_product(product_type)
     wrote_any = False
+    processed_maps = 0
+    progress_total = total_maps
+    if progress_total is None and isinstance(data, dict):
+        progress_total = len(data) or None
 
-    for group_index, time_group in enumerate(
-        _iter_chunked(_iter_map_slices(data), maps_per_figure),
-        start=1,
-    ):
-        first_time = time_group[0][0].strftime("%Y%m%d_%H%M%S")
-        if len(time_group) == 1:
-            save_name = f"{product.hdf_name.upper()}_{first_time}.png"
-        else:
-            last_time = time_group[-1][0].strftime("%Y%m%d_%H%M%S")
-            save_name = f"{product.hdf_name.upper()}_{first_time}_{last_time}.png"
+    progress = (
+        ProgressBar(
+            total=progress_total,
+            description=f"Building {product.long_name} maps",
+        )
+        if show_progress and progress_total is not None
+        else None
+    )
 
-        fig = None
-        group_data = None
-        group_times = None
-        try:
-            group_times = [plot_time for plot_time, _arr in time_group]
-            group_data = dict(time_group)
+    try:
+        for group_index, time_group in enumerate(
+            _iter_chunked(_iter_map_slices(data), maps_per_figure),
+            start=1,
+        ):
+            first_time = time_group[0][0].strftime("%Y%m%d_%H%M%S")
+            if len(time_group) == 1:
+                save_name = f"{product.hdf_name.upper()}_{first_time}.png"
+            else:
+                last_time = time_group[-1][0].strftime("%Y%m%d_%H%M%S")
+                save_name = f"{product.hdf_name.upper()}_{first_time}_{last_time}.png"
 
-            fig = plot_map(
-                data=group_data,
-                plot_times=group_times,
-                product_type=product_type,
-                save_dir=save_dir,
-                save_name=save_name,
-                show_noon_line=show_noon_line,
-                noon_line_color=noon_line_color,
-                terminator_height_km=terminator_height_km,
-                show_panel_labels=maps_per_figure != 1,
-                hide_zero_values=hide_zero_values,
-                high_values_on_top=high_values_on_top,
-                point_size=point_size,
-                map_projection=map_projection or projection,
-                map_projections=map_projections,
-                show_polar_legend=show_polar_legend,
-                magnetic_coordinates=magnetic_coordinates,
-            )
-            wrote_any = True
-
-        finally:
-            if not keep_figures and fig is not None:
-                fig.clear()
-                plt.close(fig)
-
-            del fig
+            fig = None
             group_data = None
             group_times = None
-            time_group.clear()
-
+            group_size = len(time_group)
             if (
-                collect_garbage_every > 0
-                and group_index % collect_garbage_every == 0
+                progress_total is not None
+                and processed_maps + group_size > progress_total
             ):
-                gc.collect()
+                raise ValueError(
+                    "total_maps is smaller than the number of data slices."
+                )
+            try:
+                group_times = [plot_time for plot_time, _arr in time_group]
+                group_data = dict(time_group)
+
+                fig = plot_map(
+                    data=group_data,
+                    plot_times=group_times,
+                    product_type=product_type,
+                    save_dir=save_dir,
+                    save_name=save_name,
+                    show_noon_line=show_noon_line,
+                    noon_line_color=noon_line_color,
+                    terminator_height_km=terminator_height_km,
+                    show_panel_labels=maps_per_figure != 1,
+                    hide_zero_values=hide_zero_values,
+                    high_values_on_top=high_values_on_top,
+                    point_size=point_size,
+                    map_projection=map_projection or projection,
+                    map_projections=map_projections,
+                    show_polar_legend=show_polar_legend,
+                    magnetic_coordinates=magnetic_coordinates,
+                )
+                wrote_any = True
+                processed_maps += group_size
+                if progress is not None:
+                    progress.update(processed_maps)
+
+            finally:
+                if not keep_figures and fig is not None:
+                    fig.clear()
+                    plt.close(fig)
+
+                del fig
+                group_data = None
+                group_times = None
+                time_group.clear()
+
+                if (
+                    collect_garbage_every > 0
+                    and group_index % collect_garbage_every == 0
+                ):
+                    gc.collect()
+    finally:
+        if progress is not None:
+            progress.close()
 
     if collect_garbage_every > 0:
         gc.collect()
 
     if not wrote_any:
         raise ValueError("SIMuRG data is empty.")
+
+    if progress_total is not None and processed_maps != progress_total:
+        raise ValueError(
+            "total_maps does not match the number of processed data slices."
+        )
 
     return save_dir
 

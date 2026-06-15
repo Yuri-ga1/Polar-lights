@@ -6,6 +6,8 @@ from typing import Optional
 
 import requests
 
+from app.progress_bar import ProgressBar
+
 
 class BaseDownloader:
     """Базовый класс для загрузчиков."""
@@ -35,6 +37,7 @@ class BaseDownloader:
         verify: bool = True,
         polling_interval: float = 5,
         chunk_size: int = 1024 * 1024,
+        show_progress: bool = True,
     ) -> str:
         """Скачивает файл с докачкой до полного получения."""
         filename = os.path.basename(url) if filename is None else filename
@@ -87,11 +90,22 @@ class BaseDownloader:
                 mode = "ab" if offset else "wb"
 
             total_size = _extract_total_size(resp, offset)
+            progress = (
+                ProgressBar(
+                    total=total_size,
+                    current=offset,
+                    description=filename,
+                )
+                if show_progress and total_size is not None
+                else None
+            )
             try:
                 with open(file_path, mode) as f:
                     for chunk in resp.iter_content(chunk_size=chunk_size):
                         if chunk:
                             f.write(chunk)
+                            if progress is not None:
+                                progress.update(min(total_size, f.tell()))
             except requests.RequestException:
                 time.sleep(polling_interval)
                 continue
