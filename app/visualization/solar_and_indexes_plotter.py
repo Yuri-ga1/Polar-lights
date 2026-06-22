@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
+import matplotlib.dates as mdates
 
+from app.pipeline.datetime_range import filter_dataframe_by_datetime_range, validate_datetime_range
 from app.visualization.plot_utils import *
 
 __all__ = {
@@ -16,13 +18,20 @@ __all__ = {
 def _common_xlim_and_ticks(
     *dfs: pd.DataFrame,
     tick_freq: str = "2D",
+    start_datetime=None,
+    end_datetime=None,
 ) -> Tuple[tuple[pd.Timestamp, pd.Timestamp], pd.DatetimeIndex, DateFormatter]:
     """
     Build common x-limits from intersection of all dfs ranges.
     """
+    if start_datetime is not None and end_datetime is not None:
+        left, right = validate_datetime_range(start_datetime, end_datetime)
+        xlim = (pd.Timestamp(left), pd.Timestamp(right))
+        locator = mdates.AutoDateLocator(minticks=4, maxticks=9)
+        return xlim, locator, DateFormatter("%m-%d %H:%M")
+
     left = max(df["datetime"].min() for df in dfs)
     right = min(df["datetime"].max() for df in dfs)
-
     x_start = pd.to_datetime(left).normalize()
     x_end = pd.to_datetime(right).normalize()
 
@@ -34,7 +43,10 @@ def _common_xlim_and_ticks(
 
 def _style_x(ax: plt.Axes, xlim, day_ticks, formatter, show_xlabel: bool = False) -> None:
     ax.set_xlim(*xlim)
-    ax.set_xticks(day_ticks)
+    if isinstance(day_ticks, mdates.DateLocator):
+        ax.xaxis.set_major_locator(day_ticks)
+    else:
+        ax.set_xticks(day_ticks)
     ax.xaxis.set_major_formatter(formatter)
     ax.tick_params(axis="x", pad=20, labelbottom=True)
     if show_xlabel:
@@ -90,6 +102,9 @@ def plot_sw_symh_dst_kp(
     dst_df: pd.DataFrame,
     kp_df: pd.DataFrame,
     save_dir: str = os.path.join("files", "graphs"),
+    *,
+    start_datetime: str | None = None,
+    end_datetime: str | None = None,
 ):
     labels = panel_labels(4)
 
@@ -101,8 +116,31 @@ def plot_sw_symh_dst_kp(
     dst_df["datetime"] = pd.to_datetime(dst_df["datetime"])
     kp_df["datetime"] = pd.to_datetime(kp_df["datetime"])
 
+    if start_datetime is not None or end_datetime is not None:
+        if start_datetime is None or end_datetime is None:
+            raise ValueError("Pass both start_datetime and end_datetime.")
+
+        start_dt, end_dt = validate_datetime_range(start_datetime, end_datetime)
+        sw_df = filter_dataframe_by_datetime_range(sw_df, start_dt, end_dt)
+        dst_df = filter_dataframe_by_datetime_range(dst_df, start_dt, end_dt)
+        kp_df = filter_dataframe_by_datetime_range(kp_df, start_dt, end_dt)
+
+        if sw_df is None or sw_df.empty:
+            raise ValueError("OMNI data has no points in the selected datetime range.")
+        if dst_df is None or dst_df.empty:
+            raise ValueError("Dst data has no points in the selected datetime range.")
+        if kp_df is None or kp_df.empty:
+            raise ValueError("Kp data has no points in the selected datetime range.")
+
     # общий диапазон времени по пересечению
-    xlim, day_ticks, formatter = _common_xlim_and_ticks(sw_df, dst_df, kp_df, tick_freq="2D")
+    xlim, day_ticks, formatter = _common_xlim_and_ticks(
+        sw_df,
+        dst_df,
+        kp_df,
+        tick_freq="2D",
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
+    )
 
     fig, axes = plt.subplots(4, 1, figsize=(18, 18), sharex=True)
 
