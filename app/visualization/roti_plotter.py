@@ -461,7 +461,11 @@ def plot_map(
 
     subplot_marks = panel_labels(nrows * ncols)
 
-    figsize = (17, 22) if paired_projection_panel and is_polar_projection else (FIGSIZE_WIDTH, 16)
+    figsize = (
+        (17, 22)
+        if paired_projection_panel and is_polar_projection
+        else (FIGSIZE_WIDTH, max(5.2, 5.7 * nrows))
+    )
     fig = Figure(figsize=figsize)
     FigureCanvasAgg(fig)
     if is_polar_projection:
@@ -483,6 +487,8 @@ def plot_map(
             wspace=-0.08 if paired_projection_panel else 0.08,
             hspace=0.32 if paired_projection_panel else 0.2,
         )
+    else:
+        fig.subplots_adjust(hspace=0.28, wspace=0.3)
 
     axis_specs: list[tuple[plt.Axes, datetime, str, int]] = []
 

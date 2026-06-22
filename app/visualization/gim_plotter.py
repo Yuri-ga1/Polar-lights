@@ -157,8 +157,9 @@ def plot_gim_maps(
     marks = panel_labels(len(plot_times))
     resolved_projection_name = map_projection or projection
 
-    fig = plt.figure(figsize=(FIGSIZE_WIDTH, max(4.8, 5.0 * nrows)))
+    fig = plt.figure(figsize=(FIGSIZE_WIDTH, max(5.2, 5.7 * nrows)))
     grid = fig.add_gridspec(nrows=nrows, ncols=2 * ncols)
+    fig.subplots_adjust(hspace=0.16, wspace=0.7)
 
     axes: list[plt.Axes] = []
     for idx in range(len(plot_times)):
