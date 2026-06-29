@@ -13,7 +13,10 @@ from matplotlib.gridspec import GridSpecFromSubplotSpec
 from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
 
 from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
-from app.visualization.gim_plotter import plot_gim_map_on_ax
+from app.visualization.gim_plotter import (
+    DEFAULT_GEOMAGNETIC_LEVELS,
+    plot_gim_map_on_ax,
+)
 from app.visualization.ionosonde_plotter import plot_ionosonde_series_on_ax
 from app.visualization.keogram_plotter import KeogramData, plot_keogram_on_ax
 from app.visualization.plot_constructor_pack.models import (
@@ -486,6 +489,12 @@ class PlotRenderer:
                 title=self.format_map_title(descriptor.name, plot_time),
                 cmap=params.get("cmap", "jet"),
                 map_projection=params.get("map_projection", params.get("projection")),
+                plot_time=plot_time,
+                show_geomagnetic_lines=params.get("show_geomagnetic_lines", True),
+                geomagnetic_levels=params.get(
+                    "geomagnetic_levels",
+                    DEFAULT_GEOMAGNETIC_LEVELS,
+                ),
             )
             return
 
@@ -521,7 +530,6 @@ class PlotRenderer:
             hide_zero_values=params.get("hide_zero_values", True),
             high_values_on_top=params.get("high_values_on_top", True),
             map_projection=params.get("map_projection", params.get("projection")),
-            map_projections=params.get("map_projections"),
             magnetic_coordinates=params.get("magnetic_coordinates", False),
         )
 

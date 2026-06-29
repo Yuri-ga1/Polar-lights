@@ -12,6 +12,12 @@ import numpy as np
 import pandas as pd
 
 from app.base_classes.base_processor import BaseProcessor
+from app.pipeline.datetime_range import (
+    concat_dataframes,
+    filter_dataframe_by_datetime_range,
+    iter_dates,
+    validate_datetime_range,
+)
 
 
 @dataclass(frozen=True)
@@ -353,5 +359,36 @@ class IonosondeProcessor(BaseProcessor):
         out.attrs["station_name"] = station_metadata.get("name")
         out.attrs["station_lat"] = station_metadata.get("lat")
         out.attrs["station_lon"] = station_metadata.get("lon")
+
+        return out
+
+    def load_range(
+        self,
+        start_datetime: Union[str, datetime, pd.Timestamp],
+        end_datetime: Union[str, datetime, pd.Timestamp],
+        station: Optional[str] = None,
+        days_range: int = 13,
+    ) -> Optional[pd.DataFrame]:
+        start_dt, end_dt = validate_datetime_range(start_datetime, end_datetime)
+
+        frames: list[pd.DataFrame | None] = []
+        attrs: dict | None = None
+        for date_str in iter_dates(start_dt, end_dt):
+            df = self.load(
+                target_date=date_str,
+                station=station,
+                days_range=days_range,
+            )
+            if df is not None and not df.empty and attrs is None:
+                attrs = dict(df.attrs)
+            frames.append(df)
+
+        out = concat_dataframes(frames)
+        out = filter_dataframe_by_datetime_range(out, start_dt, end_dt)
+        if out is None or out.empty:
+            return None
+
+        if attrs:
+            out.attrs.update(attrs)
 
         return out

@@ -2,7 +2,10 @@ import os
 
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.dates import DateFormatter
+import matplotlib.dates as mdates
 
+from app.pipeline.datetime_range import filter_dataframe_by_datetime_range, validate_datetime_range
 from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels, style_axes, align_ylabels
 from app.visualization.geo_utils import format_geo_coord
 
@@ -124,6 +127,8 @@ def plot_ionosonde(
     show_min: bool = True,
     show_max: bool = True,
     show_extrema: bool | None = None,
+    start_datetime: str | None = None,
+    end_datetime: str | None = None,
 ) -> str:
     """
     Строит графики:
@@ -131,6 +136,16 @@ def plot_ionosonde(
     ΔfoF2 (%)
     ΔhmF2 (km)
     """
+    use_exact_range = start_datetime is not None or end_datetime is not None
+    if use_exact_range:
+        if start_datetime is None or end_datetime is None:
+            raise ValueError("Pass both start_datetime and end_datetime.")
+
+        start_dt, end_dt = validate_datetime_range(start_datetime, end_datetime)
+        df = filter_dataframe_by_datetime_range(df, start_dt, end_dt)
+        if df is None or df.empty:
+            raise ValueError("Ionosonde data has no points in the selected datetime range.")
+
     fig, axes = plt.subplots(
         nrows=3,
         ncols=1,
@@ -153,7 +168,7 @@ def plot_ionosonde(
             time_col="datetime",
             value_col=col,
             value_label=ylabel,
-            x_as_hours=True,
+            x_as_hours=not use_exact_range,
             color="black",
             ylabel=ylabel,
             show_min=show_min,
@@ -164,19 +179,27 @@ def plot_ionosonde(
         ax.set_title(panel_letters[i], loc="left", x=0.0125, y=0.8, weight="bold")
         ax.tick_params(axis="x", labelbottom=True, pad=20)
 
-    for ax in axes:
-        ax.set_xlim(0, 24)
-        ax.set_xticks(list(range(0, 25, 3)))
-
-    axes[-1].set_xlabel("Time, UT", fontweight="bold")
+    if use_exact_range:
+        locator = mdates.AutoDateLocator(minticks=4, maxticks=9)
+        formatter = DateFormatter("%m-%d %H:%M")
+        for ax in axes:
+            ax.set_xlim(pd.Timestamp(start_dt), pd.Timestamp(end_dt))
+            ax.xaxis.set_major_locator(locator)
+            ax.xaxis.set_major_formatter(formatter)
+        axes[-1].set_xlabel("Date and time, UT", fontweight="bold")
+    else:
+        for ax in axes:
+            ax.set_xlim(0, 24)
+            ax.set_xticks(list(range(0, 25, 3)))
+        axes[-1].set_xlabel("Time, UT", fontweight="bold")
 
     fig.suptitle(format_ionosonde_title(df), fontweight="bold")
-    align_ylabels(axes, left_x=-0.075, right_x=1.07)
-    fig.subplots_adjust(hspace=0.5, top=0.92, bottom=0.1, left=0.08, right=0.97)
+    align_ylabels(axes, left_x=-0.055, right_x=1.055)
+    fig.subplots_adjust(hspace=0.5, top=0.92, bottom=0.1, left=0.12, right=0.96)
 
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "ionosonde.png")
 
-    fig.savefig(save_path)
+    fig.savefig(save_path, bbox_inches="tight", pad_inches=0.12)
 
     return fig
