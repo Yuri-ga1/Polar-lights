@@ -165,7 +165,11 @@ class RotiDownloader(_SimurgDownloader):
         },
         "options": {
             "product_type": "roti",
-            "format": "hdf5"
+            "format": "hdf5",
+            "subsolar": False,
+            "mageq": False,
+            "cutoff": 10,
+            "timestep": 30
         },
         "flags":{
             "create_plots": False,
@@ -204,7 +208,7 @@ class AdjustedTecDownloader(_SimurgDownloader):
             "subsolar": False,
             "mageq": False,
             "cutoff": 10,
-            "timestep": 300
+            "timestep": 30
 
         },
         "flags":{
