@@ -530,7 +530,6 @@ class PlotRenderer:
             hide_zero_values=params.get("hide_zero_values", True),
             high_values_on_top=params.get("high_values_on_top", True),
             map_projection=params.get("map_projection", params.get("projection")),
-            map_projections=params.get("map_projections"),
             magnetic_coordinates=params.get("magnetic_coordinates", False),
         )
 

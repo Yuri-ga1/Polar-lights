@@ -266,14 +266,18 @@ def add_colorbar_right(
     mappable,
     label: str,
     ticks: Iterable[float] | None = None,
+    height_fraction: float = 1.0,
+    y_offset_fraction: float = 0.0,
 ) -> None:
     """place a colorbar to the right of the axes."""
+    ax_position = ax.get_position()
+    colorbar_height = ax_position.height * height_fraction
     cax = fig.add_axes(
         [
-            ax.get_position().x1 + 0.01,
-            ax.get_position().y0,
+            ax_position.x1 + 0.01,
+            ax_position.y0 + ax_position.height * y_offset_fraction,
             0.02,
-            ax.get_position().height,
+            colorbar_height,
         ]
     )
     cbar = fig.colorbar(mappable, cax=cax)

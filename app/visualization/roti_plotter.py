@@ -207,26 +207,13 @@ def format_projection_title(map_projection: str | None) -> str:
     return labels.get(projection_name, "Global projection")
 
 
-def resolve_map_projection_names(
-    map_projection: str | None = None,
-    projection: str | None = None,
-    map_projections: str | Iterable[str] | None = None,
-) -> list[str]:
-    if map_projections is None:
-        return [normalize_map_projection(map_projection or projection)]
-
-    if isinstance(map_projections, str):
-        normalized = map_projections.strip().lower().replace("-", "_").replace(" ", "_")
+def resolve_map_projection_names(map_projection: str | None = None) -> list[str]:
+    if isinstance(map_projection, str):
+        normalized = map_projection.strip().lower().replace("-", "_").replace(" ", "_")
         if normalized == "polar":
             return ["north_pole", "south_pole"]
 
-        return [normalize_map_projection(map_projections)]
-
-    resolved = [normalize_map_projection(value) for value in map_projections]
-    if not resolved:
-        raise ValueError("map_projections must not be empty.")
-
-    return resolved
+    return [normalize_map_projection(map_projection)]
 
 
 def _format_geomagnetic_levels(
@@ -413,8 +400,6 @@ def plot_map(
     high_values_on_top: bool = True,
     point_size: float | None = None,
     map_projection: str | None = None,
-    projection: str | None = None,
-    map_projections: str | Iterable[str] | None = None,
     geomagnetic_levels: Iterable[float] = (-60, -15, 0, 15, 60),
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
@@ -440,16 +425,13 @@ def plot_map(
 
     plot_times = resolve_plot_times(data, plot_times)
     plot_times = sorted(plot_times)
-    resolved_projection_names = resolve_map_projection_names(
-        map_projection=map_projection,
-        projection=projection,
-        map_projections=map_projections,
-    )
-    paired_projection_panel = map_projections is not None
+    resolved_projection_names = resolve_map_projection_names(map_projection)
+    paired_projection_panel = len(resolved_projection_names) > 1
     is_polar_projection = all(
         projection_name in {"north_pole", "south_pole"}
         for projection_name in resolved_projection_names
     )
+    is_paired_polar_projection = paired_projection_panel and is_polar_projection
     effective_show_noon_line = show_noon_line or is_polar_projection
 
     if paired_projection_panel:
@@ -462,8 +444,8 @@ def plot_map(
     subplot_marks = panel_labels(nrows * ncols)
 
     figsize = (
-        (17, 22)
-        if paired_projection_panel and is_polar_projection
+        (17, max(6.8, 5.35 * nrows))
+        if is_paired_polar_projection
         else (FIGSIZE_WIDTH, max(5.2, 5.7 * nrows))
     )
     fig = Figure(figsize=figsize)
@@ -480,12 +462,21 @@ def plot_map(
         )
 
     grid = fig.add_gridspec(nrows, ncols)
-    if is_polar_projection:
+    if is_paired_polar_projection:
+        fig.subplots_adjust(
+            top=0.91,
+            bottom=0.13 if show_polar_legend else 0.07,
+            # wspace=-0.28,
+            wspace=-0.4,
+            hspace=0.24,
+        )
+    elif is_polar_projection:
+        polar_bottom = 0.2 if show_polar_legend else 0.1
         fig.subplots_adjust(
             top=0.9,
-            bottom=0.14 if show_polar_legend else 0.11,
-            wspace=-0.08 if paired_projection_panel else 0.08,
-            hspace=0.32 if paired_projection_panel else 0.2,
+            bottom=polar_bottom,
+            wspace=-0.16,
+            hspace=0.38,
         )
     else:
         fig.subplots_adjust(hspace=0.28, wspace=0.3)
@@ -555,12 +546,22 @@ def plot_map(
 
         if is_right_column or is_last_plot:
             cbar_label = product.color_limits.units
+            colorbar_height_fraction = 1.0
+            colorbar_y_offset_fraction = 0.0
+            if is_paired_polar_projection:
+                colorbar_height_fraction = 0.96
+            elif is_polar_projection:
+                colorbar_height_fraction = 0.88
+                colorbar_y_offset_fraction = 0.02
+
             add_colorbar_right(
                 fig=fig,
                 ax=ax1,
                 mappable=sctr,
                 label=cbar_label,
                 ticks=_colorbar_ticks((color_limits.min, color_limits.max)),
+                height_fraction=colorbar_height_fraction,
+                y_offset_fraction=colorbar_y_offset_fraction,
             )
 
     if paired_projection_panel:
@@ -624,8 +625,6 @@ def plot_all_maps(
     high_values_on_top: bool = True,
     point_size: float | None = None,
     map_projection: str | None = None,
-    projection: str | None = None,
-    map_projections: str | Iterable[str] | None = None,
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
     keep_figures: bool = False,
@@ -700,8 +699,7 @@ def plot_all_maps(
                     hide_zero_values=hide_zero_values,
                     high_values_on_top=high_values_on_top,
                     point_size=point_size,
-                    map_projection=map_projection or projection,
-                    map_projections=map_projections,
+                    map_projection=map_projection,
                     show_polar_legend=show_polar_legend,
                     magnetic_coordinates=magnetic_coordinates,
                 )
