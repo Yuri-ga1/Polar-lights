@@ -177,6 +177,31 @@ class SimurgProcessor(BaseProcessor):
     ) -> Optional[Dict[datetime, NDArray]]:
         target_date = self._coerce_date(date_value)
         normalized_product = self._normalize_product(product_type)
+
+        # A selection may span midnight. Load each source-day file and merge
+        # the requested moments, while preserving the original single-day API.
+        if times:
+            requested_dates = {
+                (value.date() if isinstance(value, datetime) else
+                 datetime.strptime(value.strip(), "%Y-%m-%d %H:%M:%S").date()
+                 if isinstance(value, str) and len(value.strip()) > 8 else target_date)
+                for value in times
+            }
+            if len(requested_dates) > 1 or requested_dates != {target_date}:
+                merged: SimurgData = SimurgData()
+                for source_date in sorted(requested_dates):
+                    day_times = [
+                        value for value in times
+                        if not isinstance(value, str)
+                        or len(value.strip()) <= 8
+                        or (isinstance(value, str) and value.strip().startswith(source_date.isoformat()))
+                        or (isinstance(value, datetime) and value.date() == source_date)
+                    ]
+                    day_data = self.load(source_date, normalized_product, day_times)
+                    if day_data:
+                        merged.update(day_data)
+                return merged or None
+
         file_path = self.find_file(target_date, normalized_product)
 
         if not self._is_non_empty_file(file_path):

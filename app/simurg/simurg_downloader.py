@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
+import requests
 from app.base_classes.base_downloader import BaseDownloader
 from app.simurg.simurg_client import SimurgClient
 
@@ -75,6 +77,77 @@ class _SimurgDownloader(BaseDownloader):
 
         return None
 
+    def _find_remote_existing_hdf5_result(self, date_str: str) -> str | None:
+        """Find a ready remote result without creating a new SIMuRG request.
+
+        SIMuRG names multi-day files by their first day.  A requested date can
+        therefore be covered by a file starting on that date or one/two days
+        earlier.  The API check response supplies the known result paths; a
+        HEAD request verifies that the file is still present and reports its
+        size without downloading it.
+        """
+        options = self._args.get("options", {})
+        if options.get("format") != "hdf5":
+            return None
+
+        product_type = options.get("product_type")
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        candidate_dates = {
+            target_date - timedelta(days=offset) for offset in range(3)
+        }
+        candidates: list[tuple[datetime, str, int | None]] = []
+
+        for query in self.client.checking_by_mail():
+            status = str(query.get("status") or "").lower()
+            result_path = (query.get("paths") or {}).get("data")
+            if "done" not in status or not result_path:
+                continue
+
+            filename = os.path.basename(str(result_path))
+            if not filename.startswith(f"{product_type}_") or not filename.endswith(".h5"):
+                continue
+
+            match = re.match(r"^.+_(\d{4})_(\d{3})_-90_90_N_-180_180_E_", filename)
+            if not match:
+                continue
+            file_date = datetime.strptime(
+                f"{match.group(1)}-{match.group(2)}", "%Y-%j"
+            ).date()
+            if file_date not in candidate_dates:
+                continue
+
+            url = f"{self.client.download_url}/{str(result_path).lstrip('/')}"
+            try:
+                response = requests.head(
+                    url,
+                    timeout=self.client.timeout,
+                    verify=self.client.verify,
+                    allow_redirects=True,
+                )
+                if response.status_code >= 400:
+                    continue
+                raw_size = response.headers.get("Content-Length")
+                size = int(raw_size) if raw_size and raw_size.isdigit() else None
+            except requests.RequestException:
+                continue
+
+            candidates.append((datetime.combine(file_date, datetime.min.time()), url, size))
+
+        if not candidates:
+            return None
+
+        # Check D first, then D-1 and D-2, matching the requested priority.
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        _, url, size = candidates[0]
+        if size is not None:
+            print(
+                f"Found remote SIMuRG {product_type} file: {url} "
+                f"({size / 1024**3:.2f} GB, approximately {size / (4.25 * 1024**3):.1f} days)"
+            )
+        else:
+            print(f"Found remote SIMuRG {product_type} file: {url} (size unavailable)")
+        return self._download_result(url)
+
     def download(self, date_str: str, end_date: Optional[str] = None) -> str:
         """Запускает формирование запроса и скачивает результат.
 
@@ -87,6 +160,10 @@ class _SimurgDownloader(BaseDownloader):
         existing_file = self._find_existing_hdf5_result(start_iso)
         if existing_file:
             return existing_file
+
+        remote_file = self._find_remote_existing_hdf5_result(date_str)
+        if remote_file:
+            return remote_file
 
         query_ids = self.client.create_or_reuse_query_ids(
             start_time=start_iso,
@@ -216,3 +293,19 @@ class AdjustedTecDownloader(_SimurgDownloader):
             "create_movie": False
         }
     } 
+
+    def _make_time_range(self, date_str: str, end_date: Optional[str] = None) -> tuple[str, str]:
+        """Build the SIMuRG three-day window used by adjusted TEC files.
+
+        SIMuRG names these files by the first day of the window.  For a
+        requested day (for example 2026-01-20), the corresponding file starts
+        on the previous day at 23:55 and covers the requested day plus the
+        following day.  Using a one-day request here makes the API create a
+        different query even when the three-day result already exists.
+        """
+        target_date = datetime.strptime(date_str, "%Y-%m-%d")
+        start_dt = target_date - timedelta(days=1)
+        start_dt = start_dt.replace(hour=23, minute=55)
+        end_dt = target_date + timedelta(days=1)
+        end_dt = end_dt.replace(hour=23, minute=55)
+        return self._to_simurg_date(start_dt), self._to_simurg_date(end_dt)
