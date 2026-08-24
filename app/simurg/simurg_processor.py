@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from enum import Enum
 from collections.abc import Iterator
@@ -163,11 +163,39 @@ class SimurgProcessor(BaseProcessor):
     ) -> Optional[Path]:
         if not self.folder_path.exists():
             return None
-        year = target_date.year
-        doy = target_date.timetuple().tm_yday
-        prefix = f"{product_type.value}_{year}_{doy:03d}_-90_90_N_-180_180_E_"
-        matches = sorted(self.folder_path.glob(f"{prefix}*.h5"))
-        return matches[0] if matches else None
+
+        def files_started_on(day: date) -> list[Path]:
+            year = day.year
+            doy = day.timetuple().tm_yday
+            prefix = f"{product_type.value}_{year}_{doy:03d}_-90_90_N_-180_180_E_"
+            return sorted(self.folder_path.glob(f"{prefix}*.h5"))
+
+        # ROTI files are addressed by their filename date. Adjusted TEC is
+        # different: SIMuRG creates a three-day file whose filename contains
+        # the first day (normally target_date - 1 day). Find the source file
+        # by its actual timestamps so dates at month/year boundaries work too.
+        if product_type != DataProduct.TEC_ADJUSTED:
+            matches = files_started_on(target_date)
+            return matches[0] if matches else None
+
+        candidate_days = [target_date - timedelta(days=offset) for offset in range(3)]
+        for source_day in candidate_days:
+            for file_path in files_started_on(source_day):
+                if not self._is_non_empty_file(file_path):
+                    continue
+                try:
+                    with h5py.File(file_path, "r") as handle:
+                        if "data" not in handle:
+                            continue
+                        if any(
+                            self._parse_time(key).date() == target_date
+                            for key in handle["data"].keys()
+                        ):
+                            return file_path
+                except Exception:
+                    continue
+
+        return None
 
     def load(
         self,
