@@ -297,3 +297,44 @@ class SimurgProcessor(BaseProcessor):
 
         except Exception:
             return
+
+    def iter_slices_range(
+        self,
+        start_datetime: str | datetime,
+        end_datetime: str | datetime,
+        product_type: str | DataProduct = DataProduct.ROTI,
+    ) -> Iterator[tuple[datetime, NDArray]]:
+        """Iterate only slices whose timestamps fall in a datetime range.
+
+        Unlike ``iter_slices``, this method discovers all matching HDF5 files
+        in the processor directory.  This is important for SIMuRG files whose
+        filename contains the first day while the file covers several days.
+        Arrays are loaded one at a time, so the whole interval is not held in
+        memory.
+        """
+        if isinstance(start_datetime, str):
+            start_datetime = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
+        if isinstance(end_datetime, str):
+            end_datetime = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
+        if end_datetime < start_datetime:
+            raise ValueError("end_datetime must be greater than or equal to start_datetime")
+
+        normalized_product = self._normalize_product(product_type)
+        prefix = f"{normalized_product.value}_"
+        seen: set[Path] = set()
+
+        for file_path in sorted(self.folder_path.glob(f"{prefix}*.h5")):
+            if file_path in seen or not self._is_non_empty_file(file_path):
+                continue
+            seen.add(file_path)
+
+            try:
+                with h5py.File(file_path, "r") as handle:
+                    if "data" not in handle:
+                        continue
+                    for str_time in sorted(handle["data"].keys()):
+                        parsed_time = self._parse_time(str_time).replace(tzinfo=None)
+                        if start_datetime <= parsed_time <= end_datetime:
+                            yield parsed_time, handle["data"][str_time][:]
+            except Exception:
+                continue
