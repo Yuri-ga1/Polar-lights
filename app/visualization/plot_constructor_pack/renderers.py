@@ -603,12 +603,21 @@ class PlotRenderer:
 
         if normalized_name in {"aurora observation", "aurora"}:
             time_value = params.get("time")
+            map_date = params.get("date")
 
             if isinstance(time_value, (list, tuple, set)):
                 if not time_value:
                     time_value = None
                 else:
                     time_value = list(time_value)[0]
+
+            if (
+                isinstance(time_value, str)
+                and len(time_value.strip()) == 8
+                and time_value.strip().count(":") == 2
+            ):
+                date_value = map_date or data.get("date", pd.Series(dtype=object)).iloc[0]
+                time_value = f"{date_value} {time_value.strip()}"
 
             if time_value is None:
                 date_col = pd.to_datetime(data.get("date"), errors="coerce").dropna()

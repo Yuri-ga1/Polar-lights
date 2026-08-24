@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Sequence
 
 import pandas as pd
@@ -27,12 +27,15 @@ class PlotPanelBuilder:
         ]
 
     @staticmethod
-    def prepare_map_time(plot_time: str | datetime) -> datetime:
+    def prepare_map_time(plot_time: str | datetime, map_date: str | date | datetime | None = None) -> datetime:
         if isinstance(plot_time, str):
-            return datetime.strptime(
-                plot_time,
-                "%Y-%m-%d %H:%M:%S",
-            ).replace(tzinfo=timezone.utc)
+            value = plot_time.strip()
+            if len(value) == 8 and value.count(":") == 2:
+                if map_date is None:
+                    raise ValueError("A map date is required when time is specified as HH:MM:SS.")
+                date_value = map_date.strftime("%Y-%m-%d") if isinstance(map_date, (date, datetime)) else str(map_date)
+                return datetime.strptime(f"{date_value} {value}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
 
         if isinstance(plot_time, datetime):
             return plot_time
@@ -47,6 +50,7 @@ class PlotPanelBuilder:
         descriptor: PlotDescriptor,
     ) -> list[datetime]:
         plot_times = params.get("time")
+        map_date = params.get("date")
 
         if (
             params.get("plot_all_times")
@@ -67,7 +71,7 @@ class PlotPanelBuilder:
         prepared_times: list[datetime] = []
 
         for plot_time in plot_times:
-            prepared_time = cls.prepare_map_time(plot_time)
+            prepared_time = cls.prepare_map_time(plot_time, map_date=map_date)
 
             if prepared_time not in data:
                 raise ValueError(

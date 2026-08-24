@@ -105,6 +105,20 @@ class PlotConstructorDataLoader:
 
         return [cls._parse_plot_time(raw_time)]
 
+    def _resolve_requested_times(self, params: dict[str, Any]) -> list[datetime]:
+        """Resolve full datetime values first, otherwise combine date and time."""
+        raw_time = params.get("time")
+        if raw_time is None:
+            return []
+        values = raw_time if isinstance(raw_time, (list, tuple, set)) else [raw_time]
+        resolved = []
+        for value in values:
+            if isinstance(value, str) and len(value.strip()) == 8:
+                map_date = params.get("date", self.primary_date_str)
+                value = f"{map_date} {value.strip()}"
+            resolved.append(self._parse_plot_time(value))
+        return resolved
+
     def _validate_map_times_in_range(
         self,
         plots: list[str | dict[str, Any]],
@@ -128,7 +142,7 @@ class PlotConstructorDataLoader:
             ):
                 continue
 
-            plot_times = self._iter_plot_times(params.get("time"))
+            plot_times = self._resolve_requested_times(params)
 
             for plot_time in plot_times:
                 if self.start_dt <= plot_time <= self.end_dt:
@@ -266,30 +280,26 @@ class PlotConstructorDataLoader:
 
         processor = SimurgProcessor(folder_path=out_dir)
 
-        target_date = (
+        requested_times = self._resolve_requested_times(params)
+        source_dates = sorted({
+            (value.date() - timedelta(days=1)).isoformat()
+            for value in requested_times
+        }) or [(
             datetime.strptime(self.primary_date_str, "%Y-%m-%d").date()
             - timedelta(days=1)
-        )
-
-        cached_file = processor.find_file(
-            target_date,
-            product_type=DataProduct.ROTI,
-        )
-
-        if cached_file is not None:
-            print(f"Using cached SIMuRG ROTI file: {cached_file}")
-        else:
-            self._safe_download(
-                lambda: RotiDownloader(client=client, out_dir=out_dir).download(
-                    self.primary_date_str
-                )
-            )
-
-        return processor.load(
-            target_date,
-            product_type=DataProduct.ROTI,
-            times=params.get("time"),
-        )
+        ).isoformat()]
+        downloader = RotiDownloader(client=client, out_dir=out_dir)
+        loaded: dict[datetime, Any] = {}
+        for source_date in source_dates:
+            target_date = datetime.strptime(source_date, "%Y-%m-%d").date()
+            cached_file = processor.find_file(target_date, product_type=DataProduct.ROTI)
+            if cached_file is None:
+                self._safe_download(lambda d=target_date: downloader.download(d.isoformat()))
+            day_times = [value for value in requested_times if (value.date() - timedelta(days=1)).isoformat() == source_date] or None
+            day_data = processor.load(target_date, product_type=DataProduct.ROTI, times=day_times)
+            if day_data:
+                loaded.update(day_data)
+        return loaded
 
     def _load_keogram(self, params: dict[str, Any] | None = None):
         params = params or {}
@@ -365,25 +375,38 @@ class PlotConstructorDataLoader:
 
         processor = SimurgProcessor(folder_path=out_dir)
 
-        cached_file = processor.find_file(
-            self.primary_date_str,
-            product_type=DataProduct.TEC_ADJUSTED,
-        )
+        requested_times = self._resolve_requested_times(params)
+        dates = sorted({
+            value.strftime("%Y-%m-%d") for value in requested_times
+        }) or self.download_dates
 
-        if cached_file is not None:
-            print(f"Using cached SIMuRG adjusted TEC file: {cached_file}")
-        else:
-            self._safe_download(
-                lambda: AdjustedTecDownloader(client=client, out_dir=out_dir).download(
-                    self.primary_date_str
-                )
+        loaded: dict[datetime, Any] = {}
+        downloader = AdjustedTecDownloader(client=client, out_dir=out_dir)
+
+        for date_str in dates:
+            cached_file = processor.find_file(
+                date_str,
+                product_type=DataProduct.TEC_ADJUSTED,
             )
 
-        return processor.load(
-            self.primary_date_str,
-            product_type=DataProduct.TEC_ADJUSTED,
-            times=params.get("time"),
-        )
+            if cached_file is not None:
+                print(f"Using cached SIMuRG adjusted TEC file: {cached_file}")
+            else:
+                self._safe_download(lambda d=date_str: downloader.download(d))
+
+            day_times = [
+                value for value in requested_times
+                if value.strftime("%Y-%m-%d") == date_str
+            ] or None
+            day_data = processor.load(
+                date_str,
+                product_type=DataProduct.TEC_ADJUSTED,
+                times=day_times,
+            )
+            if day_data:
+                loaded.update(day_data)
+
+        return loaded
 
     def _load_gim(self, params: dict[str, Any] | None = None):
         params = params or {}
@@ -392,7 +415,10 @@ class PlotConstructorDataLoader:
         out_dir = os.path.join(self.date_dir, "gim")
         os.makedirs(out_dir, exist_ok=True)
 
-        for date_str in self.download_dates:
+        requested_times = self._resolve_requested_times(params)
+        dates = sorted({value.strftime("%Y-%m-%d") for value in requested_times}) or self.download_dates
+
+        for date_str in dates:
             self._safe_download(
                 lambda d=date_str: GimDownloader(
                     out_dir=out_dir,
@@ -400,7 +426,13 @@ class PlotConstructorDataLoader:
                 ).download(d)
             )
 
-        return GimProcessor(folder_path=out_dir).load(self.primary_date_str)
+        processor = GimProcessor(folder_path=out_dir)
+        loaded: dict[datetime, Any] = {}
+        for date_str in dates:
+            day_data = processor.load(date_str)
+            if day_data:
+                loaded.update(day_data)
+        return loaded
 
     def _load_ionosonde(self, params: dict[str, Any] | None = None):
         params = params or {}
