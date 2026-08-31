@@ -40,6 +40,15 @@ run_main_pipeline(config)
 Downloaded source files are stored under `files/<date>/`.
 Generated plots are stored under `results/<date>/`.
 
+For the Aurora Observations map, the source can be selected with
+`source="aurorasaurus"` or `source="spaceweatherlive"` in
+`run_observation_workflow` (or with `observation_source` in
+`MainPipelineConfig`).
+
+SpaceWeatherLive requests use a random 10–20 second delay and up to three
+attempts. Failed dates or observation pages are reported and skipped so the
+remaining workflow can continue.
+
 ## Notebook Usage
 Use the notebook at `notebooks/00_examples_and_run.ipynb` as the visual entry point.
 

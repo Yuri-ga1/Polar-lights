@@ -8,6 +8,7 @@ from typing import Callable
 
 from app.pipeline.adjusted_tec_pipeline import run_adjusted_tec_pipeline
 from app.pipeline.aurora_pipeline import run_aurora_pipeline
+from app.pipeline.observation_workflow import ObservationSource
 from app.pipeline.misc_pipeline import run_misc_pipeline
 from app.pipeline.roti_pipeline import run_roti_pipeline
 from app.simurg.simurg_client import SimurgClient
@@ -24,6 +25,7 @@ class MainPipelineConfig:
     cosmic_station_codes: list[str] | None = None
     simurg_email: str | None = None
     map_projection: str | None = None
+    observation_source: ObservationSource = "aurorasaurus"
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
                 "download_dir": date_download_dir,
                 "plots_dir": date_plots_dir,
                 "map_projection": config.map_projection,
+                "source": config.observation_source,
             },
         ),
         ThreadSpec(

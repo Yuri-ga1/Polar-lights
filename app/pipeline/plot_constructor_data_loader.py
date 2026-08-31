@@ -4,11 +4,15 @@ import os
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
 from app.observation.aurorasaurus_loader import fetch_and_process_aurorasaurus
+from app.observation.observation_links_finder import ObservationLinksFinder
+from app.observation.observation_parser import ObservationParser
+from app.observation.observation_processor import ObservationProcessor
+from app.storage.hdf5_storage import ObservationHDF5Storage
 
 from app.gfz.gfz_downloader import GfzDownloader
 from app.gfz.gfz_processor import GfzProcessor
@@ -479,7 +483,7 @@ class PlotConstructorDataLoader:
 
         return OmniProcessor(folder_path=out_dir).load(self.primary_date_str)
 
-    def _aurora_stub(self, date_str: str | None = None) -> pd.DataFrame:
+    def _aurora_stub(self, date_str: str | None = None, params: dict[str, Any] | None = None) -> pd.DataFrame:
         """
         Load aurora observations for the full constructor date range.
 
@@ -489,7 +493,12 @@ class PlotConstructorDataLoader:
         out_dir = os.path.join(self.date_dir, "aurora")
         os.makedirs(out_dir, exist_ok=True)
 
-        csv_path = os.path.join(out_dir, "aurora_data.csv")
+        params = params or {}
+        source = str(params.get("source", "aurorasaurus")).lower()
+        if source not in {"aurorasaurus", "spaceweatherlive"}:
+            raise ValueError("Aurora observation source must be 'aurorasaurus' or 'spaceweatherlive'.")
+        csv_name = "aurora_data.csv" if source == "aurorasaurus" else "spaceweatherlive_aurora_data.csv"
+        csv_path = os.path.join(out_dir, csv_name)
 
         expected_columns = [
             "date",
@@ -548,19 +557,29 @@ class PlotConstructorDataLoader:
 
             return df
 
+        def has_cached_date(target_date: str) -> bool:
+            if not os.path.exists(csv_path):
+                return False
+            cached = pd.read_csv(csv_path, usecols=["date"])
+            return target_date in pd.to_datetime(cached["date"], errors="coerce").dt.strftime("%Y-%m-%d").values
+
         all_rows: list[dict[str, Any]] = []
 
         for current_date_str in self.download_dates:
             target_date = datetime.strptime(current_date_str, "%Y-%m-%d").date()
 
-            rows = self._safe_download(
-                lambda d=target_date: fetch_and_process_aurorasaurus(
-                    d,
-                    csv_path,
-                    download_dir=out_dir,
-                    auto_download=True,
+            if source == "aurorasaurus":
+                rows = self._safe_download(
+                    lambda d=target_date: fetch_and_process_aurorasaurus(
+                        d, csv_path, download_dir=out_dir, auto_download=True
+                    ) if not has_cached_date(d.strftime("%Y-%m-%d")) else []
                 )
-            )
+            else:
+                rows = self._safe_download(
+                    lambda d=target_date: self._fetch_spaceweatherlive_for_constructor(
+                        d, csv_path, out_dir
+                    ) if not has_cached_date(d.strftime("%Y-%m-%d")) else []
+                )
 
             if rows:
                 all_rows.extend(rows)
@@ -576,6 +595,32 @@ class PlotConstructorDataLoader:
             f"{self.download_dates[0]} — {self.download_dates[-1]}"
         )
         return empty_observations_df()
+
+    @staticmethod
+    def _fetch_spaceweatherlive_for_constructor(day: date, csv_path: str, out_dir: str) -> list[dict[str, Any]]:
+        storage = ObservationHDF5Storage(os.path.join(out_dir, "spaceweather_observations.h5"))
+        finder = ObservationLinksFinder()
+        parser = ObservationParser()
+        processor = ObservationProcessor(save_path=csv_path)
+        try:
+            links = finder.get_observation_links(day.strftime("%Y/%m/%d"))
+            storage.save_links(day.isoformat(), links)
+            rows = []
+            for link in links:
+                try:
+                    row = processor.process(parser.parse(link))
+                except (RuntimeError, ValueError, KeyError) as exc:
+                    print(
+                        f"SpaceWeatherLive: stopping observation downloads after "
+                        f"failure at {link}: {exc}. Using observations received "
+                        f"for {day.isoformat()}."
+                    )
+                    break
+                if row.get("date") == day.isoformat():
+                    rows.append(row)
+            return rows
+        finally:
+            finder.close()
 
     def load_for_requested_plots(self, plots: list[str | dict[str, Any]]) -> dict[str, Any]:
         self._validate_map_times_in_range(plots)
@@ -611,7 +656,10 @@ class PlotConstructorDataLoader:
             results["GIM"] = self._load_gim(params_by_plot.get("gim"))
 
         if self._contains(names, "aurora observation", "aurora"):
-            results["Aurora Observation"] = self._aurora_stub()
+            results["Aurora Observation"] = self._aurora_stub(
+                params=params_by_plot.get("aurora observation")
+                or params_by_plot.get("aurora")
+            )
 
         if self._contains(names, "ionosonde"):
             results["Ionosonde"] = self._load_ionosonde(params_by_plot.get("ionosonde"))

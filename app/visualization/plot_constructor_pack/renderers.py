@@ -648,7 +648,8 @@ class PlotRenderer:
                 point_radius=params.get("point_radius", 1.0),
                 map_projection=params.get("map_projection", params.get("projection")),
             )
-            ax.set_title(descriptor.name)
+            source = params.get("source")
+            ax.set_title(f"{descriptor.name} ({source})" if source else descriptor.name)
             return
 
         if not {"lat", "lon"}.issubset(set(data.columns)):

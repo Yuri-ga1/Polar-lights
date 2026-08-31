@@ -3,12 +3,18 @@ from __future__ import annotations
 import os
 from datetime import datetime, date
 import csv
-from typing import Iterable, List, Dict
+from typing import Dict, List, Literal
 
 from app.visualization.aurora_map_plotter import AuroraMapPlotter
 
 
 from app.observation.aurorasaurus_loader import fetch_and_process_aurorasaurus
+from app.observation.observation_links_finder import ObservationLinksFinder
+from app.observation.observation_parser import ObservationParser
+from app.observation.observation_processor import ObservationProcessor
+from app.storage.hdf5_storage import ObservationHDF5Storage
+
+ObservationSource = Literal["aurorasaurus", "spaceweatherlive"]
 
 # ---------------------------------------------------------------------------
 # Helper function
@@ -53,16 +59,14 @@ def run_observation_workflow(
     plots_dir: str = "results",
     plot_time: datetime | None = None,
     map_projection: str | None = None,
+    source: ObservationSource = "aurorasaurus",
 ) -> list[dict[str, str]]:
     """Run the observation workflow for a single date.
 
     This function orchestrates fetching auroral observations, caching
-    them in CSV format and producing a visualisation.  Historically
-    observations were scraped from SpaceWeatherLive via
-    :mod:`app.observation.observation_links_finder`, but access to
-    that service has been restricted.  Instead we now rely on the
-    ARCTICS survey dataset, downloaded via
-    :func:`app.observation.arctics_survey_loader.fetch_and_process_arctics_survey`.
+    them in CSV format and producing a visualisation.  The ``source``
+    parameter selects either the live SpaceWeatherLive observations or
+    the Aurorasaurus dataset.
 
     Parameters
     ----------
@@ -75,6 +79,8 @@ def run_observation_workflow(
     plot_time : datetime or None, optional
         Specific time to display on the map.  If ``None``, a default
         timestamp is used.
+    source : {"aurorasaurus", "spaceweatherlive"}, optional
+        Observation source.  Defaults to ``"aurorasaurus"``.
 
     Returns
     -------
@@ -85,10 +91,14 @@ def run_observation_workflow(
     os.makedirs(download_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Paths for intermediate storage.  The HDF5 file is retained for
-    # backward compatibility but will not be populated when using the
-    # ARCTICS survey loader.
-    csv_path = os.path.join(download_dir, "aurora_data.csv")
+    # Keep the source-specific CSVs independent when users switch providers.
+    if source not in {"aurorasaurus", "spaceweatherlive"}:
+        raise ValueError("source must be 'aurorasaurus' or 'spaceweatherlive'")
+
+    # Keep source caches separate: otherwise changing the source would mix
+    # observations from unrelated datasets in one map.
+    csv_name = "aurora_data.csv" if source == "aurorasaurus" else "spaceweatherlive_aurora_data.csv"
+    csv_path = os.path.join(download_dir, csv_name)
 
     observations: list[dict[str, str]] = []
 
@@ -99,12 +109,14 @@ def run_observation_workflow(
     if cached_rows:
         observations.extend(cached_rows)
 
-    aurora_rows = fetch_and_process_aurorasaurus(
-        date,
-        csv_path,
-        download_dir=download_dir,
-        auto_download=True,
-    )
+    if source == "aurorasaurus":
+        aurora_rows = [] if cached_rows else fetch_and_process_aurorasaurus(
+            date, csv_path, download_dir=download_dir, auto_download=True
+        )
+    else:
+        aurora_rows = [] if cached_rows else _fetch_spaceweatherlive(
+            date, csv_path, download_dir
+        )
     observations.extend(aurora_rows)
 
     # If no CSV exists after processing, report and return early.
@@ -127,3 +139,35 @@ def run_observation_workflow(
     )
 
     return observations
+
+
+def _fetch_spaceweatherlive(
+    day: date, csv_path: str, download_dir: str
+) -> list[dict[str, str]]:
+    """Fetch, parse and cache the observations from SpaceWeatherLive."""
+    h5_path = os.path.join(download_dir, "spaceweather_observations.h5")
+    date_iso = day.isoformat()
+    date_slash = day.strftime("%Y/%m/%d")
+    storage = ObservationHDF5Storage(h5_path)
+    finder = ObservationLinksFinder()
+    parser = ObservationParser()
+    processor = ObservationProcessor(save_path=csv_path)
+    try:
+        links = finder.get_observation_links(date_slash)
+        storage.save_links(date_iso, links)
+        rows: list[dict[str, str]] = []
+        for link in links:
+            try:
+                row = processor.process(parser.parse(link))
+            except (RuntimeError, ValueError, KeyError) as exc:
+                print(
+                    f"SpaceWeatherLive: stopping observation downloads after "
+                    f"failure at {link}: {exc}. Building the map from "
+                    f"{len(rows)} already received observations."
+                )
+                break
+            if row.get("date") == date_iso:
+                rows.append(row)
+        return rows
+    finally:
+        finder.close()
