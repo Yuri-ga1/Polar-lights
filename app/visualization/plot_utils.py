@@ -193,7 +193,7 @@ def prepare_layout(
     normalized_projection = normalize_map_projection(map_projection)
     is_polar_projection = normalized_projection in {"north_pole", "south_pole"}
     gl = ax.gridlines(
-        linewidth=2,
+        linewidth=0.6,
         color="gray",
         alpha=0.5,
         draw_labels=True,
@@ -237,8 +237,7 @@ def prepare_layout(
     if magnetic_coordinates:
         plot_geomagnetic_continents(ax)
     else:
-        ax.add_feature(feature.COASTLINE, linewidth=2.5)
-        ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)
+        ax.add_feature(feature.COASTLINE, linewidth=0.6)
         ax.add_feature(feature.LAKES, alpha=0.5)
         ax.add_feature(feature.RIVERS)
 
@@ -325,7 +324,7 @@ def plot_timeseries_on_ax(
     time_col: str,
     value_col: str,
     color: str = "tab:blue",
-    linewidth: float = 1.5,
+    linewidth: float = 0.6,
     title: str | None = None,
     ylabel: str | None = None,
 ) -> None:

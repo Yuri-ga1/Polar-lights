@@ -52,7 +52,7 @@ def geomagnetic_lines(
     cs0 = ax.contour(
         lon, lat, dip,
         levels=[0],
-        linewidths=2.0,
+        linewidths=0.6,
         colors=[color],
         transform=ccrs.PlateCarree(),
     )
@@ -60,8 +60,8 @@ def geomagnetic_lines(
     # --- ±30° ---
     cs30 = ax.contour(
         lon, lat, dip,
-        levels=levels,
-        linewidths=1.2,
+        levels=[level for level in levels if level != 0],
+        linewidths=0.6,
         linestyles="--",
         colors=[color],
         transform=ccrs.PlateCarree(),
@@ -129,7 +129,7 @@ def magnetic_constant_latitude_lines(
             lon,
             np.zeros_like(lon),
             color=color,
-            linewidth=2.0,
+            linewidth=0.6,
             transform=ccrs.PlateCarree(),
         )
 
@@ -142,7 +142,7 @@ def magnetic_constant_latitude_lines(
                 np.full_like(lon, float(level)),
                 color=color,
                 linestyle="--",
-                linewidth=1.2,
+                linewidth=0.6,
                 transform=ccrs.PlateCarree(),
             )
         )
@@ -272,7 +272,7 @@ def geomagnetic_lines_in_magnetic_coordinates(
         date,
         color=color,
         linestyle="-",
-        linewidth=2.0,
+        linewidth=0.6,
         height_km=height_km,
     )
     cs = _plot_magnetic_contour_segments(
@@ -281,7 +281,7 @@ def geomagnetic_lines_in_magnetic_coordinates(
         date,
         color=color,
         linestyle="--",
-        linewidth=1.2,
+        linewidth=0.6,
         height_km=height_km,
     )
 

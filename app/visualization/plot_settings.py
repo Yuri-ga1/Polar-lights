@@ -18,7 +18,7 @@ def set_plt_def_params():
     """
     plt.style.use('seaborn-v0_8-whitegrid')
     PLOTTING_PARAMS = {
-        'font.size': 30,
+        'font.size': 12,
         'figure.dpi': DPI,
         #'font.family': 'serif',
         #'font.family': 'monospace',
@@ -26,10 +26,10 @@ def set_plt_def_params():
         'font.weight': 'light',
         'legend.frameon': True,
         'font.variant' : 'small-caps',
-        'axes.titlesize' : 30,
-        'axes.labelsize' : 30,
-        'xtick.labelsize' : 28,
-        'ytick.labelsize' : 28,
+        'axes.titlesize' : 12,
+        'axes.labelsize' : 12,
+        'xtick.labelsize' : 12,
+        'ytick.labelsize' : 12,
         'xtick.major.pad': 5,
         'ytick.major.pad': 5,
         'xtick.major.width' : 2.5,

@@ -331,6 +331,7 @@ class SimurgProcessor(BaseProcessor):
         start_datetime: str | datetime,
         end_datetime: str | datetime,
         product_type: str | DataProduct = DataProduct.ROTI,
+        step_seconds: int | None = None,
     ) -> Iterator[tuple[datetime, NDArray]]:
         """Iterate only slices whose timestamps fall in a datetime range.
 
@@ -346,6 +347,8 @@ class SimurgProcessor(BaseProcessor):
             end_datetime = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
         if end_datetime < start_datetime:
             raise ValueError("end_datetime must be greater than or equal to start_datetime")
+        if step_seconds is not None and step_seconds <= 0:
+            raise ValueError("step_seconds must be positive")
 
         normalized_product = self._normalize_product(product_type)
         prefix = f"{normalized_product.value}_"
@@ -363,6 +366,11 @@ class SimurgProcessor(BaseProcessor):
                     for str_time in sorted(handle["data"].keys()):
                         parsed_time = self._parse_time(str_time).replace(tzinfo=None)
                         if start_datetime <= parsed_time <= end_datetime:
+                            if (
+                                step_seconds is not None
+                                and (parsed_time - start_datetime).total_seconds() % step_seconds != 0
+                            ):
+                                continue
                             yield parsed_time, handle["data"][str_time][:]
             except Exception:
                 continue
