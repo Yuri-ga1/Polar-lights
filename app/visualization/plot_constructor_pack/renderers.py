@@ -12,7 +12,10 @@ from matplotlib.ticker import FixedLocator, FixedFormatter
 from matplotlib.gridspec import GridSpecFromSubplotSpec
 from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
 
-from app.visualization.aurora_map_plotter import plot_aurora_observations_on_ax
+from app.visualization.aurora_map_plotter import (
+    find_peak_aurora_time,
+    plot_aurora_observations_on_ax,
+)
 from app.visualization.gim_plotter import (
     DEFAULT_GEOMAGNETIC_LEVELS,
     plot_gim_map_on_ax,
@@ -627,7 +630,12 @@ class PlotRenderer:
                         "for aurora observations."
                     )
 
-                time_value = pd.Timestamp(date_col.iloc[0]).to_pydatetime()
+                selected_date = (
+                    pd.Timestamp(map_date).date()
+                    if map_date is not None
+                    else pd.Timestamp(date_col.iloc[0]).date()
+                )
+                time_value = find_peak_aurora_time(data, selected_date)
             else:
                 time_value = pd.to_datetime(time_value, errors="coerce")
 

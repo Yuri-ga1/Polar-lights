@@ -5,7 +5,7 @@ from datetime import datetime, date
 import csv
 from typing import Dict, List, Literal
 
-from app.visualization.aurora_map_plotter import AuroraMapPlotter
+from app.visualization.aurora_map_plotter import AuroraMapPlotter, find_peak_aurora_time
 
 
 from app.observation.aurorasaurus_loader import fetch_and_process_aurorasaurus
@@ -134,8 +134,13 @@ def run_observation_workflow(
         map_projection=map_projection,
     )
 
+    resolved_plot_time = plot_time or find_peak_aurora_time(
+        plotter.df,
+        date,
+    )
+
     plotter.plot(
-        time=plot_time or datetime(2025, 4, 16, 22, 0),
+        time=resolved_plot_time,
     )
 
     return observations

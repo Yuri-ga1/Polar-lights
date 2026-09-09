@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pandas as pd
 import cartopy.crs as ccrs
@@ -12,6 +12,77 @@ from app.visualization.geo_utils import geomagnetic_lines, solar_terminator
 from app.visualization.color_utils import get_dominant_color
 from app.visualization.plot_settings import POINT_RADIUS
 from app.visualization.plot_utils import apply_map_extent, resolve_map_projection
+
+
+def find_peak_aurora_time(
+    df: pd.DataFrame,
+    target_date: date | datetime | str,
+) -> datetime:
+    """Return the earliest moment with the largest number of active auroras.
+
+    Each observation occupies the interval ``[start, start + duration]``.
+    Observations are counted only for the requested calendar date.  If no
+    valid observation interval exists, ``ValueError`` is raised.
+    """
+    if isinstance(target_date, datetime):
+        day = target_date.date()
+    else:
+        day = pd.Timestamp(target_date).date()
+
+    if df is None or df.empty:
+        raise ValueError("Aurora dataframe is empty")
+
+    data = df.copy()
+    date_values = data.get("date", pd.Series(index=data.index, dtype=object))
+    time_values = data.get("time", pd.Series(index=data.index, dtype=object))
+    duration_values = data.get(
+        "duration_min",
+        pd.Series(0, index=data.index, dtype=float),
+    )
+    starts = pd.to_datetime(
+        date_values.astype(str).str.strip()
+        + " "
+        + time_values.astype(str).str.strip(),
+        errors="coerce",
+    )
+    durations = pd.to_numeric(duration_values, errors="coerce").fillna(0)
+    durations = durations.clip(lower=0)
+
+    day_start = pd.Timestamp(day)
+    day_end = day_start + pd.Timedelta(days=1)
+    events: dict[pd.Timestamp, list[int]] = {}
+
+    for start, duration in zip(starts, durations):
+        if pd.isna(start):
+            continue
+        finish = start + pd.to_timedelta(float(duration), unit="m")
+        if finish < day_start or start >= day_end:
+            continue
+
+        clipped_start = max(start, day_start)
+        clipped_finish = min(finish, day_end)
+        events.setdefault(clipped_start, [0, 0])[0] += 1
+        events.setdefault(clipped_finish, [0, 0])[1] += 1
+
+    if not events:
+        raise ValueError(f"There is no valid aurora data for date: {day}")
+
+    active = 0
+    peak_count = -1
+    peak_time: pd.Timestamp | None = None
+    for moment in sorted(events):
+        starts_at, ends_at = events[moment]
+        # Start events are applied first, so intervals sharing a boundary are
+        # considered simultaneous at that moment.
+        active += starts_at
+        if active > peak_count:
+            peak_count = active
+            peak_time = moment
+        active -= ends_at
+
+    if peak_time is None:
+        raise ValueError(f"There is no valid aurora data for date: {day}")
+    return peak_time.to_pydatetime()
 
 
 def plot_aurora_observations_on_ax(
