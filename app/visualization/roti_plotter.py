@@ -36,7 +36,7 @@ from app.visualization.plot_utils import (
 )
 
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
-FIGSIZE_WIDTH = 4
+FIGSIZE_WIDTH = 18
 
 
 class ColorLimits(NamedTuple):
@@ -60,7 +60,7 @@ class DataProducts(DataProduct, Enum):
     tec_adjusted = DataProduct(
         "TEC Adjusted",
         "tec_adjusted",
-        ColorLimits(0, 60, "TEC, TECU"),
+        ColorLimits(0, 80, "TEC, TECU"),
     )
 
 
@@ -271,7 +271,7 @@ def draw_solar_noon_line_on_ax(
     *,
     color: str = "tab:orange",
     linestyle: str = "--",
-    linewidth: float = 0.6,
+    linewidth: float = 5,
     alpha: float = 0.9,
 ) -> None:
     """Draw the longitude where local solar time is 12:00 for the map timestamp."""
@@ -307,10 +307,10 @@ def draw_polar_center_on_ax(
         [center_lon],
         [center_lat],
         marker="*",
-        s=90,
+        s=220,
         facecolors=color,
         edgecolors="black",
-        linewidths=0.6,
+        linewidths=2.0,
         zorder=8,
         transform=ccrs.PlateCarree(),
         label=label,
@@ -332,7 +332,7 @@ def add_polar_legend(
             [0],
             [0],
             color="black",
-            linewidth=0.6,
+            linewidth=2.0,
             label="Geomagnetic equator (0°)",
         ),
         Line2D(
@@ -340,7 +340,7 @@ def add_polar_legend(
             [0],
             color="black",
             linestyle="--",
-            linewidth=0.6,
+            linewidth=1.2,
             label=(
                 "Geomagnetic lines "
                 f"({_format_geomagnetic_levels(geomagnetic_levels, map_projection)})"
@@ -450,8 +450,7 @@ def plot_map(
     )
     fig = Figure(figsize=figsize)
     FigureCanvasAgg(fig)
-    single_polar_map = len(plot_times) == 1 and len(resolved_projection_names) == 1
-    if is_polar_projection and not single_polar_map:
+    if is_polar_projection:
         title_projection = (
             "Polar projections"
             if len(resolved_projection_names) > 1
@@ -459,13 +458,13 @@ def plot_map(
         )
         fig.suptitle(
             f"{product.long_name} - {title_projection}",
-            y=0.995,
+            y=0.98,
         )
 
     grid = fig.add_gridspec(nrows, ncols)
     if is_paired_polar_projection:
         fig.subplots_adjust(
-            top=0.975,
+            top=0.91,
             bottom=0.13 if show_polar_legend else 0.07,
             # wspace=-0.28,
             wspace=-0.4,
@@ -474,7 +473,7 @@ def plot_map(
     elif is_polar_projection:
         polar_bottom = 0.2 if show_polar_legend else 0.1
         fig.subplots_adjust(
-            top=0.965,
+            top=0.9,
             bottom=polar_bottom,
             wspace=-0.16,
             hspace=0.38,
@@ -516,13 +515,7 @@ def plot_map(
         panel_title = None
         if not paired_projection_panel:
             if is_polar_projection:
-                if single_polar_map:
-                    panel_title = (
-                        f"{product.long_name} - {format_projection_title(projection_name)}\n"
-                        f"{format_simurg_time_title(time)}"
-                    )
-                else:
-                    panel_title = format_simurg_time_title(time)
+                panel_title = format_simurg_time_title(time)
             else:
                 panel_title = format_simurg_map_title(product.long_name, time)
 
@@ -605,7 +598,7 @@ def plot_map(
             show_noon_line=effective_show_noon_line,
             noon_line_color=noon_line_color,
             noon_line_linestyle="--",
-            noon_line_linewidth=0.6,
+            noon_line_linewidth=2.5,
         )
 
     os.makedirs(save_dir, exist_ok=True)
@@ -765,7 +758,7 @@ def plot_simurg_map_on_ax(
     show_noon_line=False,
     noon_line_color="purple",
     noon_line_linestyle="--",
-    noon_line_linewidth=0.6,
+    noon_line_linewidth=2.5,
     noon_line_alpha=0.9,
     terminator_height_km=300.0,
     hide_zero_values=True,
@@ -871,5 +864,5 @@ def plot_simurg_map_on_ax(
             cbar.set_label(colorbar_label)
 
     if title is not None:
-        ax.set_title(title, pad=-10)
+        ax.set_title(title)
     return sctr
