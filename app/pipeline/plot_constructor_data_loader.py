@@ -273,37 +273,115 @@ class PlotConstructorDataLoader:
 
     def _load_roti(self, params: dict[str, Any] | None = None):
         params = params or {}
-
-        client = self._simurg_client(params.get("email"))
-        if client is None:
-            print("SIMURG email is missing, skip ROTI download")
-            return None
-
+        requested_times = self._resolve_requested_times(params)
         out_dir = os.path.join(self.date_dir, "simurg")
         os.makedirs(out_dir, exist_ok=True)
 
-        processor = SimurgProcessor(folder_path=out_dir)
+        # Search all local SIMuRG directories first.  The directory date is
+        # not authoritative: a three-day result is named by its first day and
+        # may have been cached while constructing a neighbouring date.
+        local_root = Path(self.date_dir).parent
+        processor = SimurgProcessor(folder_path=local_root)
+        required_times = requested_times or self._range_times_for_roti()
+        selected_files, missing_times = self._select_roti_files(
+            processor.local_files(DataProduct.ROTI),
+            required_times,
+        )
 
-        requested_times = self._resolve_requested_times(params)
-        source_dates = sorted({
-            (value.date() - timedelta(days=1)).isoformat()
-            for value in requested_times
-        }) or [(
-            datetime.strptime(self.primary_date_str, "%Y-%m-%d").date()
-            - timedelta(days=1)
-        ).isoformat()]
-        downloader = RotiDownloader(client=client, out_dir=out_dir)
-        loaded: dict[datetime, Any] = {}
-        for source_date in source_dates:
-            target_date = datetime.strptime(source_date, "%Y-%m-%d").date()
-            cached_file = processor.find_file(target_date, product_type=DataProduct.ROTI)
-            if cached_file is None:
-                self._safe_download(lambda d=target_date: downloader.download(d.isoformat()))
-            day_times = [value for value in requested_times if (value.date() - timedelta(days=1)).isoformat() == source_date] or None
-            day_data = processor.load(target_date, product_type=DataProduct.ROTI, times=day_times)
-            if day_data:
-                loaded.update(day_data)
-        return loaded
+        if missing_times:
+            client = self._simurg_client(params.get("email"))
+            if client is None:
+                print("SIMURG email is missing, skip ROTI download")
+                return processor.load_files(
+                    selected_files,
+                    times=requested_times or None,
+                    start_datetime=None if requested_times else self.start_dt,
+                    end_datetime=None if requested_times else self.end_dt,
+                )
+
+            downloader = RotiDownloader(client=client, out_dir=out_dir)
+            # Each request produces at most a three-day result.  Recompute the
+            # uncovered part after every request so overlapping local files or
+            # a result returned under a different date are reused immediately.
+            while missing_times:
+                request_date = min(missing_times).date() + timedelta(days=1)
+                files_before = set(processor.local_files(DataProduct.ROTI))
+                self._safe_download(lambda d=request_date: downloader.download(d.isoformat()))
+                files_after = processor.local_files(DataProduct.ROTI)
+                selected_files, updated_missing_times = self._select_roti_files(
+                    files_after,
+                    required_times,
+                )
+                if set(files_after) == files_before and updated_missing_times == missing_times:
+                    break
+                missing_times = updated_missing_times
+                if not missing_times:
+                    break
+
+        return processor.load_files(
+            selected_files,
+            times=requested_times or None,
+            start_datetime=None if requested_times else self.start_dt,
+            end_datetime=None if requested_times else self.end_dt,
+        )
+
+    def _range_times_for_roti(self) -> list[datetime]:
+        """Return minute-aligned timestamps required for an interval.
+
+        This is used only to choose files when the user did not specify map
+        moments.  A file is considered useful when it contains the interval's
+        boundary slices; the final load still applies the full datetime range.
+        """
+        return [self.start_dt, self.end_dt]
+
+    @staticmethod
+    def _select_roti_files(
+        file_paths: list[Path],
+        required_times: list[datetime],
+    ) -> tuple[list[Path], list[datetime]]:
+        """Select an exact minimum cover of requested exact timestamps."""
+        coverage: dict[Path, set[datetime]] = {}
+        for path in file_paths:
+            keys = SimurgProcessor._file_time_keys(path)
+            available = {
+                SimurgProcessor._parse_time(key).replace(tzinfo=None)
+                for key in keys
+            }
+            covered = set(required_times) & available
+            if covered:
+                coverage[path] = covered
+
+        required = set(required_times)
+        candidates = sorted(coverage.items(), key=lambda item: str(item[0]))
+        coverers = {
+            value: [idx for idx, (_, covered) in enumerate(candidates) if value in covered]
+            for value in required
+        }
+        remaining = required.copy()
+        best: list[int] | None = None
+
+        def search(uncovered: set[datetime], chosen: list[int]) -> None:
+            nonlocal best
+            if not uncovered:
+                if best is None or len(chosen) < len(best):
+                    best = chosen.copy()
+                return
+            if best is not None and len(chosen) >= len(best):
+                return
+
+            pivot = min(uncovered, key=lambda value: len(coverers.get(value, [])))
+            for idx in coverers.get(pivot, []):
+                if idx in chosen:
+                    continue
+                search(uncovered - candidates[idx][1], chosen + [idx])
+
+        search(remaining, [])
+        if best is None:
+            return [], sorted(remaining)
+
+        selected = [candidates[idx][0] for idx in best]
+        covered = set().union(*(candidates[idx][1] for idx in best))
+        return selected, sorted(required - covered)
 
     def _load_keogram(self, params: dict[str, Any] | None = None):
         params = params or {}

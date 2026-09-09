@@ -366,3 +366,74 @@ class SimurgProcessor(BaseProcessor):
                             yield parsed_time, handle["data"][str_time][:]
             except Exception:
                 continue
+
+    def local_files(
+        self,
+        product_type: str | DataProduct = DataProduct.ROTI,
+    ) -> list[Path]:
+        """Return all non-empty local HDF5 files for a product.
+
+        A SIMuRG result may be stored under a directory named after the
+        requested date while its filename starts on another date.  Recursive
+        discovery therefore belongs here instead of relying on one date-based
+        directory or filename prefix.
+        """
+        normalized_product = self._normalize_product(product_type)
+        prefix = f"{normalized_product.value}_"
+        return sorted(
+            path
+            for path in self.folder_path.rglob(f"{prefix}*.h5")
+            if self._is_non_empty_file(path)
+        )
+
+    @classmethod
+    def _file_time_keys(cls, file_path: Path) -> set[str]:
+        try:
+            with h5py.File(file_path, "r") as handle:
+                if "data" not in handle:
+                    return set()
+                return set(handle["data"].keys())
+        except Exception:
+            return set()
+
+    @classmethod
+    def load_files(
+        cls,
+        file_paths: list[Path],
+        times: Optional[list[datetime]] = None,
+        start_datetime: datetime | None = None,
+        end_datetime: datetime | None = None,
+    ) -> Optional[SimurgData]:
+        """Load selected slices from a collection of local SIMuRG files.
+
+        When ``times`` is supplied, only exact requested timestamps are
+        loaded.  Otherwise all slices in the inclusive datetime range are
+        loaded.  Duplicate timestamps from overlapping files are kept once.
+        """
+        if times is None and (start_datetime is None or end_datetime is None):
+            raise ValueError("Provide times or both start_datetime and end_datetime")
+
+        requested_keys = {
+            cls._format_time_key(value)
+            for value in (times or [])
+        }
+        result: SimurgData = SimurgData()
+
+        for file_path in file_paths:
+            try:
+                with h5py.File(file_path, "r") as handle:
+                    if "data" not in handle:
+                        continue
+                    group = handle["data"]
+                    for key in sorted(group.keys()):
+                        parsed = cls._parse_time(key).replace(tzinfo=None)
+                        if times is not None:
+                            if key not in requested_keys:
+                                continue
+                        elif not (start_datetime <= parsed <= end_datetime):
+                            continue
+                        result[cls._parse_time(key)] = group[key][:]
+            except Exception:
+                continue
+
+        return result or None
