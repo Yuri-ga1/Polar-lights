@@ -13,6 +13,7 @@ from matplotlib.gridspec import GridSpecFromSubplotSpec
 from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
 
 from app.visualization.aurora_map_plotter import (
+    DEFAULT_AURORA_MAP_FOCUS,
     find_peak_aurora_time,
     plot_aurora_observations_on_ax,
 )
@@ -655,6 +656,8 @@ class PlotRenderer:
                 show_terminator=params.get("show_terminator", True),
                 point_radius=params.get("point_radius", 1.0),
                 map_projection=params.get("map_projection", params.get("projection")),
+                map_focus=params.get("map_focus", params.get("region", DEFAULT_AURORA_MAP_FOCUS)),
+                map_extent=params.get("map_extent"),
             )
             source = params.get("source")
             ax.set_title(f"{descriptor.name} ({source})" if source else descriptor.name)

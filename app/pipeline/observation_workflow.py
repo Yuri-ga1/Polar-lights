@@ -59,6 +59,8 @@ def run_observation_workflow(
     plots_dir: str = "results",
     plot_time: datetime | None = None,
     map_projection: str | None = None,
+    map_focus: str | None = "europe",
+    map_extent: tuple[float, float, float, float] | list[float] | None = None,
     source: ObservationSource = "aurorasaurus",
 ) -> list[dict[str, str]]:
     """Run the observation workflow for a single date.
@@ -79,6 +81,11 @@ def run_observation_workflow(
     plot_time : datetime or None, optional
         Specific time to display on the map.  If ``None``, a default
         timestamp is used.
+    map_focus : {"europe", "america"} or None, optional
+        Named map focus. ``None`` keeps the full world extent.
+    map_extent : tuple or list of four floats, optional
+        Custom ``(lon_min, lon_max, lat_min, lat_max)`` extent. Overrides
+        ``map_focus`` when provided.
     source : {"aurorasaurus", "spaceweatherlive"}, optional
         Observation source.  Defaults to ``"aurorasaurus"``.
 
@@ -132,6 +139,8 @@ def run_observation_workflow(
         show_geomagnetic_equator=True,
         show_terminator=True,
         map_projection=map_projection,
+        map_focus=map_focus,
+        map_extent=map_extent,
     )
 
     resolved_plot_time = plot_time or find_peak_aurora_time(

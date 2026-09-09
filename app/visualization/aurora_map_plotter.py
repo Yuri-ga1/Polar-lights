@@ -13,6 +13,55 @@ from app.visualization.color_utils import get_dominant_color
 from app.visualization.plot_settings import POINT_RADIUS
 from app.visualization.plot_utils import apply_map_extent, resolve_map_projection
 
+EUROPE_MAP_EXTENT = (-25.0, 45.0, 30.0, 75.0)
+AMERICA_MAP_EXTENT = (-170.0, -30.0, 15.0, 75.0)
+DEFAULT_AURORA_MAP_FOCUS = "europe"
+AURORA_MAP_FOCUSES = {
+    "europe": EUROPE_MAP_EXTENT,
+    "america": AMERICA_MAP_EXTENT,
+}
+
+
+def resolve_aurora_map_extent(
+    focus: str | None = DEFAULT_AURORA_MAP_FOCUS,
+    extent: tuple[float, float, float, float] | list[float] | None = None,
+) -> tuple[float, float, float, float] | None:
+    """Resolve a named Aurora map focus or a custom map extent.
+
+    ``extent`` uses ``(longitude_min, longitude_max, latitude_min,
+    latitude_max)`` in degrees.  Passing ``None`` for both arguments keeps
+    the full map visible.
+    """
+    if extent is not None:
+        if len(extent) != 4:
+            raise ValueError(
+                "Aurora map_extent must contain four values: "
+                "(lon_min, lon_max, lat_min, lat_max)."
+            )
+        lon_min, lon_max, lat_min, lat_max = (float(value) for value in extent)
+        if not (-180 <= lon_min < lon_max <= 180):
+            raise ValueError("Aurora longitude extent must satisfy -180 <= min < max <= 180.")
+        if not (-90 <= lat_min < lat_max <= 90):
+            raise ValueError("Aurora latitude extent must satisfy -90 <= min < max <= 90.")
+        return lon_min, lon_max, lat_min, lat_max
+
+    if focus is None:
+        return None
+    normalized_focus = str(focus).strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "eu": "europe",
+        "europe": "europe",
+        "us": "america",
+        "usa": "america",
+        "america": "america",
+        "north_america": "america",
+    }
+    normalized_focus = aliases.get(normalized_focus, normalized_focus)
+    if normalized_focus not in AURORA_MAP_FOCUSES:
+        supported = ", ".join(sorted(AURORA_MAP_FOCUSES))
+        raise ValueError(f"Unknown Aurora map focus '{focus}'. Use one of: {supported}.")
+    return AURORA_MAP_FOCUSES[normalized_focus]
+
 
 def find_peak_aurora_time(
     df: pd.DataFrame,
@@ -95,6 +144,8 @@ def plot_aurora_observations_on_ax(
     point_radius: float = POINT_RADIUS,
     map_projection: str | None = None,
     projection: str | None = None,
+    map_focus: str | None = DEFAULT_AURORA_MAP_FOCUS,
+    map_extent: tuple[float, float, float, float] | list[float] | None = None,
 ) -> None:
     """Plot aurora observations from DataFrame on an existing map axis."""
     if time is None:
@@ -110,6 +161,9 @@ def plot_aurora_observations_on_ax(
         raise ValueError(f"There is no aurora data for date: {target_date}")
 
     apply_map_extent(ax, map_projection or projection)
+    resolved_extent = resolve_aurora_map_extent(map_focus, map_extent)
+    if resolved_extent is not None:
+        ax.set_extent(resolved_extent, crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND, facecolor="lightgray")
     ax.add_feature(cfeature.OCEAN, facecolor="white")
     ax.add_feature(cfeature.COASTLINE, linewidth=0.7)
@@ -226,12 +280,16 @@ class AuroraMapPlotter:
         show_terminator: bool = True,
         map_projection: str | None = None,
         projection: str | None = None,
+        map_focus: str | None = DEFAULT_AURORA_MAP_FOCUS,
+        map_extent: tuple[float, float, float, float] | list[float] | None = None,
     ):
         self.csv_path = csv_path
         self.save_path = save_path
         self.show_geomagnetic_equator = show_geomagnetic_equator
         self.show_terminator = show_terminator
         self.map_projection = map_projection or projection
+        self.map_focus = map_focus
+        self.map_extent = map_extent
 
         self.df = pd.read_csv(csv_path)
         self.df["date"] = pd.to_datetime(self.df["date"], errors="coerce")
@@ -241,6 +299,8 @@ class AuroraMapPlotter:
         time: datetime,
         map_projection: str | None = None,
         projection: str | None = None,
+        map_focus: str | None = None,
+        map_extent: tuple[float, float, float, float] | list[float] | None = None,
     ):
         """Строит карту мира с наблюдениями."""
         fig = plt.figure(figsize=(14, 7))
@@ -255,6 +315,8 @@ class AuroraMapPlotter:
             show_terminator=self.show_terminator,
             point_radius=POINT_RADIUS,
             map_projection=resolved_projection_name,
+            map_focus=self.map_focus if map_focus is None else map_focus,
+            map_extent=self.map_extent if map_extent is None else map_extent,
         )
 
         ax.set_title(f"{time.strftime('%d %B %Y')} auroras")
