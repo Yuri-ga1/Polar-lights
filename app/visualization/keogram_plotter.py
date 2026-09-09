@@ -204,6 +204,7 @@ def plot_keogram_matrix(
     lat_centers: np.ndarray,
     cfg: Optional[KeogramConfig] = None,
     save_dir: str = os.path.join("files", "graphs"),
+    save_name: str | None = None,
 ) -> plt.Figure:
     cfg = cfg or KeogramConfig()
 
@@ -213,7 +214,8 @@ def plot_keogram_matrix(
     fig.subplots_adjust(right=0.90)
 
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "keogram.png")
+    filename = save_name or f"keogram_{cfg.hemisphere}.png"
+    save_path = os.path.join(save_dir, filename)
     fig.savefig(save_path, bbox_inches="tight", pad_inches=0.1)
 
     return fig
@@ -271,7 +273,15 @@ def plot_keogram(
     day_finish: date,
     cfg: Optional[KeogramConfig] = None,
     save_dir: str = os.path.join("files", "graphs"),
+    save_name: str | None = None,
 ) -> plt.Figure:
     cfg = cfg or KeogramConfig()
     matrix, times, lat_centers = build_keogram_matrix(data, day_start, day_finish, cfg)
-    return plot_keogram_matrix(matrix, times, lat_centers, cfg=cfg, save_dir=save_dir)
+    return plot_keogram_matrix(
+        matrix,
+        times,
+        lat_centers,
+        cfg=cfg,
+        save_dir=save_dir,
+        save_name=save_name,
+    )
