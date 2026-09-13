@@ -23,6 +23,7 @@ from app.progress_bar import ProgressBar
 from app.visualization.geo_utils import (
     geographic_to_magnetic,
     geomagnetic_lines,
+    magnetic_longitude_to_mlt_longitude,
     magnetic_constant_latitude_lines,
     solar_terminator,
 )
@@ -273,9 +274,10 @@ def draw_solar_noon_line_on_ax(
     linestyle: str = "--",
     linewidth: float = 5,
     alpha: float = 0.9,
+    magnetic_local_time: bool = False,
 ) -> None:
     """Draw the longitude where local solar time is 12:00 for the map timestamp."""
-    noon_lon = _solar_noon_longitude(plot_time)
+    noon_lon = 0.0 if magnetic_local_time else _solar_noon_longitude(plot_time)
     ax.plot(
         [noon_lon, noon_lon],
         [-90, 90],
@@ -403,13 +405,22 @@ def plot_map(
     geomagnetic_levels: Iterable[float] = (-60, -15, 0, 15, 60),
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
+    magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
     """
 
+    if magnetic_local_time:
+        magnetic_coordinates = True
+
     product = _resolve_product(product_type)
+    product_title = (
+        f"{product.long_name} (MLT)"
+        if magnetic_local_time
+        else product.long_name
+    )
     ncols = 2
     map_params = MapParams()
     colorbar_limit_scaling = 1
@@ -458,7 +469,7 @@ def plot_map(
             else format_projection_title(resolved_projection_names[0])
         )
         fig.suptitle(
-            f"{product.long_name} - {title_projection}",
+            f"{product_title} - {title_projection}",
             y=0.98,
         )
 
@@ -518,7 +529,7 @@ def plot_map(
             if is_polar_projection:
                 panel_title = format_simurg_time_title(time)
             else:
-                panel_title = format_simurg_map_title(product.long_name, time)
+                panel_title = format_simurg_map_title(product_title, time)
 
         sctr = plot_simurg_map_on_ax(
             ax1,
@@ -537,6 +548,7 @@ def plot_map(
             map_projection=projection_name,
             geomagnetic_levels=geomagnetic_levels,
             magnetic_coordinates=magnetic_coordinates,
+            magnetic_local_time=magnetic_local_time,
             map_extent=map_extent,
         )
 
@@ -606,11 +618,14 @@ def plot_map(
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, save_name or f"{product.hdf_name.upper()}.png")
 
-    fig.savefig(
-        save_path,
-        bbox_inches="tight",
-        pad_inches=0.08,
-    )
+    fig.canvas.draw()
+    save_kwargs = {"pad_inches": 0.08}
+    # Cartopy's global PlateCarree axes do not provide a usable tight bounding
+    # box.  Saving them normally preserves the complete map; polar maps keep
+    # the compact export used previously.
+    if is_polar_projection:
+        save_kwargs["bbox_inches"] = "tight"
+    fig.savefig(save_path, **save_kwargs)
     return fig
 
 
@@ -629,6 +644,7 @@ def plot_all_maps(
     map_projection: str | None = None,
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
+    magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
@@ -705,6 +721,7 @@ def plot_all_maps(
                     map_projection=map_projection,
                     show_polar_legend=show_polar_legend,
                     magnetic_coordinates=magnetic_coordinates,
+                    magnetic_local_time=magnetic_local_time,
                     map_extent=map_extent,
                 )
                 wrote_any = True
@@ -770,12 +787,18 @@ def plot_simurg_map_on_ax(
     map_projection: str | None = None,
     projection: str | None = None,
     magnetic_coordinates: bool = False,
+    magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
+
+    if magnetic_local_time:
+        magnetic_coordinates = True
+        if plot_time is None:
+            raise ValueError("plot_time is required for MLT coordinates.")
 
     resolved_projection = map_projection or projection
     prepare_layout(
@@ -784,6 +807,8 @@ def plot_simurg_map_on_ax(
         lat_locator,
         map_projection=resolved_projection,
         magnetic_coordinates=magnetic_coordinates,
+        magnetic_local_time=magnetic_local_time,
+        plot_time=plot_time,
     )
     if map_extent is not None:
         if normalize_map_projection(resolved_projection) != "global":
@@ -800,7 +825,7 @@ def plot_simurg_map_on_ax(
     if plot_time is not None:
         native_time = plot_time.replace(tzinfo=None)
 
-        if show_terminator:
+        if show_terminator and not magnetic_local_time:
             solar_terminator(
                 ax,
                 time=native_time,
@@ -815,6 +840,8 @@ def plot_simurg_map_on_ax(
                     ax=ax,
                     levels=list(geomagnetic_levels),
                     color="black",
+                    magnetic_local_time=magnetic_local_time,
+                    plot_time=native_time,
                 )
             else:
                 geomagnetic_lines(
@@ -832,6 +859,7 @@ def plot_simurg_map_on_ax(
                 linestyle=noon_line_linestyle,
                 linewidth=noon_line_linewidth,
                 alpha=noon_line_alpha,
+                magnetic_local_time=magnetic_local_time,
             )
 
     draw_polar_center_on_ax(
@@ -860,6 +888,8 @@ def plot_simurg_map_on_ax(
             plot_lon,
             plot_time,
         )
+        if magnetic_local_time:
+            plot_lon = magnetic_longitude_to_mlt_longitude(plot_lon, plot_time)
 
     sctr = ax.scatter(
         plot_lon,

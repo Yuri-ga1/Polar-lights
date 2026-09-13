@@ -6,6 +6,8 @@ from pathlib import Path
 import cartopy.crs as ccrs
 import numpy as np
 
+from app.visualization.geo_utils import magnetic_longitude_to_mlt_longitude
+
 
 DEFAULT_CONTOURS_PATH = Path(__file__).with_name("data") / "NiceWorld-180_Mlat.dat"
 
@@ -77,11 +79,22 @@ def plot_geomagnetic_continents(
     color: str = "black",
     linewidth: float = 0.6,
     zorder: float = 2.0,
+    magnetic_local_time: bool = False,
+    plot_time=None,
 ):
-    """Draw continent contours using the precomputed MLon/MLat columns."""
+    """Draw continent contours in magnetic longitude or MLT coordinates."""
+    if magnetic_local_time and plot_time is None:
+        raise ValueError("plot_time is required for MLT continent contours.")
+
     artists = []
     for contour in load_geomagnetic_contours(path):
-        for segment in _iter_valid_segments(contour):
+        plot_contour = contour.copy()
+        if magnetic_local_time:
+            plot_contour[:, 0] = magnetic_longitude_to_mlt_longitude(
+                plot_contour[:, 0],
+                plot_time,
+            )
+        for segment in _iter_valid_segments(plot_contour):
             artists.extend(
                 ax.plot(
                     segment[:, 0],

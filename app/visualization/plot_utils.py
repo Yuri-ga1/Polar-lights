@@ -124,6 +124,11 @@ def _format_cardinal_longitude(value: float, _pos: int | None = None) -> str:
     return f"{abs(value):g}{suffix}"
 
 
+def _format_mlt_longitude(value: float, _pos: int | None = None) -> str:
+    mlt = ((value / 15.0) + 12.0) % 24.0
+    return f"{mlt:g} MLT"
+
+
 def normalize_map_projection(map_projection: str | None = None) -> str:
     """Normalize supported map projection names."""
     if map_projection is None:
@@ -188,6 +193,8 @@ def prepare_layout(
     lat_locator: Iterable[float] | None,
     map_projection: str | None = None,
     magnetic_coordinates: bool = False,
+    magnetic_local_time: bool = False,
+    plot_time=None,
 ) -> None:
     """add coastline/borders/gridlines and format map axes."""
     normalized_projection = normalize_map_projection(map_projection)
@@ -202,7 +209,9 @@ def prepare_layout(
 
     gl.top_labels = False
     gl.right_labels = False
-    if is_polar_projection:
+    if magnetic_local_time:
+        gl.xformatter = mticker.FuncFormatter(_format_mlt_longitude)
+    elif is_polar_projection:
         gl.xformatter = mticker.FuncFormatter(_format_cardinal_longitude)
         gl.yformatter = mticker.FuncFormatter(_format_cardinal_latitude)
     else:
@@ -227,7 +236,9 @@ def prepare_layout(
     gl.xlabel_style = label_style
     gl.ylabel_style = label_style
 
-    if lon_locator:
+    if magnetic_local_time:
+        gl.xlocator = mticker.FixedLocator([-180, -135, -90, -45, 0, 45, 90, 135, 180])
+    elif lon_locator:
         gl.xlocator = mticker.FixedLocator(list(lon_locator))
     if lat_locator:
         gl.ylocator = mticker.FixedLocator(list(lat_locator))
@@ -235,7 +246,11 @@ def prepare_layout(
     apply_map_extent(ax, normalized_projection)
 
     if magnetic_coordinates:
-        plot_geomagnetic_continents(ax)
+        plot_geomagnetic_continents(
+            ax,
+            magnetic_local_time=magnetic_local_time,
+            plot_time=plot_time,
+        )
     else:
         ax.add_feature(feature.COASTLINE, linewidth=0.6)
         ax.add_feature(feature.BORDERS, linestyle=":", linewidth=0.6)

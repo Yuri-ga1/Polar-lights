@@ -116,34 +116,73 @@ def geographic_to_magnetic(
     return magnetic_lat, magnetic_lon
 
 
+def magnetic_longitude_to_mlt_longitude(
+    magnetic_lon,
+    date: datetime,
+):
+    """Convert AACGM longitude to a plot longitude labelled in MLT hours.
+
+    MLT is represented on the map as ``-180..180`` degrees so Cartopy can
+    still use its normal geographic and polar projections: -180° is 00 MLT,
+    0° is 12 MLT, and 180° is 24 MLT.
+    """
+    native_date = date.replace(tzinfo=None)
+    magnetic_lon_arr = np.asarray(magnetic_lon, dtype=float)
+    mlt_hours = np.asarray(
+        aacgmv2.convert_mlt(magnetic_lon_arr, native_date),
+        dtype=float,
+    )
+    plot_lon = ((mlt_hours - 12.0) * 15.0 + 180.0) % 360.0 - 180.0
+    if np.isscalar(magnetic_lon):
+        return float(plot_lon)
+    return plot_lon
+
+
 def magnetic_constant_latitude_lines(
     ax,
     levels: list,
     color: str = "black",
+    *,
+    magnetic_local_time: bool = False,
+    plot_time: datetime | None = None,
 ):
     lon = np.linspace(-180, 180, 361)
+    if magnetic_local_time:
+        if plot_time is None:
+            raise ValueError("plot_time is required for MLT coordinates.")
+        lon = magnetic_longitude_to_mlt_longitude(lon, plot_time)
+
+    def plot_constant_latitude(latitude: float, **kwargs):
+        split_indices = np.where(np.abs(np.diff(lon)) > 180)[0] + 1
+        return [
+            artist
+            for lon_part in np.split(lon, split_indices)
+            if len(lon_part) > 1
+            for artist in ax.plot(
+                lon_part,
+                np.full_like(lon_part, latitude),
+                transform=ccrs.PlateCarree(),
+                **kwargs,
+            )
+        ]
 
     cs0 = None
     if 0 in levels:
-        cs0 = ax.plot(
-            lon,
-            np.zeros_like(lon),
+        cs0 = plot_constant_latitude(
+            0.0,
             color=color,
             linewidth=2.0,
-            transform=ccrs.PlateCarree(),
         )
 
     other_levels = [level for level in levels if level != 0]
     cs_levels = []
     for level in other_levels:
         cs_levels.extend(
-            ax.plot(
-                lon,
-                np.full_like(lon, float(level)),
+            plot_constant_latitude(
+                float(level),
                 color=color,
                 linestyle="--",
                 linewidth=1.2,
-                transform=ccrs.PlateCarree(),
             )
         )
 

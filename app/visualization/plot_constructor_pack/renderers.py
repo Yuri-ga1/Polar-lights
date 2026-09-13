@@ -535,6 +535,7 @@ class PlotRenderer:
             high_values_on_top=params.get("high_values_on_top", True),
             map_projection=params.get("map_projection", params.get("projection")),
             magnetic_coordinates=params.get("magnetic_coordinates", False),
+            magnetic_local_time=params.get("magnetic_local_time", False),
             map_extent=params.get("map_extent"),
         )
 
