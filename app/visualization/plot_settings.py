@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 # --- Константы ---
-POINT_RADIUS = 1
+POINT_RADIUS = 2
 
 # --- Глобальные параметры графиков ---
 DPI = 300
@@ -18,7 +18,7 @@ def set_plt_def_params():
     """
     plt.style.use('seaborn-v0_8-whitegrid')
     PLOTTING_PARAMS = {
-        'font.size': 30,
+        'font.size': 10,
         'figure.dpi': DPI,
         #'font.family': 'serif',
         #'font.family': 'monospace',
@@ -26,10 +26,10 @@ def set_plt_def_params():
         'font.weight': 'light',
         'legend.frameon': True,
         'font.variant' : 'small-caps',
-        'axes.titlesize' : 30,
-        'axes.labelsize' : 30,
-        'xtick.labelsize' : 28,
-        'ytick.labelsize' : 28,
+        'axes.titlesize' : 10,
+        'axes.labelsize' : 10,
+        'xtick.labelsize' : 10,
+        'ytick.labelsize' : 10,
         'xtick.major.pad': 5,
         'ytick.major.pad': 5,
         'xtick.major.width' : 2.5,

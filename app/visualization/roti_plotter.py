@@ -14,6 +14,7 @@ from cartopy import feature
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib import image as mpl_image
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
@@ -37,7 +38,7 @@ from app.visualization.plot_utils import (
 )
 
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
-FIGSIZE_WIDTH = 18
+FIGSIZE_WIDTH = 4
 
 
 class ColorLimits(NamedTuple):
@@ -59,9 +60,9 @@ class DataProducts(DataProduct, Enum):
         ColorLimits(0, 1, "TECU/min"),
     )
     tec_adjusted = DataProduct(
-        "TEC Adjusted",
+        "AVTEC",
         "tec_adjusted",
-        ColorLimits(0, 80, "TEC, TECU"),
+        ColorLimits(0, 60, "TEC, TECU"),
     )
 
 
@@ -272,7 +273,7 @@ def draw_solar_noon_line_on_ax(
     *,
     color: str = "tab:orange",
     linestyle: str = "--",
-    linewidth: float = 5,
+    linewidth: float = 0.6,
     alpha: float = 0.9,
     magnetic_local_time: bool = False,
 ) -> None:
@@ -309,10 +310,10 @@ def draw_polar_center_on_ax(
         [center_lon],
         [center_lat],
         marker="*",
-        s=220,
+        s=90,
         facecolors=color,
         edgecolors="black",
-        linewidths=2.0,
+        linewidths=0.6,
         zorder=8,
         transform=ccrs.PlateCarree(),
         label=label,
@@ -334,7 +335,7 @@ def add_polar_legend(
             [0],
             [0],
             color="black",
-            linewidth=2.0,
+            linewidth=0.6,
             label="Geomagnetic equator (0°)",
         ),
         Line2D(
@@ -342,7 +343,7 @@ def add_polar_legend(
             [0],
             color="black",
             linestyle="--",
-            linewidth=1.2,
+            linewidth=0.6,
             label=(
                 "Geomagnetic lines "
                 f"({_format_geomagnetic_levels(geomagnetic_levels, map_projection)})"
@@ -387,6 +388,35 @@ def _colorbar_ticks(color_limits: tuple[float, float]) -> list[float]:
     return [vmin + step * idx for idx in range(5)]
 
 
+def _save_figure_without_empty_margins(fig: Figure, save_path: str) -> None:
+    """Save a PNG cropped to visible pixels, with a small consistent margin.
+
+    Cartopy and Matplotlib report incomplete or spurious artist bounding boxes
+    for different projections.  Cropping the rendered canvas works uniformly
+    for global, north/south polar, geographic, geomagnetic, and MLT maps.
+    """
+    fig.canvas.draw()
+    pixels = np.asarray(fig.canvas.buffer_rgba())
+    background = pixels[0, 0, :3].astype(np.int16)
+    differs_from_background = np.any(
+        np.abs(pixels[:, :, :3].astype(np.int16) - background) > 4,
+        axis=2,
+    )
+    visible = differs_from_background & (pixels[:, :, 3] > 0)
+
+    if not np.any(visible):
+        fig.savefig(save_path)
+        return
+
+    rows, columns = np.where(visible)
+    padding = max(1, round(0.02 * fig.dpi))
+    top = max(0, rows.min() - padding)
+    bottom = min(pixels.shape[0], rows.max() + padding + 1)
+    left = max(0, columns.min() - padding)
+    right = min(pixels.shape[1], columns.max() + padding + 1)
+    mpl_image.imsave(save_path, pixels[top:bottom, left:right], dpi=fig.dpi)
+
+
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: Iterable[datetime | str] | datetime | str | pd.Timestamp | None = None,
@@ -398,7 +428,7 @@ def plot_map(
     noon_line_color: str = "purple",
     terminator_height_km: float = 300.0,
     show_panel_labels: bool = True,
-    hide_zero_values: bool = True,
+    hide_zero_values: bool | None = None,
     high_values_on_top: bool = True,
     point_size: float | None = None,
     map_projection: str | None = None,
@@ -421,6 +451,17 @@ def plot_map(
         if magnetic_local_time
         else product.long_name
     )
+    effective_hide_zero_values = (
+        product.hdf_name != "tec_adjusted"
+        if hide_zero_values is None
+        else hide_zero_values
+    )
+    if product.hdf_name == "tec_adjusted":
+        grid_lon_locator = (-180, -120, -60, 0, 60, 120, 180)
+        grid_lat_locator = (-90, -60, -30, 0, 30, 60, 90)
+    else:
+        grid_lon_locator = None
+        grid_lat_locator = None
     ncols = 2
     map_params = MapParams()
     colorbar_limit_scaling = 1
@@ -455,14 +496,20 @@ def plot_map(
 
     subplot_marks = panel_labels(nrows * ncols)
 
-    figsize = (
-        (17, max(6.8, 5.35 * nrows))
-        if is_paired_polar_projection
-        else (FIGSIZE_WIDTH, max(5.2, 5.7 * nrows))
-    )
+    if is_paired_polar_projection:
+        figsize = (17, max(6.8, 5.35 * nrows))
+    elif is_polar_projection:
+        # Leave a square map area and a dedicated right margin for the
+        # colorbar label on a one-map polar figure.
+        figsize = (FIGSIZE_WIDTH, max(3.9, 4.1 * nrows))
+    else:
+        # A global map has an approximately 2:1 aspect ratio.  The former
+        # polar-oriented height left a large empty area above and below it.
+        figsize = (FIGSIZE_WIDTH, max(2.35, 2.45 * nrows))
     fig = Figure(figsize=figsize)
     FigureCanvasAgg(fig)
-    if is_polar_projection:
+    single_polar_map = len(plot_times) == 1 and len(resolved_projection_names) == 1
+    if is_polar_projection and not single_polar_map:
         title_projection = (
             "Polar projections"
             if len(resolved_projection_names) > 1
@@ -470,14 +517,15 @@ def plot_map(
         )
         fig.suptitle(
             f"{product_title} - {title_projection}",
-            y=0.98,
+            y=0.995,
         )
 
     grid = fig.add_gridspec(nrows, ncols)
     if is_paired_polar_projection:
         fig.subplots_adjust(
-            top=0.91,
+            top=0.975,
             bottom=0.13 if show_polar_legend else 0.07,
+            right=0.82,
             # wspace=-0.28,
             wspace=-0.4,
             hspace=0.24,
@@ -485,13 +533,22 @@ def plot_map(
     elif is_polar_projection:
         polar_bottom = 0.2 if show_polar_legend else 0.1
         fig.subplots_adjust(
-            top=0.9,
+            left=0.06,
+            right=0.78,
+            top=0.90,
             bottom=polar_bottom,
             wspace=-0.16,
             hspace=0.38,
         )
     else:
-        fig.subplots_adjust(hspace=0.28, wspace=0.3)
+        fig.subplots_adjust(
+            left=0.12,
+            right=0.78,
+            top=0.84,
+            bottom=0.14,
+            hspace=0.28,
+            wspace=0.3,
+        )
 
     axis_specs: list[tuple[plt.Axes, datetime, str, int]] = []
 
@@ -527,7 +584,13 @@ def plot_map(
         panel_title = None
         if not paired_projection_panel:
             if is_polar_projection:
-                panel_title = format_simurg_time_title(time)
+                if single_polar_map:
+                    panel_title = (
+                        f"{product_title} - {format_projection_title(projection_name)}\n"
+                        f"{format_simurg_time_title(time)}"
+                    )
+                else:
+                    panel_title = format_simurg_time_title(time)
             else:
                 panel_title = format_simurg_map_title(product_title, time)
 
@@ -543,13 +606,18 @@ def plot_map(
             show_noon_line=effective_show_noon_line,
             noon_line_color=noon_line_color,
             terminator_height_km=terminator_height_km,
-            hide_zero_values=hide_zero_values,
+            hide_zero_values=effective_hide_zero_values,
             high_values_on_top=high_values_on_top,
             map_projection=projection_name,
             geomagnetic_levels=geomagnetic_levels,
             magnetic_coordinates=magnetic_coordinates,
             magnetic_local_time=magnetic_local_time,
             map_extent=map_extent,
+            lon_locator=grid_lon_locator,
+            lat_locator=grid_lat_locator,
+            show_country_borders=False,
+            show_lakes=product.hdf_name != "tec_adjusted",
+            show_rivers=product.hdf_name != "tec_adjusted",
         )
 
         if show_panel_labels:
@@ -612,20 +680,13 @@ def plot_map(
             show_noon_line=effective_show_noon_line,
             noon_line_color=noon_line_color,
             noon_line_linestyle="--",
-            noon_line_linewidth=2.5,
+            noon_line_linewidth=0.6,
         )
 
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, save_name or f"{product.hdf_name.upper()}.png")
 
-    fig.canvas.draw()
-    save_kwargs = {"pad_inches": 0.08}
-    # Cartopy's global PlateCarree axes do not provide a usable tight bounding
-    # box.  Saving them normally preserves the complete map; polar maps keep
-    # the compact export used previously.
-    if is_polar_projection:
-        save_kwargs["bbox_inches"] = "tight"
-    fig.savefig(save_path, **save_kwargs)
+    _save_figure_without_empty_margins(fig, save_path)
     return fig
 
 
@@ -638,7 +699,7 @@ def plot_all_maps(
     show_noon_line: bool = False,
     noon_line_color: str = "purple",
     terminator_height_km: float = 300.0,
-    hide_zero_values: bool = True,
+    hide_zero_values: bool | None = None,
     high_values_on_top: bool = True,
     point_size: float | None = None,
     map_projection: str | None = None,
@@ -779,7 +840,7 @@ def plot_simurg_map_on_ax(
     show_noon_line=False,
     noon_line_color="purple",
     noon_line_linestyle="--",
-    noon_line_linewidth=2.5,
+    noon_line_linewidth=0.6,
     noon_line_alpha=0.9,
     terminator_height_km=300.0,
     hide_zero_values=True,
@@ -789,11 +850,18 @@ def plot_simurg_map_on_ax(
     magnetic_coordinates: bool = False,
     magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
+    lon_locator: Iterable[float] | None = None,
+    lat_locator: Iterable[float] | None = None,
+    show_country_borders: bool = False,
+    show_lakes: bool = True,
+    show_rivers: bool = True,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
-    lon_locator = (-180, -90, 0, 90, 180)
-    lat_locator = (-80, -40, 0, 40, 80)
+    if lon_locator is None:
+        lon_locator = (-180, -90, 0, 90, 180)
+    if lat_locator is None:
+        lat_locator = (-80, -40, 0, 40, 80)
 
     if magnetic_local_time:
         magnetic_coordinates = True
@@ -809,6 +877,9 @@ def plot_simurg_map_on_ax(
         magnetic_coordinates=magnetic_coordinates,
         magnetic_local_time=magnetic_local_time,
         plot_time=plot_time,
+        show_country_borders=show_country_borders,
+        show_lakes=show_lakes,
+        show_rivers=show_rivers,
     )
     if map_extent is not None:
         if normalize_map_projection(resolved_projection) != "global":
@@ -911,5 +982,8 @@ def plot_simurg_map_on_ax(
             cbar.set_label(colorbar_label)
 
     if title is not None:
-        ax.set_title(title)
+        # Cartopy gridliners can make Matplotlib's automatic title position
+        # infinite.  A fixed axes-relative position keeps it visible in both
+        # global and polar projections.
+        ax.set_title(title, y=1.02, pad=0)
     return sctr

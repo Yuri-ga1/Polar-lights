@@ -509,7 +509,7 @@ class PlotRenderer:
         )
 
         colorbar_config = get_product_colorbar_config(product_type)
-        product_title = "TEC Adjusted" if product_type == "tec_adjusted" else "ROTI"
+        product_title = "AVTEC" if product_type == "tec_adjusted" else "ROTI"
 
         plot_simurg_map_on_ax(
             ax,
@@ -528,15 +528,31 @@ class PlotRenderer:
             show_noon_line=params.get("show_noon_line", False),
             noon_line_color=params.get("noon_line_color", "purple"),
             noon_line_linestyle=params.get("noon_line_linestyle", "--"),
-            noon_line_linewidth=params.get("noon_line_linewidth", 1.2),
+            noon_line_linewidth=params.get("noon_line_linewidth", 0.6),
             noon_line_alpha=params.get("noon_line_alpha", 0.9),
             terminator_height_km=params.get("terminator_height_km", 300.0),
-            hide_zero_values=params.get("hide_zero_values", True),
+            hide_zero_values=params.get(
+                "hide_zero_values",
+                product_type != "tec_adjusted",
+            ),
             high_values_on_top=params.get("high_values_on_top", True),
             map_projection=params.get("map_projection", params.get("projection")),
             magnetic_coordinates=params.get("magnetic_coordinates", False),
             magnetic_local_time=params.get("magnetic_local_time", False),
             map_extent=params.get("map_extent"),
+            lon_locator=(
+                (-180, -120, -60, 0, 60, 120, 180)
+                if product_type == "tec_adjusted"
+                else None
+            ),
+            lat_locator=(
+                (-90, -60, -30, 0, 30, 60, 90)
+                if product_type == "tec_adjusted"
+                else None
+            ),
+            show_country_borders=False,
+            show_lakes=product_type != "tec_adjusted",
+            show_rivers=product_type != "tec_adjusted",
         )
 
     def plot_map_panel(

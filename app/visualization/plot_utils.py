@@ -125,8 +125,10 @@ def _format_cardinal_longitude(value: float, _pos: int | None = None) -> str:
 
 
 def _format_mlt_longitude(value: float, _pos: int | None = None) -> str:
+    if np.isclose(value, 180):
+        return "24"
     mlt = ((value / 15.0) + 12.0) % 24.0
-    return f"{mlt:g} MLT"
+    return f"{mlt:02.0f}"
 
 
 def normalize_map_projection(map_projection: str | None = None) -> str:
@@ -195,20 +197,30 @@ def prepare_layout(
     magnetic_coordinates: bool = False,
     magnetic_local_time: bool = False,
     plot_time=None,
+    show_country_borders: bool = False,
+    show_lakes: bool = True,
+    show_rivers: bool = True,
 ) -> None:
     """add coastline/borders/gridlines and format map axes."""
     normalized_projection = normalize_map_projection(map_projection)
     is_polar_projection = normalized_projection in {"north_pole", "south_pole"}
     gl = ax.gridlines(
-        linewidth=2,
+        linewidth=0.6,
         color="gray",
         alpha=0.5,
-        draw_labels=True,
+        # Cartopy hides some Gridliner labels when it considers them too
+        # close.  Global maps use fixed Matplotlib ticks below instead.
+        draw_labels=is_polar_projection,
         linestyle="--",
     )
 
     gl.top_labels = False
     gl.right_labels = False
+    if magnetic_local_time and is_polar_projection:
+        # Gridliner labels are placed only on the rectangular axes edges in a
+        # polar projection.  MLT labels are added around the map circle below.
+        gl.bottom_labels = False
+        gl.left_labels = False
     if magnetic_local_time:
         gl.xformatter = mticker.FuncFormatter(_format_mlt_longitude)
     elif is_polar_projection:
@@ -245,6 +257,25 @@ def prepare_layout(
 
     apply_map_extent(ax, normalized_projection)
 
+    if not is_polar_projection:
+        x_ticks = (
+            [-180, -135, -90, -45, 0, 45, 90, 135, 180]
+            if magnetic_local_time
+            else list(lon_locator or [])
+        )
+        y_ticks = list(lat_locator or [])
+        ax.set_xticks(x_ticks, crs=ccrs.PlateCarree())
+        ax.set_yticks(y_ticks, crs=ccrs.PlateCarree())
+        ax.xaxis.set_major_formatter(
+            mticker.FuncFormatter(_format_mlt_longitude)
+            if magnetic_local_time
+            else LONGITUDE_FORMATTER
+        )
+        ax.yaxis.set_major_formatter(LATITUDE_FORMATTER)
+
+    if magnetic_local_time and is_polar_projection:
+        _add_polar_mlt_labels(ax, normalized_projection)
+
     if magnetic_coordinates:
         plot_geomagnetic_continents(
             ax,
@@ -253,9 +284,38 @@ def prepare_layout(
         )
     else:
         ax.add_feature(feature.COASTLINE, linewidth=0.6)
-        ax.add_feature(feature.BORDERS, linestyle=":", linewidth=0.6)
-        ax.add_feature(feature.LAKES, alpha=0.5)
-        ax.add_feature(feature.RIVERS)
+        if show_country_borders:
+            ax.add_feature(feature.BORDERS, linestyle=":", linewidth=0.6)
+        if show_lakes:
+            ax.add_feature(feature.LAKES, alpha=0.5)
+        if show_rivers:
+            ax.add_feature(feature.RIVERS)
+
+
+def _add_polar_mlt_labels(ax: plt.Axes, map_projection: str) -> None:
+    """Place MLT hour labels every three hours around a polar map."""
+    # Keep the labels inside the outer parallel so the 00 label does not
+    # collide with the two-line title above the map.
+    latitude = 5.0 if map_projection == "north_pole" else -5.0
+    for hour in range(0, 24, 3):
+        longitude = (hour - 12) * 15
+        ax.text(
+            longitude,
+            latitude,
+            f"{hour:02d}",
+            transform=ccrs.PlateCarree(),
+            ha="center",
+            va="center",
+            fontsize=10,
+            zorder=20,
+            clip_on=False,
+            bbox={
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.8,
+                "pad": 0.8,
+            },
+        )
 
 
 def add_panel_label(ax: plt.Axes, label: str) -> None:
@@ -340,7 +400,7 @@ def plot_timeseries_on_ax(
     time_col: str,
     value_col: str,
     color: str = "tab:blue",
-    linewidth: float = 1.5,
+    linewidth: float = 0.6,
     title: str | None = None,
     ylabel: str | None = None,
 ) -> None:
