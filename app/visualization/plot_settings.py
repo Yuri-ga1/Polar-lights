@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 # --- Константы ---
-POINT_RADIUS = 2
+POINT_RADIUS = 1
 
 # --- Глобальные параметры графиков ---
 DPI = 300

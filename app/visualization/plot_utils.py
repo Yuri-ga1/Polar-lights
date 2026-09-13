@@ -237,8 +237,8 @@ def prepare_layout(
     if magnetic_coordinates:
         plot_geomagnetic_continents(ax)
     else:
-        ax.add_feature(feature.COASTLINE, linewidth=2.5)
-        ax.add_feature(feature.BORDERS, linestyle=":", linewidth=2)
+        ax.add_feature(feature.COASTLINE, linewidth=0.6)
+        ax.add_feature(feature.BORDERS, linestyle=":", linewidth=0.6)
         ax.add_feature(feature.LAKES, alpha=0.5)
         ax.add_feature(feature.RIVERS)
 

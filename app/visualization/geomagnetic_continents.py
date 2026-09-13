@@ -75,7 +75,7 @@ def plot_geomagnetic_continents(
     *,
     path: str | Path = DEFAULT_CONTOURS_PATH,
     color: str = "black",
-    linewidth: float = 1.5,
+    linewidth: float = 0.6,
     zorder: float = 2.0,
 ):
     """Draw continent contours using the precomputed MLon/MLat columns."""

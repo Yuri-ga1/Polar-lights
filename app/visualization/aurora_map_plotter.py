@@ -10,7 +10,7 @@ from matplotlib.patches import Wedge
 
 from app.visualization.geo_utils import geomagnetic_lines, solar_terminator
 from app.visualization.color_utils import get_dominant_color
-from app.visualization.plot_settings import POINT_RADIUS
+from app.visualization.plot_settings import LEGEND_SIZE, POINT_RADIUS
 from app.visualization.plot_utils import apply_map_extent, resolve_map_projection
 
 EUROPE_MAP_EXTENT = (-25.0, 45.0, 30.0, 75.0)
@@ -174,8 +174,10 @@ def plot_aurora_observations_on_ax(
 
     if show_geomagnetic_equator:
         geomagnetic_lines(ax=ax, date=time, color="orange")
-        ax.plot([], [], color="orange", linewidth=2.0, label="Geomagnetic equator (0°)")
-        ax.plot([], [], color="orange", linestyle="--", linewidth=1.2, label="Geomagnetic ±30°")
+        ax.plot([], [], color="orange", linewidth=2.0)
+        ax.plot([], [], color="orange", linestyle="--", linewidth=1.2, label="Geomagnetic line +30°")
+        # ax.plot([], [], color="orange", linewidth=2.0, label="Geomagnetic equator (0°)")
+        # ax.plot([], [], color="orange", linestyle="--", linewidth=1.2, label="Geomagnetic ±30°")
 
     for _, row in data.iterrows():
         x, y = row["lon"], row["lat"]
@@ -240,7 +242,7 @@ def plot_aurora_observations_on_ax(
         handler_map={MulticolorPatch: MulticolorPatchHandler()},
         handlelength=1.5,
         handleheight=1.5,
-        fontsize=24
+        fontsize=LEGEND_SIZE
     )
 
 class MulticolorPatch(object):

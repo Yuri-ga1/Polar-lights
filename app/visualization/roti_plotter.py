@@ -403,6 +403,7 @@ def plot_map(
     geomagnetic_levels: Iterable[float] = (-60, -15, 0, 15, 60),
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
+    map_extent: tuple[float, float, float, float] | list[float] | None = None,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
@@ -536,6 +537,7 @@ def plot_map(
             map_projection=projection_name,
             geomagnetic_levels=geomagnetic_levels,
             magnetic_coordinates=magnetic_coordinates,
+            map_extent=map_extent,
         )
 
         if show_panel_labels:
@@ -627,6 +629,7 @@ def plot_all_maps(
     map_projection: str | None = None,
     show_polar_legend: bool = True,
     magnetic_coordinates: bool = False,
+    map_extent: tuple[float, float, float, float] | list[float] | None = None,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
     show_progress: bool = True,
@@ -702,6 +705,7 @@ def plot_all_maps(
                     map_projection=map_projection,
                     show_polar_legend=show_polar_legend,
                     magnetic_coordinates=magnetic_coordinates,
+                    map_extent=map_extent,
                 )
                 wrote_any = True
                 processed_maps += group_size
@@ -766,19 +770,32 @@ def plot_simurg_map_on_ax(
     map_projection: str | None = None,
     projection: str | None = None,
     magnetic_coordinates: bool = False,
+    map_extent: tuple[float, float, float, float] | list[float] | None = None,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
     lon_locator = (-180, -90, 0, 90, 180)
     lat_locator = (-80, -40, 0, 40, 80)
 
+    resolved_projection = map_projection or projection
     prepare_layout(
         ax,
         lon_locator,
         lat_locator,
-        map_projection=map_projection or projection,
+        map_projection=resolved_projection,
         magnetic_coordinates=magnetic_coordinates,
     )
+    if map_extent is not None:
+        if normalize_map_projection(resolved_projection) != "global":
+            raise ValueError("map_extent is supported only with the global map projection.")
+        if len(map_extent) != 4:
+            raise ValueError("map_extent must be (lon_min, lon_max, lat_min, lat_max).")
+        lon_min, lon_max, lat_min, lat_max = map(float, map_extent)
+        if not (-180 <= lon_min < lon_max <= 180):
+            raise ValueError("map_extent longitudes must satisfy -180 <= min < max <= 180.")
+        if not (-90 <= lat_min < lat_max <= 90):
+            raise ValueError("map_extent latitudes must satisfy -90 <= min < max <= 90.")
+        ax.set_extent((lon_min, lon_max, lat_min, lat_max), crs=ccrs.PlateCarree())
 
     if plot_time is not None:
         native_time = plot_time.replace(tzinfo=None)
