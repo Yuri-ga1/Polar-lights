@@ -91,6 +91,21 @@ output_dir = plot_all_maps(
 
 For `PlotConstructor`, use `time="all"` or `plot_all_times=True` in map params.
 
+### Manual plume tracking
+
+[`notebooks/02_plume_tracking.ipynb`](notebooks/02_plume_tracking.ipynb) tracks
+manual upper plume boundaries on local TEC adjusted maps. Set at least two UTC
+timestamps, inspect maps without annotations, then enter ordered `(lon, lat)`
+vertices (or use the optional interactive mouse picker). The notebook shows
+individual boundaries, paired overlays, the vertical intersection with the
+second boundary, both triangle legs, and a directed displacement arrow.
+Speed is the great-circle central angle between boundary centers divided by
+elapsed hours, in degrees/hour; direction is the initial spherical bearing.
+The directed map arc follows that same great circle. Longitude/latitude triangle
+guides are optional and do not determine speed. Centers retain the halfway point
+along the manually drawn longitude/latitude polyline. PNG, CSV, and annotation
+JSON export is optional.
+
 ## Run in Google Colab
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/main/notebooks/00_examples_and_run.ipynb)
