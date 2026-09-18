@@ -21,6 +21,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from app.progress_bar import ProgressBar
+from app.visualization.geomagnetic_continents import load_geomagnetic_contours
 from app.visualization.geo_utils import (
     geographic_to_magnetic,
     geomagnetic_lines,
@@ -417,6 +418,247 @@ def _save_figure_without_empty_margins(fig: Figure, save_path: str) -> None:
     mpl_image.imsave(save_path, pixels[top:bottom, left:right], dpi=fig.dpi)
 
 
+def _plot_reverse_polar_segment(ax, longitude, latitude, **kwargs) -> None:
+    """Plot one geographic line segment on the reversed north-polar axes."""
+    longitude = np.asarray(longitude, dtype=float)
+    latitude = np.asarray(latitude, dtype=float)
+    valid = np.isfinite(longitude) & np.isfinite(latitude) & (latitude >= 0)
+    if not np.any(valid):
+        return
+
+    start = None
+    for index, is_valid in enumerate(valid):
+        discontinuity = (
+            index > 0
+            and is_valid
+            and valid[index - 1]
+            and abs(longitude[index] - longitude[index - 1]) > 180
+        )
+        if not is_valid or discontinuity:
+            if start is not None and index - start >= 2:
+                theta = np.deg2rad(longitude[start:index])
+                radius = 90 - latitude[start:index]
+                ax.plot(theta, radius, **kwargs)
+            start = index if is_valid else None
+        elif start is None:
+            start = index
+
+    if start is not None and len(longitude) - start >= 2:
+        theta = np.deg2rad(longitude[start:])
+        radius = 90 - latitude[start:]
+        ax.plot(theta, radius, **kwargs)
+
+
+def _iter_coastline_coordinates(geometry):
+    if hasattr(geometry, "geoms"):
+        for part in geometry.geoms:
+            yield from _iter_coastline_coordinates(part)
+    elif hasattr(geometry, "coords"):
+        coordinates = np.asarray(geometry.coords)
+        if len(coordinates) >= 2:
+            yield coordinates[:, 0], coordinates[:, 1]
+
+
+def _draw_reverse_polar_continents(
+    ax,
+    *,
+    magnetic_coordinates: bool,
+    magnetic_local_time: bool,
+    plot_time: datetime | None,
+) -> None:
+    if magnetic_coordinates:
+        for contour in load_geomagnetic_contours():
+            longitude = contour[:, 0].copy()
+            if magnetic_local_time:
+                longitude = magnetic_longitude_to_mlt_longitude(longitude, plot_time)
+            _plot_reverse_polar_segment(
+                ax,
+                longitude,
+                contour[:, 1],
+                color="black",
+                linewidth=0.6,
+                zorder=2,
+            )
+        return
+
+    try:
+        geometries = feature.COASTLINE.geometries()
+        for geometry in geometries:
+            for longitude, latitude in _iter_coastline_coordinates(geometry):
+                _plot_reverse_polar_segment(
+                    ax,
+                    longitude,
+                    latitude,
+                    color="black",
+                    linewidth=0.6,
+                    zorder=2,
+                )
+    except Exception:
+        # Coastlines are a visual aid; point data remain usable if Cartopy's
+        # Natural Earth cache is unavailable.
+        pass
+
+
+def _plot_reverse_north_polar_map_on_ax(
+    ax,
+    arr,
+    *,
+    title,
+    cmap,
+    point_size,
+    plot_time,
+    colorbar_limits,
+    colorbar_label,
+    show_colorbar,
+    cbar_ax,
+    show_noon_line,
+    noon_line_color,
+    noon_line_linestyle,
+    noon_line_linewidth,
+    noon_line_alpha,
+    hide_zero_values,
+    high_values_on_top,
+    magnetic_coordinates,
+    magnetic_local_time,
+    geomagnetic_levels,
+    show_geomagnetic_lines,
+):
+    """Draw a north-polar map with the equator at the centre and pole outside."""
+    if plot_time is None:
+        raise ValueError("plot_time is required for a reversed polar map.")
+
+    if magnetic_local_time:
+        # 12 MLT (0° plot longitude) at right; 18 MLT at top; 06 MLT at bottom.
+        ax.set_theta_zero_location("E")
+        ax.set_theta_direction(1)
+    else:
+        # Geographic / geomagnetic longitude: 0° at top, 90° at right,
+        # and -90° at left.
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+    ax.set_ylim(90, 0)
+    # Reversed radius: r = 90° - latitude.  Keep latitude circles every 30°.
+    ax.set_yticks([30, 60])
+    ax.set_yticklabels([])
+    longitude_ticks = np.arange(-180, 180, 45)
+    if magnetic_local_time:
+        longitude_labels = [f"{int(((lon / 15) + 12) % 24):02d}" for lon in longitude_ticks]
+    else:
+        longitude_labels = [f"{int(lon):d}°" for lon in longitude_ticks]
+    ax.set_thetagrids(longitude_ticks % 360, labels=[""] * len(longitude_ticks))
+    ax.grid(linewidth=0.6, color="gray", alpha=0.5, linestyle="--")
+
+    # Keep angular labels inside the circular map boundary.  Matplotlib's
+    # default polar tick labels sit outside the axes and collide with titles
+    # and the colorbar after export.
+    for longitude, label in zip(longitude_ticks, longitude_labels):
+        ax.text(
+            np.deg2rad(longitude),
+            5,
+            label,
+            ha="center",
+            va="center",
+            fontsize=10,
+            zorder=20,
+            clip_on=True,
+            bbox={
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.8,
+                "pad": 0.6,
+            },
+        )
+
+    for radius, label in ((30, "60°"), (60, "30°")):
+        ax.text(
+            np.deg2rad(202.5),
+            radius,
+            label,
+            ha="center",
+            va="center",
+            fontsize=10,
+            zorder=20,
+            clip_on=True,
+            bbox={
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.8,
+                "pad": 0.6,
+            },
+        )
+
+    _draw_reverse_polar_continents(
+        ax,
+        magnetic_coordinates=magnetic_coordinates,
+        magnetic_local_time=magnetic_local_time,
+        plot_time=plot_time,
+    )
+
+    if show_noon_line:
+        noon_longitude = 0.0 if magnetic_local_time else _solar_noon_longitude(plot_time)
+        ax.plot(
+            np.full(181, np.deg2rad(noon_longitude)),
+            np.linspace(90, 0, 181),
+            color=noon_line_color,
+            linestyle=noon_line_linestyle,
+            linewidth=noon_line_linewidth,
+            alpha=noon_line_alpha,
+            zorder=4,
+        )
+
+    if show_geomagnetic_lines:
+        for level in geomagnetic_levels:
+            if level <= 0:
+                continue
+            ax.plot(
+                np.linspace(0, 2 * np.pi, 361),
+                np.full(361, 90 - float(level)),
+                color="black",
+                linestyle="--",
+                linewidth=0.6,
+                zorder=2.5,
+            )
+
+    points = arr
+    if hide_zero_values:
+        points = points[points["vals"] != 0]
+    if high_values_on_top:
+        points = np.sort(points, order="vals")
+
+    plot_longitude = points["lon"]
+    plot_latitude = points["lat"]
+    if magnetic_coordinates:
+        plot_latitude, plot_longitude = geographic_to_magnetic(
+            plot_latitude,
+            plot_longitude,
+            plot_time,
+        )
+        if magnetic_local_time:
+            plot_longitude = magnetic_longitude_to_mlt_longitude(plot_longitude, plot_time)
+
+    northern_points = (plot_latitude >= 0) & (plot_latitude <= 90)
+    sctr = ax.scatter(
+        np.deg2rad(plot_longitude[northern_points]),
+        90 - plot_latitude[northern_points],
+        c=points["vals"][northern_points],
+        alpha=1,
+        marker="s",
+        s=point_size,
+        zorder=3,
+        vmin=colorbar_limits[0],
+        vmax=colorbar_limits[1],
+        cmap=cmap,
+    )
+
+    if show_colorbar:
+        cbar = ax.figure.colorbar(sctr, cax=cbar_ax, ax=ax)
+        if colorbar_label:
+            cbar.set_label(colorbar_label)
+    if title is not None:
+        ax.set_title(title, y=1.05, pad=0)
+    return sctr
+
+
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: Iterable[datetime | str] | datetime | str | pd.Timestamp | None = None,
@@ -437,6 +679,7 @@ def plot_map(
     magnetic_coordinates: bool = False,
     magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
+    reverse_polar_radius: bool = False,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
@@ -479,6 +722,10 @@ def plot_map(
     plot_times = resolve_plot_times(data, plot_times)
     plot_times = sorted(plot_times)
     resolved_projection_names = resolve_map_projection_names(map_projection)
+    if reverse_polar_radius and resolved_projection_names != ["north_pole"]:
+        raise ValueError(
+            "reverse_polar_radius is supported only with map_projection='north_pole'."
+        )
     paired_projection_panel = len(resolved_projection_names) > 1
     is_polar_projection = all(
         projection_name in {"north_pole", "south_pole"}
@@ -564,7 +811,11 @@ def plot_map(
                 if flat_idx >= len(plot_times):
                     ax = fig.add_subplot(
                         grid[row_idx, col_idx],
-                        projection=resolve_map_projection(projection_name),
+                        projection=(
+                            "polar"
+                            if reverse_polar_radius
+                            else resolve_map_projection(projection_name)
+                        ),
                     )
                     ax.axis("off")
                     continue
@@ -573,7 +824,11 @@ def plot_map(
 
             ax = fig.add_subplot(
                 grid[row_idx, col_idx],
-                projection=resolve_map_projection(projection_name),
+                projection=(
+                    "polar"
+                    if reverse_polar_radius
+                    else resolve_map_projection(projection_name)
+                ),
             )
             axis_specs.append((ax, time, projection_name, flat_idx))
 
@@ -618,6 +873,7 @@ def plot_map(
             show_country_borders=False,
             show_lakes=product.hdf_name != "tec_adjusted",
             show_rivers=product.hdf_name != "tec_adjusted",
+            reverse_polar_radius=reverse_polar_radius,
         )
 
         if show_panel_labels:
@@ -707,6 +963,7 @@ def plot_all_maps(
     magnetic_coordinates: bool = False,
     magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
+    reverse_polar_radius: bool = False,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
     show_progress: bool = True,
@@ -784,6 +1041,7 @@ def plot_all_maps(
                     magnetic_coordinates=magnetic_coordinates,
                     magnetic_local_time=magnetic_local_time,
                     map_extent=map_extent,
+                    reverse_polar_radius=reverse_polar_radius,
                 )
                 wrote_any = True
                 processed_maps += group_size
@@ -834,7 +1092,7 @@ def plot_simurg_map_on_ax(
     colorbar_label: str | None = None,
     show_terminator=True,
     show_geomagnetic_lines=True,
-    geomagnetic_levels=[-60, -15, 0, 15, 60],
+    geomagnetic_levels=[-60, -30, 0, 30, 60],
     show_colorbar=True,
     cbar_ax=None,
     show_noon_line=False,
@@ -855,6 +1113,7 @@ def plot_simurg_map_on_ax(
     show_country_borders: bool = False,
     show_lakes: bool = True,
     show_rivers: bool = True,
+    reverse_polar_radius: bool = False,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
@@ -869,6 +1128,35 @@ def plot_simurg_map_on_ax(
             raise ValueError("plot_time is required for MLT coordinates.")
 
     resolved_projection = map_projection or projection
+    if reverse_polar_radius:
+        if normalize_map_projection(resolved_projection) != "north_pole":
+            raise ValueError(
+                "reverse_polar_radius is supported only with map_projection='north_pole'."
+            )
+        return _plot_reverse_north_polar_map_on_ax(
+            ax,
+            arr,
+            title=title,
+            cmap=cmap,
+            point_size=point_size,
+            plot_time=plot_time,
+            colorbar_limits=colorbar_limits,
+            colorbar_label=colorbar_label,
+            show_colorbar=show_colorbar,
+            cbar_ax=cbar_ax,
+            show_noon_line=show_noon_line,
+            noon_line_color=noon_line_color,
+            noon_line_linestyle=noon_line_linestyle,
+            noon_line_linewidth=noon_line_linewidth,
+            noon_line_alpha=noon_line_alpha,
+            hide_zero_values=hide_zero_values,
+            high_values_on_top=high_values_on_top,
+            magnetic_coordinates=magnetic_coordinates,
+            magnetic_local_time=magnetic_local_time,
+            geomagnetic_levels=geomagnetic_levels,
+            show_geomagnetic_lines=show_geomagnetic_lines,
+        )
+
     prepare_layout(
         ax,
         lon_locator,

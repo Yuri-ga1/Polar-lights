@@ -553,6 +553,7 @@ class PlotRenderer:
             show_country_borders=False,
             show_lakes=product_type != "tec_adjusted",
             show_rivers=product_type != "tec_adjusted",
+            reverse_polar_radius=params.get("reverse_polar_radius", False),
         )
 
     def plot_map_panel(
@@ -581,17 +582,26 @@ class PlotRenderer:
         axes: list[plt.Axes] = []
         cbar_ax = fig.add_subplot(inner_grid[0, -1])
         map_projection = panel.params.get("map_projection", panel.params.get("projection"))
+        reverse_polar_radius = panel.params.get("reverse_polar_radius", False)
 
         for map_idx, plot_time in enumerate(map_times):
             if len(map_times) == 1 and ncols_requested > 1:
                 ax = fig.add_subplot(
                     inner_grid[0, :ncols],
-                    projection=resolve_map_projection(map_projection),
+                    projection=(
+                        "polar"
+                        if reverse_polar_radius
+                        else resolve_map_projection(map_projection)
+                    ),
                 )
             else:
                 ax = fig.add_subplot(
                     inner_grid[0, map_idx],
-                    projection=resolve_map_projection(map_projection),
+                    projection=(
+                        "polar"
+                        if reverse_polar_radius
+                        else resolve_map_projection(map_projection)
+                    ),
                 )
 
             params = dict(panel.params)
