@@ -69,6 +69,28 @@ Downloaded data files are stored in:
 
 - `files/`
 
+## SDO/HMI solar disk with NOAA active regions
+
+```bash
+poetry install
+poetry run python -m app.pipeline.solar_disk_pipeline --date 2026-01-20 --time 12:00:00
+```
+
+This downloads the nearest Helioviewer HMI continuum JP2 and the historical NOAA
+Solar Region Summary, rotates region coordinates to the HMI WCS epoch, and saves
+an annotated PNG plus source/coordinate metadata in `results/2026-01-20/`.
+Subsequent runs use the file cache; `--force-download` refreshes it.
+
+```python
+from app.pipeline.solar_disk_pipeline import SolarDiskConfig, build_solar_disk
+
+fig, ax = build_solar_disk(SolarDiskConfig(requested_time="2026-01-20T12:00:00Z"))
+```
+
+See [the solar disk section in the main notebook](notebooks/00_examples_and_run.ipynb) for multiple dates and
+`PlotConstructor` integration, and [source and coordinate details](docs/solar_disk.md)
+for the scientific conventions, configuration, and control-run verification.
+
 To render every available ROTI or adjusted TEC map from a notebook, stream the
 SIMuRG slices into `plot_all_maps`. The helper splits output into several PNG
 files instead of trying to place the whole time range into one oversized figure.
