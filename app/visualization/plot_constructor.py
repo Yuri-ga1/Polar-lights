@@ -182,7 +182,11 @@ class PlotConstructor:
             for panel in panels
         )
 
-        fig = plt.figure(figsize=figsize or (16, default_height))
+        has_solar_panels = any(panel.descriptor.plot_type == "solar_disk" for panel in panels)
+        fig = plt.figure(
+            figsize=figsize or (16, default_height),
+            layout="constrained" if has_solar_panels else None,
+        )
 
         outer_grid = fig.add_gridspec(
             len(panels),
@@ -196,6 +200,19 @@ class PlotConstructor:
 
         for idx, panel in enumerate(panels):
             subplot_spec = outer_grid[idx]
+
+            if panel.descriptor.plot_type == "solar_disk":
+                from app.solar.models import SolarDiskData
+                from app.visualization.solar_disk_plotter import plot_solar_disk_on_ax
+
+                if not isinstance(panel.data, SolarDiskData):
+                    raise ValueError("Solar disk panel requires prepare_solar_disk(config).")
+                ax = fig.add_subplot(subplot_spec, projection=panel.data.solar_map)
+                plot_solar_disk_on_ax(ax, panel.data)
+                self._add_panel_label(ax, self._panel_label(label_index, label_language))
+                label_index += 1
+                axes.append(ax)
+                continue
 
             if panel.descriptor.plot_type == "map" and panel.map_times:
                 map_axes = self.renderer.plot_map_panel(
@@ -260,5 +277,6 @@ class PlotConstructor:
 
             axes.append(ax)
 
-        fig.tight_layout()
+        if not has_solar_panels:
+            fig.tight_layout()
         return fig, axes

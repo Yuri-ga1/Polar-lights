@@ -28,6 +28,9 @@ class PlotRegistry:
     def resolve_plot_type(cls, name: str, fallback: str = "timeseries") -> str:
         normalized = cls.normalize_name(name)
 
+        if normalized in {"solar disk", "hmi disk"}:
+            return "solar_disk"
+
         if normalized in MAP_PLOT_NAMES:
             return "map"
 
