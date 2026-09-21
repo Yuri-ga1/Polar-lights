@@ -283,7 +283,7 @@ def _draw_boundary(ax, points, central_longitude, color, label, center=None):
 
 def plot_plume_map(
     data, time, line=None, *, extent=None, central_longitude=0,
-    color_limits=(0, 80), point_size=6, ax=None,
+    color_limits=(0, 80), point_size=6, show_colorbar=True, ax=None,
 ):
     """Plot TEC adjusted at ``time``, optionally with a manual geographic line.
 
@@ -307,7 +307,8 @@ def plot_plume_map(
     plot_simurg_map_on_ax(
         ax, data[key], title=f"TEC adjusted · {time:%Y-%m-%d %H:%M:%S} UTC",
         plot_time=time, colorbar_limits=color_limits, colorbar_label="TEC adjusted, TECU",
-        point_size=point_size, show_terminator=False, show_geomagnetic_lines=False,
+        point_size=point_size, show_colorbar=show_colorbar,
+        show_terminator=False, show_geomagnetic_lines=False,
     )
     # Use fixed overview coastlines/borders: zooming should not trigger downloads
     # of additional high-resolution lakes and rivers while manually annotating.
@@ -362,7 +363,11 @@ def plot_motion_step(data, motion: PlumeMotion, step=3, *, ax=None, **map_kwargs
     if step not in (0, 1, 2, 3):
         raise ValueError("step должен быть 0, 1, 2 или 3.")
     central = map_kwargs.get("central_longitude", 0)
-    fig, ax = plot_plume_map(data, motion.time2, ax=ax, **map_kwargs)
+    # Панель шага входит в состав общей фигуры; отдельный colorbar каждой
+    # карте здесь не нужен. Общий colorbar добавляется в ячейке 8 тетради.
+    map_kwargs = dict(map_kwargs)
+    map_kwargs.pop("show_colorbar", None)
+    fig, ax = plot_plume_map(data, motion.time2, ax=ax, show_colorbar=False, **map_kwargs)
     _draw_boundary(ax, motion.line1, central, "magenta", f"t₁: {motion.time1:%m-%d %H:%M:%S}", motion.center1)
     _draw_boundary(ax, motion.line2, central, "cyan", f"t₂: {motion.time2:%m-%d %H:%M:%S}", motion.center2)
     a, corner, b = _plot_coordinates([motion.center1, motion.corner, motion.center2], central)
