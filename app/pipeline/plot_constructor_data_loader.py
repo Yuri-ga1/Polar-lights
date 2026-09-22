@@ -32,6 +32,7 @@ from app.visualization.keogram_plotter import (
     build_keogram_matrix_from_slices,
     resolve_keogram_times,
 )
+from app.pipeline.keogram_coordinates import convert_keogram_slices_to_magnetic
 
 from app.ionosonde.ionosonde_downloader import IonosondeDownloader
 from app.ionosonde.ionosonde_processor import IonosondeProcessor
@@ -421,16 +422,22 @@ class PlotConstructorDataLoader:
         if not available_times:
             return None
 
-        day_start = self.start_dt
-        day_finish = self.end_dt
+        day_start, day_finish = self._resolve_keogram_datetime_range(params)
         keogram_times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
 
+        time_slices = processor.iter_slices(
+            target_date,
+            product_type=DataProduct.ROTI,
+            times=keogram_times,
+        )
+        magnetic_coordinates = params.get("magnetic_coordinates", False)
+        if not isinstance(magnetic_coordinates, bool):
+            raise ValueError("Keogram magnetic_coordinates must be True or False.")
+        if magnetic_coordinates:
+            time_slices = convert_keogram_slices_to_magnetic(time_slices)
+
         matrix, times, lat_centers = build_keogram_matrix_from_slices(
-            time_slices=processor.iter_slices(
-                target_date,
-                product_type=DataProduct.ROTI,
-                times=keogram_times,
-            ),
+            time_slices=time_slices,
             available_times=available_times,
             day_start=day_start,
             day_finish=day_finish,
@@ -443,6 +450,21 @@ class PlotConstructorDataLoader:
             lat_centers=lat_centers,
             cfg=cfg,
         )
+
+    def _resolve_keogram_datetime_range(
+        self, params: dict[str, Any]
+    ) -> tuple[datetime, datetime]:
+        """Get a per-keogram range, falling back to the constructor range."""
+        raw_start = params.get("date_start", self.start_dt)
+        raw_finish = params.get("date_end", self.end_dt)
+        day_start = self._parse_plot_time(raw_start)
+        day_finish = self._parse_plot_time(raw_finish)
+
+        if day_finish < day_start:
+            raise ValueError(
+                "Keogram date_end must be greater than or equal to date_start."
+            )
+        return day_start, day_finish
 
     def _load_adjusted_tec(self, params: dict[str, Any] | None = None):
         params = params or {}

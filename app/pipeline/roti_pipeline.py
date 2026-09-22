@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader
@@ -14,6 +14,7 @@ from app.visualization.keogram_plotter import (
     resolve_keogram_times,
 )
 from app.visualization.roti_plotter import plot_map
+from app.pipeline.keogram_coordinates import convert_keogram_slices_to_magnetic
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,16 @@ def run_roti_pipeline(
     plots_dir: str,
     simurg_client: SimurgClient | None,
     map_projection: str | None = None,
+    keogram_magnetic_coordinates: bool = False,
+    keogram_date_start: date | datetime | None = None,
+    keogram_date_end: date | datetime | None = None,
 ) -> None:
+    """Build ROTI maps and a keogram.
+
+    ``keogram_magnetic_coordinates`` switches the keogram input from geographic
+    to AACGM coordinates.  ``keogram_date_start`` and ``keogram_date_end`` can
+    narrow its time interval independently from the maps.
+    """
     if simurg_client is None:
         logger.warning("SimurgClient is not configured. ROTI pipeline skipped.")
         return
@@ -78,16 +88,20 @@ def run_roti_pipeline(
         )
 
     cfg = KeogramConfig()
-    day_start = min(available_times).date()
-    day_finish = max(available_times).date()
+    day_start = keogram_date_start or min(available_times).date()
+    day_finish = keogram_date_end or max(available_times).date()
     keogram_times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
 
+    time_slices = processor.iter_slices(
+        file_start_date,
+        product_type=DataProduct.ROTI,
+        times=keogram_times,
+    )
+    if keogram_magnetic_coordinates:
+        time_slices = convert_keogram_slices_to_magnetic(time_slices)
+
     matrix, times, lat_centers = build_keogram_matrix_from_slices(
-        time_slices=processor.iter_slices(
-            file_start_date,
-            product_type=DataProduct.ROTI,
-            times=keogram_times,
-        ),
+        time_slices=time_slices,
         available_times=available_times,
         day_start=day_start,
         day_finish=day_finish,
