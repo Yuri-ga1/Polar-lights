@@ -659,6 +659,123 @@ def _plot_reverse_north_polar_map_on_ax(
     return sctr
 
 
+def _plot_l_shell_mlt_north_polar_map_on_ax(
+    ax,
+    arr,
+    *,
+    title,
+    cmap,
+    point_size,
+    plot_time,
+    colorbar_limits,
+    colorbar_label,
+    show_colorbar,
+    cbar_ax,
+    hide_zero_values,
+    high_values_on_top,
+    l_shell_max,
+    l_shell_ticks,
+):
+    """Draw a north-polar AVTEC/ROTI map in L-shell number and MLT coordinates."""
+    if plot_time is None:
+        raise ValueError("plot_time is required for an L-shell / MLT map.")
+    if l_shell_max <= 1:
+        raise ValueError("l_shell_max must be greater than 1.")
+
+    ax.set_theta_zero_location("E")
+    ax.set_theta_direction(1)
+    ax.set_ylim(1, l_shell_max)
+
+    longitude_ticks = np.arange(-180, 180, 45)
+    longitude_labels = [
+        f"{int(((longitude / 15) + 12) % 24):02d}"
+        for longitude in longitude_ticks
+    ]
+    ax.set_thetagrids(longitude_ticks % 360, labels=[""] * len(longitude_ticks))
+
+    ticks = tuple(float(tick) for tick in l_shell_ticks)
+    if not ticks:
+        raise ValueError("l_shell_ticks must contain at least one L-shell number.")
+    if any(tick < 1 or tick > l_shell_max for tick in ticks):
+        raise ValueError("l_shell_ticks must be within 1..l_shell_max.")
+    ax.set_rgrids(ticks, labels=[f"L={tick:g}" for tick in ticks], angle=202.5)
+    ax.grid(linewidth=0.6, color="gray", alpha=0.5, linestyle="--")
+
+    # Matplotlib suppresses the radial label at the inner boundary.  Add it
+    # explicitly so the complete L-shell scale remains visible.
+    if 1.0 in ticks:
+        ax.text(
+            np.deg2rad(202.5),
+            1 + 0.04 * (l_shell_max - 1),
+            "L=1",
+            ha="center",
+            va="center",
+            fontsize=10,
+            zorder=20,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 0.6},
+        )
+
+    # Keep MLT labels inside the circle, clear of the title and colorbar.
+    label_radius = l_shell_max - 0.05 * (l_shell_max - 1)
+    for longitude, label in zip(longitude_ticks, longitude_labels):
+        ax.text(
+            np.deg2rad(longitude),
+            label_radius,
+            label,
+            ha="center",
+            va="center",
+            fontsize=10,
+            zorder=20,
+            clip_on=True,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.8, "pad": 0.6},
+        )
+
+    points = arr
+    if hide_zero_values:
+        points = points[points["vals"] != 0]
+    if high_values_on_top:
+        points = np.sort(points, order="vals")
+
+    magnetic_latitude, magnetic_longitude = geographic_to_magnetic(
+        points["lat"],
+        points["lon"],
+        plot_time,
+    )
+    mlt_longitude = magnetic_longitude_to_mlt_longitude(
+        magnetic_longitude,
+        plot_time,
+    )
+    cosine = np.cos(np.deg2rad(magnetic_latitude))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        l_shell = np.reciprocal(cosine**2)
+    northern_points = (
+        (magnetic_latitude >= 0)
+        & np.isfinite(l_shell)
+        & (l_shell >= 1)
+        & (l_shell <= l_shell_max)
+    )
+    sctr = ax.scatter(
+        np.deg2rad(mlt_longitude[northern_points]),
+        l_shell[northern_points],
+        c=points["vals"][northern_points],
+        alpha=1,
+        marker="s",
+        s=point_size,
+        zorder=3,
+        vmin=colorbar_limits[0],
+        vmax=colorbar_limits[1],
+        cmap=cmap,
+    )
+
+    if show_colorbar:
+        cbar = ax.figure.colorbar(sctr, cax=cbar_ax, ax=ax)
+        if colorbar_label:
+            cbar.set_label(colorbar_label)
+    if title is not None:
+        ax.set_title(title, y=1.05, pad=0)
+    return sctr
+
+
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: Iterable[datetime | str] | datetime | str | pd.Timestamp | None = None,
@@ -680,6 +797,9 @@ def plot_map(
     magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
     reverse_polar_radius: bool = False,
+    l_shell_coordinates: bool = False,
+    l_shell_max: float = 6.0,
+    l_shell_ticks: Iterable[float] | None = None,
 ) -> plt.Figure:
     """
     Plotting data on globe (or part of globe).
@@ -687,6 +807,13 @@ def plot_map(
 
     if magnetic_local_time:
         magnetic_coordinates = True
+    if l_shell_coordinates:
+        magnetic_coordinates = True
+        magnetic_local_time = True
+    if reverse_polar_radius and l_shell_coordinates:
+        raise ValueError(
+            "reverse_polar_radius cannot be combined with l_shell_coordinates."
+        )
 
     product = _resolve_product(product_type)
     product_title = (
@@ -694,6 +821,8 @@ def plot_map(
         if magnetic_local_time
         else product.long_name
     )
+    if l_shell_coordinates:
+        product_title = f"{product.long_name} - L-shell / MLT"
     effective_hide_zero_values = (
         product.hdf_name != "tec_adjusted"
         if hide_zero_values is None
@@ -726,13 +855,27 @@ def plot_map(
         raise ValueError(
             "reverse_polar_radius is supported only with map_projection='north_pole'."
         )
+    if l_shell_coordinates and resolved_projection_names != ["north_pole"]:
+        raise ValueError(
+            "l_shell_coordinates is supported only with map_projection='north_pole'."
+        )
+    resolved_l_shell_ticks = tuple(
+        float(tick)
+        for tick in (
+            range(1, int(l_shell_max) + 1)
+            if l_shell_ticks is None
+            else l_shell_ticks
+        )
+    )
     paired_projection_panel = len(resolved_projection_names) > 1
     is_polar_projection = all(
         projection_name in {"north_pole", "south_pole"}
         for projection_name in resolved_projection_names
     )
     is_paired_polar_projection = paired_projection_panel and is_polar_projection
-    effective_show_noon_line = show_noon_line or is_polar_projection
+    effective_show_noon_line = (
+        (show_noon_line or is_polar_projection) and not l_shell_coordinates
+    )
 
     if paired_projection_panel:
         ncols = len(resolved_projection_names)
@@ -813,7 +956,7 @@ def plot_map(
                         grid[row_idx, col_idx],
                         projection=(
                             "polar"
-                            if reverse_polar_radius
+                            if reverse_polar_radius or l_shell_coordinates
                             else resolve_map_projection(projection_name)
                         ),
                     )
@@ -826,7 +969,7 @@ def plot_map(
                 grid[row_idx, col_idx],
                 projection=(
                     "polar"
-                    if reverse_polar_radius
+                    if reverse_polar_radius or l_shell_coordinates
                     else resolve_map_projection(projection_name)
                 ),
             )
@@ -874,6 +1017,9 @@ def plot_map(
             show_lakes=product.hdf_name != "tec_adjusted",
             show_rivers=product.hdf_name != "tec_adjusted",
             reverse_polar_radius=reverse_polar_radius,
+            l_shell_coordinates=l_shell_coordinates,
+            l_shell_max=l_shell_max,
+            l_shell_ticks=resolved_l_shell_ticks,
         )
 
         if show_panel_labels:
@@ -964,6 +1110,9 @@ def plot_all_maps(
     magnetic_local_time: bool = False,
     map_extent: tuple[float, float, float, float] | list[float] | None = None,
     reverse_polar_radius: bool = False,
+    l_shell_coordinates: bool = False,
+    l_shell_max: float = 6.0,
+    l_shell_ticks: Iterable[float] | None = None,
     keep_figures: bool = False,
     collect_garbage_every: int = 1,
     show_progress: bool = True,
@@ -1042,6 +1191,9 @@ def plot_all_maps(
                     magnetic_local_time=magnetic_local_time,
                     map_extent=map_extent,
                     reverse_polar_radius=reverse_polar_radius,
+                    l_shell_coordinates=l_shell_coordinates,
+                    l_shell_max=l_shell_max,
+                    l_shell_ticks=l_shell_ticks,
                 )
                 wrote_any = True
                 processed_maps += group_size
@@ -1114,6 +1266,9 @@ def plot_simurg_map_on_ax(
     show_lakes: bool = True,
     show_rivers: bool = True,
     reverse_polar_radius: bool = False,
+    l_shell_coordinates: bool = False,
+    l_shell_max: float = 6.0,
+    l_shell_ticks: Iterable[float] | None = None,
 ):
     ...
     """Draw one SIMuRG map (ROTI/Adjusted TEC-like structured array) on a given axis."""
@@ -1126,6 +1281,12 @@ def plot_simurg_map_on_ax(
         magnetic_coordinates = True
         if plot_time is None:
             raise ValueError("plot_time is required for MLT coordinates.")
+
+    if l_shell_coordinates:
+        magnetic_coordinates = True
+        magnetic_local_time = True
+        if plot_time is None:
+            raise ValueError("plot_time is required for an L-shell / MLT map.")
 
     resolved_projection = map_projection or projection
     if reverse_polar_radius:
@@ -1155,6 +1316,36 @@ def plot_simurg_map_on_ax(
             magnetic_local_time=magnetic_local_time,
             geomagnetic_levels=geomagnetic_levels,
             show_geomagnetic_lines=show_geomagnetic_lines,
+        )
+
+    if l_shell_coordinates:
+        if normalize_map_projection(resolved_projection) != "north_pole":
+            raise ValueError(
+                "l_shell_coordinates is supported only with map_projection='north_pole'."
+            )
+        resolved_l_shell_ticks = tuple(
+            float(tick)
+            for tick in (
+                range(1, int(l_shell_max) + 1)
+                if l_shell_ticks is None
+                else l_shell_ticks
+            )
+        )
+        return _plot_l_shell_mlt_north_polar_map_on_ax(
+            ax,
+            arr,
+            title=title,
+            cmap=cmap,
+            point_size=point_size,
+            plot_time=plot_time,
+            colorbar_limits=colorbar_limits,
+            colorbar_label=colorbar_label,
+            show_colorbar=show_colorbar,
+            cbar_ax=cbar_ax,
+            hide_zero_values=hide_zero_values,
+            high_values_on_top=high_values_on_top,
+            l_shell_max=l_shell_max,
+            l_shell_ticks=resolved_l_shell_ticks,
         )
 
     prepare_layout(
