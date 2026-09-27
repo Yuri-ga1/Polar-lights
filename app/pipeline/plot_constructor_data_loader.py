@@ -42,6 +42,7 @@ from app.nmdb.nmdb_processor import NmdbProcessor
 
 from app.omni.omni_downloader import OmniDownloader
 from app.omni.omni_processor import OmniProcessor
+from app.storage.data_paths import DataPaths
 
 
 @dataclass
@@ -65,9 +66,9 @@ class PlotConstructorDataLoader:
         self.primary_date_str = self.start_dt.strftime("%Y-%m-%d")
         self.download_dates = self._resolve_daily_dates(self.start_dt, self.end_dt)
 
-        parents_dir = Path.cwd().parent
-        download_dir = parents_dir / config.base_dir
-        self.date_dir = os.path.join(download_dir, self.primary_date_str)
+        self.paths = DataPaths.from_root(config.base_dir)
+        # Kept as a compatibility alias for helper code; it is never date based.
+        self.date_dir = str(self.paths.root)
 
     @staticmethod
     def _parse_datetime(value: str) -> datetime:
@@ -247,8 +248,7 @@ class PlotConstructorDataLoader:
         return SimurgClient(email=resolved_email)
 
     def _load_kp(self):
-        out_dir = os.path.join(self.date_dir, "kp")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("kp"))
 
         for date_str in self.download_dates:
             self._safe_download(
@@ -262,8 +262,7 @@ class PlotConstructorDataLoader:
         return self._filter_by_datetime_range(kp_df)
 
     def _load_dst(self):
-        out_dir = os.path.join(self.date_dir, "kyoto")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("kyoto"))
 
         for date_str in self.download_dates:
             self._safe_download(
@@ -275,13 +274,12 @@ class PlotConstructorDataLoader:
     def _load_roti(self, params: dict[str, Any] | None = None):
         params = params or {}
         requested_times = self._resolve_requested_times(params)
-        out_dir = os.path.join(self.date_dir, "simurg")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.map_dir("roti"))
 
         # Search all local SIMuRG directories first.  The directory date is
         # not authoritative: a three-day result is named by its first day and
         # may have been cached while constructing a neighbouring date.
-        local_root = Path(self.date_dir).parent
+        local_root = self.paths.map_dir("roti")
         processor = SimurgProcessor(folder_path=local_root)
         required_times = requested_times or self._range_times_for_roti()
         selected_files, missing_times = self._select_roti_files(
@@ -392,8 +390,7 @@ class PlotConstructorDataLoader:
             print("SIMURG email is missing, skip ROTI keogram download")
             return None
 
-        out_dir = os.path.join(self.date_dir, "simurg")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.map_dir("roti"))
 
         self._safe_download(
             lambda: RotiDownloader(client=client, out_dir=out_dir).download(
@@ -474,8 +471,7 @@ class PlotConstructorDataLoader:
             print("SIMURG email is missing, skip adjusted TEC download")
             return None
 
-        out_dir = os.path.join(self.date_dir, "simurg")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.map_dir("tec_adjusted"))
 
         processor = SimurgProcessor(folder_path=out_dir)
 
@@ -516,8 +512,7 @@ class PlotConstructorDataLoader:
         params = params or {}
         product_type = str(params.get("product_type", "uqrg")).lower()
 
-        out_dir = os.path.join(self.date_dir, "gim")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("gim"))
 
         requested_times = self._resolve_requested_times(params)
         dates = sorted({value.strftime("%Y-%m-%d") for value in requested_times}) or self.download_dates
@@ -543,8 +538,7 @@ class PlotConstructorDataLoader:
         code = params.get("code")
         station = None if code is None else (code[0] if isinstance(code, list) else code)
 
-        out_dir = os.path.join(self.date_dir, "ionosonde")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("giro"))
 
         IonosondeDownloader(out_dir=out_dir).download(
             target_date=self.primary_date_str,
@@ -557,8 +551,7 @@ class PlotConstructorDataLoader:
         )
 
     def _load_cosmic_ray(self, params: dict[str, Any] | None = None):
-        out_dir = os.path.join(self.date_dir, "nmdb")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("nmdb"))
 
         target_date = datetime.strptime(self.primary_date_str, "%Y-%m-%d")
         start_date = target_date - timedelta(days=15)
@@ -573,8 +566,7 @@ class PlotConstructorDataLoader:
         return NmdbProcessor(folder_path=out_dir).load(self.primary_date_str)
 
     def _load_omni(self):
-        out_dir = os.path.join(self.date_dir, "omni")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("omni"))
 
         for date_str in self.download_dates:
             self._safe_download(
@@ -590,8 +582,7 @@ class PlotConstructorDataLoader:
         For PlotConstructor we need all complete calendar days included in
         DATE_START — DATE_END, not only the first date.
         """
-        out_dir = os.path.join(self.date_dir, "aurora")
-        os.makedirs(out_dir, exist_ok=True)
+        out_dir = str(self.paths.raw_source("aurora"))
 
         params = params or {}
         source = str(params.get("source", "aurorasaurus")).lower()
@@ -708,15 +699,14 @@ class PlotConstructorDataLoader:
             rows = []
             for link in links:
                 try:
-                    row = processor.process(parser.parse(link))
+                    row = processor.process(parser.parse(link), persist=False)
                 except (RuntimeError, ValueError, KeyError) as exc:
                     print(
-                        f"SpaceWeatherLive: stopping observation downloads after "
-                        f"failure at {link}: {exc}. Using observations received "
-                        f"for {day.isoformat()}."
+                        f"SpaceWeatherLive: skipping malformed observation at {link}: {exc}"
                     )
-                    break
+                    continue
                 if row.get("date") == day.isoformat():
+                    processor.to_csv(row)
                     rows.append(row)
             return rows
         finally:

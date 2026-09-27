@@ -45,7 +45,8 @@ def _build_simurg_client(config: MainPipelineConfig) -> SimurgClient | None:
 
 def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient | None) -> list[ThreadSpec]:
     target_date = date.fromisoformat(config.date_str)
-    date_download_dir = f"{config.download_base_dir}/{config.date_str}"
+    # Raw/processed/maps are shared stores, never date-nested directories.
+    date_download_dir = config.download_base_dir
     date_plots_dir = f"{config.plots_base_dir}/{config.date_str}"
     return [
         ThreadSpec(

@@ -13,6 +13,7 @@ from app.observation.observation_links_finder import ObservationLinksFinder
 from app.observation.observation_parser import ObservationParser
 from app.observation.observation_processor import ObservationProcessor
 from app.storage.hdf5_storage import ObservationHDF5Storage
+from app.storage.data_paths import DataPaths
 
 ObservationSource = Literal["aurorasaurus", "spaceweatherlive"]
 
@@ -95,7 +96,7 @@ def run_observation_workflow(
         A list of observation records included in the CSV for the given date.
     """
 
-    os.makedirs(download_dir, exist_ok=True)
+    paths = DataPaths.from_root(download_dir)
     os.makedirs(plots_dir, exist_ok=True)
 
     # Keep the source-specific CSVs independent when users switch providers.
@@ -105,7 +106,7 @@ def run_observation_workflow(
     # Keep source caches separate: otherwise changing the source would mix
     # observations from unrelated datasets in one map.
     csv_name = "aurora_data.csv" if source == "aurorasaurus" else "spaceweatherlive_aurora_data.csv"
-    csv_path = os.path.join(download_dir, csv_name)
+    csv_path = str(paths.processed_file(csv_name.removesuffix(".csv")))
 
     observations: list[dict[str, str]] = []
 
@@ -118,11 +119,11 @@ def run_observation_workflow(
 
     if source == "aurorasaurus":
         aurora_rows = [] if cached_rows else fetch_and_process_aurorasaurus(
-            date, csv_path, download_dir=download_dir, auto_download=True
+            date, csv_path, download_dir=str(paths.raw_source("aurora")), auto_download=True
         )
     else:
         aurora_rows = [] if cached_rows else _fetch_spaceweatherlive(
-            date, csv_path, download_dir
+            date, csv_path, str(paths.raw_source("aurora"))
         )
     observations.extend(aurora_rows)
 
@@ -172,15 +173,14 @@ def _fetch_spaceweatherlive(
         rows: list[dict[str, str]] = []
         for link in links:
             try:
-                row = processor.process(parser.parse(link))
+                row = processor.process(parser.parse(link), persist=False)
             except (RuntimeError, ValueError, KeyError) as exc:
                 print(
-                    f"SpaceWeatherLive: stopping observation downloads after "
-                    f"failure at {link}: {exc}. Building the map from "
-                    f"{len(rows)} already received observations."
+                    f"SpaceWeatherLive: skipping malformed observation at {link}: {exc}"
                 )
-                break
+                continue
             if row.get("date") == date_iso:
+                processor.to_csv(row)
                 rows.append(row)
         return rows
     finally:

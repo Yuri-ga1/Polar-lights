@@ -29,7 +29,7 @@ def main(
 
 
 if __name__ == "__main__":
-    date = '2026-01-19'
+    date = '2026-01-20'
     ionosonde_code = None
     cosmic_stations = None
     email = None

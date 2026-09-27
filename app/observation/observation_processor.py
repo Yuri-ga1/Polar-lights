@@ -47,19 +47,32 @@ class ObservationProcessor:
         parts = re.findall(r'[A-Z][a-z]*(?:\s+[a-z]+)*', value)
         return ";".join(part.strip() for part in parts if part.strip())
 
-    def process(self, raw: Dict[str, str]) -> Dict[str, Any]:
+    @classmethod
+    def parse_coordinates(cls, value: str) -> tuple[float, float]:
+        """Extract latitude/longitude from both old and current SWL markup."""
+        pattern = r"\d+°\s*\d+'\s*\d+\"\s*[NSEW]"
+        matches = re.findall(pattern, value or "", flags=re.IGNORECASE)
+        if len(matches) < 2:
+            raise ValueError(f"Invalid coordinates: {value!r}")
+        first, second = matches[:2]
+        values = [cls.dms_to_decimal(item.upper()) for item in (first, second)]
+        latitude = next((item for item, text in zip(values, (first, second)) if text.upper().endswith(("N", "S"))), None)
+        longitude = next((item for item, text in zip(values, (first, second)) if text.upper().endswith(("E", "W"))), None)
+        if latitude is None or longitude is None:
+            raise ValueError(f"Coordinates do not contain latitude and longitude: {value!r}")
+        return latitude, longitude
+
+    def process(self, raw: Dict[str, str], *, persist: bool = True) -> Dict[str, Any]:
         result: Dict[str, Any] = {}
         if raw.get("Time"):
             result["date"], result["time"] = self.split_datetime(raw["Time"])
         if raw.get("Duration") is not None:
             result["duration_min"] = self.duration_to_minutes(raw.get("Duration", ""))
         if raw.get("Coordinates"):
-            latitude, longitude = raw["Coordinates"].split(" / ")
-            result["lat"] = self.dms_to_decimal(latitude)
-            result["lon"] = self.dms_to_decimal(longitude)
+            result["lat"], result["lon"] = self.parse_coordinates(raw["Coordinates"])
         result["forms"] = self.split_forms(raw.get("Aurora forms", ""))
         result["colors"] = self.split_colors(raw.get("Aurora Colors", ""))
-        if self.save_path:
+        if self.save_path and persist:
             self.to_csv(result)
         return result
 

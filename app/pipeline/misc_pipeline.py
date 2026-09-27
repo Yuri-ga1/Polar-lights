@@ -13,6 +13,8 @@ from app.nmdb.nmdb_processor import NmdbProcessor
 from app.pipeline.space_weather_pipeline import prepare_space_weather_data
 from app.simurg.gim_downloader import GimDownloader
 from app.simurg.gim_processor import GimProcessor
+from app.storage.data_paths import DataPaths
+from app.storage.map_storage import HDF5MapStorage
 from app.visualization.cosmic_ray_plotter import plot_cosmic_ray_variations
 from app.visualization.gim_plotter import plot_gim_maps
 from app.visualization.ionosonde_plotter import plot_ionosonde
@@ -65,7 +67,7 @@ def run_misc_pipeline(
     ionosonde_show_extrema: bool | None = None,
     map_projection: str | None = None,
 ) -> None:
-    os.makedirs(download_dir, exist_ok=True)
+    paths = DataPaths.from_root(download_dir)
     os.makedirs(plots_dir, exist_ok=True)
 
     sw_data = prepare_space_weather_data(date_str=date_str, download_dir=download_dir)
@@ -73,11 +75,11 @@ def run_misc_pipeline(
     if sw_data.omni is not None and sw_data.dst is not None and sw_data.kp is not None:
         plot_sw_symh_dst_kp(sw_df=sw_data.omni, dst_df=sw_data.dst, kp_df=sw_data.kp, save_dir=plots_dir)
 
-    gim_dir = os.path.join(download_dir, "gim")
-    os.makedirs(gim_dir, exist_ok=True)
+    gim_dir = str(paths.raw_source("gim"))
     GimDownloader(out_dir=gim_dir).download(date_str)
     gim_data = GimProcessor(folder_path=gim_dir).load(date_str)
     if gim_data:
+        HDF5MapStorage(paths.map_file("gim")).ingest_slices(gim_data)
         plot_gim_maps(
             data=gim_data,
             plot_times=_pick_plot_times(gim_data),
@@ -85,14 +87,16 @@ def run_misc_pipeline(
             map_projection=map_projection,
         )
 
-    ionosonde_dir = os.path.join(download_dir, "ionosonde")
-    os.makedirs(ionosonde_dir, exist_ok=True)
+    ionosonde_dir = str(paths.raw_source("giro"))
     IonosondeDownloader(out_dir=ionosonde_dir).download(target_date=date_str, station=ionosonde_code)
     ionosonde_df = IonosondeProcessor(folder_path=ionosonde_dir).load(
         target_date=date_str,
         station=ionosonde_code,
     )
     if ionosonde_df is not None and not ionosonde_df.empty:
+        IonosondeProcessor(folder_path=ionosonde_dir).update_processed(
+            paths.processed_file("giro"), ionosonde_df
+        )
         plot_ionosonde(
             ionosonde_df,
             save_dir=plots_dir,
@@ -101,8 +105,7 @@ def run_misc_pipeline(
             show_extrema=ionosonde_show_extrema,
         )
 
-    nmdb_dir = os.path.join(download_dir, "nmdb")
-    os.makedirs(nmdb_dir, exist_ok=True)
+    nmdb_dir = str(paths.raw_source("nmdb"))
     target_date = datetime.strptime(date_str, "%Y-%m-%d")
     start_date = target_date - timedelta(days=15)
     end_date = target_date + timedelta(days=15)
@@ -113,7 +116,11 @@ def run_misc_pipeline(
     )
 
     cr_df = NmdbProcessor(folder_path=nmdb_dir).load(date_str)
-    kp_df = GfzProcessor(folder_path=os.path.join(download_dir, "kp")).load(date_str=date_str)
+    if cr_df is not None and not cr_df.empty:
+        NmdbProcessor(folder_path=nmdb_dir).update_processed(
+            paths.processed_file("nmdb"), cr_df
+        )
+    kp_df = sw_data.kp
     if cr_df is not None and not cr_df.empty and kp_df is not None and not kp_df.empty:
         stations_for_plot = _resolve_cosmic_stations(cr_df, cosmic_stations)
         if stations_for_plot:
