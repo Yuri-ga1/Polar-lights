@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
-from typing import Optional
+from datetime import timedelta
+from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -13,165 +14,130 @@ from app.kyoto.kyoto_dst_downloader import KyotoDstDownloader
 from app.kyoto.kyoto_dst_processor import KyotoProcessor
 from app.omni.omni_downloader import OmniDownloader
 from app.omni.omni_processor import OmniProcessor
-from app.pipeline.datetime_range import (
-    concat_dataframes,
-    filter_dataframe_by_datetime_range,
-    iter_month_anchor_dates,
-    validate_datetime_range,
-)
+from app.pipeline.datetime_range import validate_datetime_range
+from app.storage.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class SpaceWeatherPaths:
+    """Compatibility view of the canonical raw/processed layout."""
+
     base_dir: str
     omni_dir: str
     kp_dir: str
     kyoto_dir: str
+    omni_processed: Path
+    kp_processed: Path
+    kyoto_processed: Path
 
     @classmethod
     def from_base(cls, base_dir: str) -> "SpaceWeatherPaths":
+        paths = DataPaths.from_root(base_dir)
         return cls(
-            base_dir=base_dir,
-            omni_dir=os.path.join(base_dir, "omni"),
-            kp_dir=os.path.join(base_dir, "kp"),
-            kyoto_dir=os.path.join(base_dir, "kyoto"),
+            base_dir=str(paths.root),
+            omni_dir=str(paths.raw_source("omni")),
+            kp_dir=str(paths.raw_source("kp")),
+            kyoto_dir=str(paths.raw_source("kyoto")),
+            omni_processed=paths.processed_file("omni"),
+            kp_processed=paths.processed_file("kp"),
+            kyoto_processed=paths.processed_file("kyoto"),
         )
 
 
 @dataclass
 class SpaceWeatherData:
-    omni: Optional[pd.DataFrame]
-    kp: Optional[pd.DataFrame]
-    dst: Optional[pd.DataFrame]
-    omni_path: Optional[str]
-    kp_path: Optional[str]
-    dst_path: Optional[str]
+    omni: pd.DataFrame | None
+    kp: pd.DataFrame | None
+    dst: pd.DataFrame | None
+    omni_path: str | None
+    kp_path: str | None
+    dst_path: str | None
 
 
-def _ensure_output_dirs(paths: SpaceWeatherPaths) -> None:
-    os.makedirs(paths.omni_dir, exist_ok=True)
-    os.makedirs(paths.kp_dir, exist_ok=True)
-    os.makedirs(paths.kyoto_dir, exist_ok=True)
-
-
-def _safe_download(label: str, download_func) -> Optional[str]:
+def _safe_download(label: str, action: Callable[[], str]) -> str | None:
     try:
-        return download_func()
+        return action()
     except Exception as exc:
-        logger.warning("Не удалось скачать данные %s: %s", label, exc)
+        logger.warning("Не удалось скачать %s: %s", label, exc)
         return None
 
 
-def prepare_space_weather_data(
-    date_str: str,
-    download_dir: str = "files",
-) -> SpaceWeatherData:
-    """
-    Скачивает и загружает данные для дальнейшего построения графиков.
-    Возвращает DataFrame'ы и пути к файлам (если скачивание прошло успешно).
-    """
-    paths = SpaceWeatherPaths.from_base(download_dir)
-    _ensure_output_dirs(paths)
+def _omni_raw_frame(processor: OmniProcessor, raw_path: str) -> pd.DataFrame | None:
+    try:
+        raw = Path(raw_path).read_text(encoding="utf-8", errors="ignore")
+        pre = processor._extract_pre_block(raw)
+        frame = processor._parse_table(pre, processor._parse_selected_parameters(pre))
+        return None if frame.empty else frame.rename(columns={"DateTime": "datetime"})
+    except Exception as exc:
+        logger.warning("Не удалось обработать OMNI raw %s: %s", raw_path, exc)
+        return None
 
-    omni_path = _safe_download(
-        "OMNI",
-        lambda: OmniDownloader(out_dir=paths.omni_dir).download(date_str),
-    )
 
-    kp_path = _safe_download(
-        "GFZ (Kp)",
-        lambda: GfzDownloader(out_dir=paths.kp_dir).download(date_str=date_str, fmt="kp2"),
-    )
+def _retrieve_omni(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
+    processor = OmniProcessor(paths.omni_dir)
+    frames: list[pd.DataFrame] = []
+    for anchor in pd.date_range(start.normalize(), end.normalize(), freq="MS"):
+        raw_path = _safe_download("OMNI", lambda day=anchor: OmniDownloader(paths.omni_dir).download(day.date().isoformat()))
+        if raw_path:
+            frame = _omni_raw_frame(processor, raw_path)
+            if frame is not None:
+                frames.append(frame)
+    return pd.concat(frames, ignore_index=True) if frames else None
 
-    dst_path = _safe_download(
-        "Kyoto Dst",
-        lambda: KyotoDstDownloader(out_dir=paths.kyoto_dir).download(date_str),
-    )
 
-    omni_df = OmniProcessor(folder_path=paths.omni_dir).load(date_str)
+def _retrieve_kp(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
+    raw_path = _safe_download("GFZ (Kp)", lambda: GfzDownloader(paths.kp_dir).download(start_date=start.date().isoformat(), end_date=end.date().isoformat(), fmt="kp2"))
+    if not raw_path:
+        return None
+    try:
+        return GfzProcessor.to_processed_frame(GfzProcessor._load_kp_file(raw_path))
+    except Exception as exc:
+        logger.warning("Не удалось обработать GFZ raw %s: %s", raw_path, exc)
+        return None
 
-    kp_df = GfzProcessor(folder_path=paths.kp_dir).load(date_str=date_str)
 
-    dst_df = KyotoProcessor(folder_path=paths.kyoto_dir).load(date_str)
+def _retrieve_dst(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
+    frames: list[pd.DataFrame] = []
+    for anchor in pd.date_range(start.normalize(), end.normalize(), freq="MS"):
+        raw_path = _safe_download("Kyoto Dst", lambda day=anchor: KyotoDstDownloader(paths.kyoto_dir).download(day.date().isoformat()))
+        if raw_path:
+            try:
+                frame = KyotoProcessor(paths.kyoto_dir)._load_month_file(raw_path)
+                if not frame.empty:
+                    frames.append(frame)
+            except Exception as exc:
+                logger.warning("Не удалось обработать Kyoto raw %s: %s", raw_path, exc)
+    return pd.concat(frames, ignore_index=True) if frames else None
 
+
+def _load_processed_first(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> SpaceWeatherData:
+    omni_processor = OmniProcessor(paths.omni_dir)
+    omni_processor.expected_frequency = timedelta(minutes=1)
+    kp_processor = GfzProcessor(paths.kp_dir)
+    kp_processor.expected_frequency = timedelta(hours=3)
+    dst_processor = KyotoProcessor(paths.kyoto_dir)
+    dst_processor.expected_frequency = timedelta(hours=1)
+
+    omni = omni_processor.get_data(paths.omni_processed, start, end, lambda ranges: _retrieve_omni(paths, ranges[0][0], ranges[-1][1]))
+    kp = kp_processor.get_data(paths.kp_processed, start, end, lambda ranges: _retrieve_kp(paths, ranges[0][0], ranges[-1][1]))
+    dst = dst_processor.get_data(paths.kyoto_processed, start, end, lambda ranges: _retrieve_dst(paths, ranges[0][0], ranges[-1][1]))
     return SpaceWeatherData(
-        omni=omni_df,
-        kp=kp_df,
-        dst=dst_df,
-        omni_path=omni_path,
-        kp_path=kp_path,
-        dst_path=dst_path,
+        omni=None if omni.empty else omni_processor.with_datetime(omni),
+        kp=None if kp.empty else kp_processor.with_datetime(kp),
+        dst=None if dst.empty else dst_processor.with_datetime(dst),
+        omni_path=str(paths.omni_processed) if paths.omni_processed.exists() else None,
+        kp_path=str(paths.kp_processed) if paths.kp_processed.exists() else None,
+        dst_path=str(paths.kyoto_processed) if paths.kyoto_processed.exists() else None,
     )
 
 
-def prepare_space_weather_data_range(
-    start_datetime: str,
-    end_datetime: str,
-    download_dir: str = "files",
-) -> SpaceWeatherData:
-    start_dt, end_dt = validate_datetime_range(start_datetime, end_datetime)
-    paths = SpaceWeatherPaths.from_base(download_dir)
-    _ensure_output_dirs(paths)
+def prepare_space_weather_data(date_str: str, download_dir: str = "files") -> SpaceWeatherData:
+    day = pd.Timestamp(date_str)
+    return _load_processed_first(SpaceWeatherPaths.from_base(download_dir), day.normalize(), day.normalize() + pd.Timedelta(days=1) - pd.Timedelta(seconds=1))
 
-    month_dates = iter_month_anchor_dates(start_dt, end_dt)
 
-    omni_paths: list[str] = []
-    for date_str in month_dates:
-        path = _safe_download(
-            "OMNI",
-            lambda d=date_str: OmniDownloader(out_dir=paths.omni_dir).download(d),
-        )
-        if path:
-            omni_paths.append(path)
-
-    kp_path = _safe_download(
-        "GFZ (Kp)",
-        lambda: GfzDownloader(out_dir=paths.kp_dir).download(
-            start_date=start_dt.date().isoformat(),
-            end_date=end_dt.date().isoformat(),
-            fmt="kp2",
-        ),
-    )
-
-    dst_paths: list[str] = []
-    for date_str in month_dates:
-        path = _safe_download(
-            "Kyoto Dst",
-            lambda d=date_str: KyotoDstDownloader(out_dir=paths.kyoto_dir).download(d),
-        )
-        if path:
-            dst_paths.append(path)
-
-    omni_df = concat_dataframes(
-        OmniProcessor(folder_path=paths.omni_dir).load(date_str)
-        for date_str in month_dates
-    )
-    kp_processor = GfzProcessor(folder_path=paths.kp_dir)
-    kp_df = kp_processor.load(
-        start_date=start_dt.date().isoformat(),
-        end_date=end_dt.date().isoformat(),
-    )
-    if kp_df is None:
-        kp_df = concat_dataframes(
-            kp_processor.load(date_str=date_str)
-            for date_str in month_dates
-        )
-    dst_df = concat_dataframes(
-        KyotoProcessor(folder_path=paths.kyoto_dir).load(date_str)
-        for date_str in month_dates
-    )
-
-    omni_df = filter_dataframe_by_datetime_range(omni_df, start_dt, end_dt)
-    kp_df = filter_dataframe_by_datetime_range(kp_df, start_dt, end_dt)
-    dst_df = filter_dataframe_by_datetime_range(dst_df, start_dt, end_dt)
-
-    return SpaceWeatherData(
-        omni=omni_df,
-        kp=kp_df,
-        dst=dst_df,
-        omni_path=";".join(omni_paths) or None,
-        kp_path=kp_path,
-        dst_path=";".join(dst_paths) or None,
-    )
+def prepare_space_weather_data_range(start_datetime: str, end_datetime: str, download_dir: str = "files") -> SpaceWeatherData:
+    start, end = validate_datetime_range(start_datetime, end_datetime)
+    return _load_processed_first(SpaceWeatherPaths.from_base(download_dir), pd.Timestamp(start), pd.Timestamp(end))

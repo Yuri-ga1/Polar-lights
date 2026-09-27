@@ -7,6 +7,7 @@ from datetime import datetime
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import AdjustedTecDownloader
 from app.simurg.simurg_processor import DataProduct, SimurgProcessor
+from app.storage.data_paths import DataPaths
 from app.visualization.roti_plotter import plot_map
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ def run_adjusted_tec_pipeline(
         logger.warning("SimurgClient не создан. Поток adjusted TEC пропущен.")
         return
 
-    simurg_dir = os.path.join(download_dir, "simurg")
+    paths = DataPaths.from_root(download_dir)
+    simurg_dir = str(paths.map_dir("tec_adjusted"))
     os.makedirs(simurg_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 

@@ -37,7 +37,11 @@ config = MainPipelineConfig(
 run_main_pipeline(config)
 ```
 
-Downloaded source files are stored under `files/<date>/`.
+Local data uses one shared store: raw responses are in `files/raw/<source>/`,
+normalized tables are in `files/processed/<source>.csv`. SIMuRG map files are
+kept unchanged in `files/maps/<product>/`, so their original date/DOY filenames
+remain available to the processor. Repeating a supported
+space-weather request reuses processed data and downloads only missing ranges.
 Generated plots are stored under `results/<date>/`.
 
 For the Aurora Observations map, the source can be selected with
@@ -65,9 +69,8 @@ Runtime-generated outputs are stored in:
 
 - `results/`
 
-Downloaded data files are stored in:
-
-- `files/`
+Downloaded source files are stored under `files/raw/`; processed tables and
+multidimensional maps are stored under `files/processed/` and `files/maps/`.
 
 ## SDO/HMI solar disk with NOAA active regions
 

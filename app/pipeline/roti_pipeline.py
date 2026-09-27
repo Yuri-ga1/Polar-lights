@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from app.simurg.simurg_client import SimurgClient
 from app.simurg.simurg_downloader import RotiDownloader
 from app.simurg.simurg_processor import DataProduct, SimurgProcessor
+from app.storage.data_paths import DataPaths
 from app.visualization.keogram_plotter import (
     KeogramConfig,
     build_keogram_matrix_from_slices,
@@ -54,7 +55,8 @@ def run_roti_pipeline(
         logger.warning("SimurgClient is not configured. ROTI pipeline skipped.")
         return
 
-    simurg_dir = os.path.join(download_dir, "simurg")
+    paths = DataPaths.from_root(download_dir)
+    simurg_dir = str(paths.map_dir("roti"))
     os.makedirs(simurg_dir, exist_ok=True)
     os.makedirs(plots_dir, exist_ok=True)
 

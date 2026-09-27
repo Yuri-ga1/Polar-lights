@@ -3,6 +3,8 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import date
+import os
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -118,6 +120,33 @@ class GfzProcessor(BaseProcessor):
 
         df = df.dropna(subset=["datetime"]).reset_index(drop=True)
         return df
+
+    @staticmethod
+    def to_processed_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        """Keep only the public Kp time series; parser-only columns stay raw."""
+        if frame is None or frame.empty:
+            return pd.DataFrame(columns=["datetime", "kp"])
+        if not {"datetime", "kp"}.issubset(frame.columns):
+            raise ValueError("GFZ frame must contain datetime and kp")
+        result = frame.loc[:, ["datetime", "kp"]].copy()
+        result["kp"] = pd.to_numeric(result["kp"], errors="coerce")
+        return result.dropna(subset=["datetime"]).reset_index(drop=True)
+
+    def prune_processed_file(self, path: str | Path) -> pd.DataFrame:
+        """Migrate an older Kp CSV to the compact public schema."""
+        frame = self.read_processed(path)
+        columns = [*self.time_columns, "kp"]
+        if frame.empty:
+            return frame.reindex(columns=columns)
+        if "kp" not in frame:
+            raise ValueError("Processed Kp file has no kp column")
+        compact = frame.loc[:, columns].copy()
+        compact["kp"] = pd.to_numeric(compact["kp"], errors="coerce")
+        destination = Path(path)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        compact.to_csv(temporary, index=False)
+        os.replace(temporary, destination)
+        return compact
 
     # ---------- public API ----------
 

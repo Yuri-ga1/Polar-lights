@@ -165,6 +165,12 @@ class SimurgProcessor(BaseProcessor):
             return None
 
         def files_started_on(day: date) -> list[Path]:
+            # The processed map store is one compact HDF5 per product and is
+            # authoritative when present.  Its timestamps, rather than its
+            # filename, determine whether a requested day is available.
+            aggregate = self.folder_path / f"{product_type.value}.h5"
+            if self._is_non_empty_file(aggregate):
+                return [aggregate]
             year = day.year
             doy = day.timetuple().tm_yday
             prefix = f"{product_type.value}_{year}_{doy:03d}_-90_90_N_-180_180_E_"
@@ -351,7 +357,9 @@ class SimurgProcessor(BaseProcessor):
         prefix = f"{normalized_product.value}_"
         seen: set[Path] = set()
 
-        for file_path in sorted(self.folder_path.glob(f"{prefix}*.h5")):
+        aggregate = self.folder_path / f"{normalized_product.value}.h5"
+        paths = [aggregate] if self._is_non_empty_file(aggregate) else sorted(self.folder_path.glob(f"{prefix}*.h5"))
+        for file_path in paths:
             if file_path in seen or not self._is_non_empty_file(file_path):
                 continue
             seen.add(file_path)
@@ -380,11 +388,10 @@ class SimurgProcessor(BaseProcessor):
         """
         normalized_product = self._normalize_product(product_type)
         prefix = f"{normalized_product.value}_"
-        return sorted(
-            path
-            for path in self.folder_path.rglob(f"{prefix}*.h5")
-            if self._is_non_empty_file(path)
-        )
+        aggregate = self.folder_path / f"{normalized_product.value}.h5"
+        if self._is_non_empty_file(aggregate):
+            return [aggregate]
+        return sorted(path for path in self.folder_path.rglob(f"{prefix}*.h5") if self._is_non_empty_file(path))
 
     @classmethod
     def _file_time_keys(cls, file_path: Path) -> set[str]:

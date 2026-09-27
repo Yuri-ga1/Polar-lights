@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 import pandas as pd
 import numpy as np
 from app.base_classes.base_processor import BaseProcessor
+from app.storage.data_paths import DataPaths
 
 
 class NmdbProcessor(BaseProcessor):
@@ -26,9 +27,18 @@ class NmdbProcessor(BaseProcessor):
     """
 
     METADATA_FILENAME = "nmdb_station_metadata.json"
+    STATIONS_FILENAME = "nmdb_stations.csv"
 
     def __init__(self, folder_path: str) -> None:
         super().__init__(folder_path)
+
+    @property
+    def station_metadata_path(self):
+        if self.folder_path is None:
+            raise ValueError("folder_path не задан")
+        if self.folder_path.name == "nmdb" and self.folder_path.parent.name == "raw":
+            return DataPaths.from_root(self.folder_path.parent.parent).processed_file("nmdb_stations")
+        return self.folder_path / self.STATIONS_FILENAME
 
     # ---------- helpers ----------
 
@@ -234,31 +244,67 @@ class NmdbProcessor(BaseProcessor):
         df = df.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
         return df
     
-    def _load_station_metadata(self) -> dict[str, dict[str, float]]:
-        path = self._full_path(self.METADATA_FILENAME)
-
-        if not os.path.exists(path):
-            return {}
-
-        try:
-            with open(path, "r", encoding="utf-8") as file:
-                raw_metadata = json.load(file)
-        except Exception:
-            return {}
-
-        metadata: dict[str, dict[str, float]] = {}
-
+    @staticmethod
+    def _metadata_frame(raw_metadata: dict[str, object]) -> pd.DataFrame:
+        rows: list[dict[str, object]] = []
         for station, values in raw_metadata.items():
+            if not isinstance(values, dict):
+                continue
             try:
-                metadata[station] = {
+                rows.append({
+                    "station": str(station).upper(),
                     "lat": float(values["lat"]),
                     "lon": float(values["lon"]),
                     "alt": float(values["alt"]),
-                }
-            except Exception:
+                })
+            except (KeyError, TypeError, ValueError):
                 continue
+        return pd.DataFrame(rows, columns=["station", "lat", "lon", "alt"])
 
-        return metadata
+    def _read_station_metadata_frame(self) -> pd.DataFrame:
+        path = self.station_metadata_path
+        if not self._is_non_empty_file(path):
+            return pd.DataFrame(columns=["station", "lat", "lon", "alt"])
+        try:
+            frame = pd.read_csv(path, usecols=["station", "lat", "lon", "alt"])
+            frame["station"] = frame["station"].astype(str).str.upper()
+            for column in ("lat", "lon", "alt"):
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+            return frame.dropna(subset=["station"]).drop_duplicates("station", keep="last")
+        except (OSError, ValueError, pd.errors.ParserError):
+            return pd.DataFrame(columns=["station", "lat", "lon", "alt"])
+
+    def sync_station_metadata(self) -> pd.DataFrame:
+        """Promote raw JSON metadata into the canonical station dimension."""
+        raw_path = self.folder_path / self.METADATA_FILENAME
+        if not self._is_non_empty_file(raw_path):
+            return self._read_station_metadata_frame()
+        try:
+            raw_metadata = json.loads(raw_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return self._read_station_metadata_frame()
+        incoming = self._metadata_frame(raw_metadata)
+        if incoming.empty:
+            return self._read_station_metadata_frame()
+        existing = self._read_station_metadata_frame()
+        merged = incoming if existing.empty else pd.concat([existing, incoming], ignore_index=True)
+        merged = merged.drop_duplicates(subset=["station"], keep="last").sort_values("station").reset_index(drop=True)
+        destination = self.station_metadata_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        merged.to_csv(temporary, index=False, columns=["station", "lat", "lon", "alt"])
+        os.replace(temporary, destination)
+        return merged
+
+    def _load_station_metadata(self) -> dict[str, dict[str, float]]:
+        frame = self._read_station_metadata_frame()
+        if frame.empty:
+            frame = self.sync_station_metadata()
+        return {
+            str(row.station): {"lat": float(row.lat), "lon": float(row.lon), "alt": float(row.alt)}
+            for row in frame.itertuples(index=False)
+            if pd.notna(row.lat) and pd.notna(row.lon) and pd.notna(row.alt)
+        }
 
     # ---------- public ----------
 
