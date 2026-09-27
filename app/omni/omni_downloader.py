@@ -95,3 +95,27 @@ class OmniDownloader(BaseDownloader):
             raise RuntimeError("OMNIWeb вернул пустой ответ или формат неизвестен.")
 
         return self._write_text_file(filename, data_text)
+
+    def download_range(self, start: datetime, end: datetime, columns: Iterable[str]) -> str:
+        """Backend range API; the existing monthly download API is unchanged.
+
+        OMNIWeb accepts hour boundaries. Only requested variables and hours
+        intersecting a missing interval are fetched; callers trim the result.
+        """
+        names = {
+            "omni_bx": 14, "omni_by": 15, "omni_bz": 16,
+            "omni_speed": 21, "omni_proton_density": 25,
+            "omni_flow_pressure": 27, "omni_ae": 37, "omni_sym_h": 41,
+        }
+        variables = sorted({names[column] for column in columns})
+        filename = f"omni_{start:%Y%m%d%H}-{end:%Y%m%d%H}_{'-'.join(map(str, variables))}.txt"
+        existing = self._get_existing_file(filename)
+        if existing:
+            return existing
+        params = self._build_query(start, end, variables)
+        params = [(key, start.strftime("%Y%m%d%H") if key == "start_date" else
+                   end.strftime("%Y%m%d%H") if key == "end_date" else value) for key, value in params]
+        text = self._retrieve_text(params)
+        if not text.strip():
+            raise RuntimeError("OMNIWeb returned an empty response")
+        return self._write_text_file(filename, text)
