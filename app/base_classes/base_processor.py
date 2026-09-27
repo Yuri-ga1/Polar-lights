@@ -152,8 +152,27 @@ class BaseProcessor(ABC):
         intervals.append((first, previous))
         return intervals
 
-    def get_data(self, processed_path: str | Path, start: str | datetime, end: str | datetime, acquire_missing: Callable[[list[tuple[pd.Timestamp, pd.Timestamp]]], pd.DataFrame | None], *, unique_keys: Iterable[str] | None = None) -> pd.DataFrame:
+    def get_data(self, processed_path: str | Path, start: str | datetime, end: str | datetime, acquire_missing: Callable, *, unique_keys: Iterable[str] | None = None, columns: Iterable[str] | None = None, frequency_policies: dict | None = None) -> pd.DataFrame:
         """Processed-first retrieval shared by tabular processors."""
+        if columns is not None:
+            # Opt-in shared storage: existing notebook callers retain their
+            # original signature and return schema. The callback receives
+            # per-column gaps and is responsible for source-specific locking.
+            from app.storage.timeseries import TimeSeriesStorage, utc
+
+            columns = list(columns)
+            if not frequency_policies or set(columns) - frequency_policies.keys():
+                raise ValueError("Every requested column requires a frequency policy")
+            storage = TimeSeriesStorage(processed_path)
+            frame = storage.read()
+            policies = {column: frequency_policies[column] for column in columns}
+            missing = storage.missing(frame, start, end, policies)
+            if any(missing.values()):
+                rows = acquire_missing(missing)
+                if rows is not None and not rows.empty:
+                    storage.merge(rows)
+                frame = storage.read()
+            return frame.reindex(columns=columns).loc[utc(start):utc(end)]
         missing = self.missing_intervals(processed_path, start, end)
         if missing:
             rows = acquire_missing(missing)

@@ -130,7 +130,7 @@ class NmdbProcessor(BaseProcessor):
                 continue
 
             tokens = re.findall(r"[A-Z0-9]{3,6}", ln)
-            if ";" not in ln and len(tokens) >= 2:
+            if ";" not in ln and len(tokens) >= 1:
                 header_idx = j
                 break
 
