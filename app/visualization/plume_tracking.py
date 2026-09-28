@@ -153,6 +153,9 @@ class PlumeMotion:
     speed_deg_h: float
     direction_deg: float | None
     direction: str
+    left_speed_deg_h: float
+    right_speed_deg_h: float
+    mean_speed_deg_h: float
 
     def as_record(self) -> dict:
         def lon(value):
@@ -184,9 +187,19 @@ class PlumeMotion:
             "v_east_deg_h": east,
             "v_north_deg_h": north,
             "speed_deg_h": self.speed_deg_h,
+            "left_speed_deg_h": self.left_speed_deg_h,
+            "right_speed_deg_h": self.right_speed_deg_h,
+            "mean_speed_deg_h": self.mean_speed_deg_h,
             "direction_deg": self.direction_deg,
             "direction": self.direction,
         }
+
+
+def _left_right_edges(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return west/left and east/right endpoints of an ordered boundary."""
+    if points[0, 0] <= points[-1, 0]:
+        return points[0], points[-1]
+    return points[-1], points[0]
 
 
 def estimate_motion(time1, line1, time2, line2) -> PlumeMotion:
@@ -209,12 +222,36 @@ def estimate_motion(time1, line1, time2, line2) -> PlumeMotion:
     intersection = _vertical_intersection(c1, second)
     delta_lat = float(c2[1] - c1[1])
     distance, angle = spherical_displacement(c1, c2)
+    left1, right1 = _left_right_edges(first)
+    left2, right2 = _left_right_edges(second)
+    left_distance, _ = spherical_displacement(left1, left2)
+    right_distance, _ = spherical_displacement(right1, right2)
+    center_speed = distance / hours
+    left_speed = left_distance / hours
+    right_speed = right_distance / hours
+    mean_speed = float(np.mean((center_speed, left_speed, right_speed)))
     directions = ("С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ")
     direction = (directions[int((angle + 22.5) // 45) % 8] if angle is not None
                  else "нет смещения" if distance == 0 else "азимут не определён")
     return PlumeMotion(
-        time1, time2, first, second, c1, c2, intersection, np.array([c1[0], c2[1]]),
-        hours, float(delta_lon), delta_lat, distance, distance / hours, angle, direction,
+        time1=time1,
+        time2=time2,
+        line1=first,
+        line2=second,
+        center1=c1,
+        center2=c2,
+        intersection=intersection,
+        corner=np.array([c1[0], c2[1]]),
+        hours=hours,
+        delta_lon=float(delta_lon),
+        delta_lat=delta_lat,
+        distance_deg=distance,
+        speed_deg_h=center_speed,
+        direction_deg=angle,
+        direction=direction,
+        left_speed_deg_h=left_speed,
+        right_speed_deg_h=right_speed,
+        mean_speed_deg_h=mean_speed,
     )
 
 
