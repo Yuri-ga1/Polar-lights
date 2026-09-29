@@ -1,0 +1,623 @@
+{
+  "products": [
+    {
+      "productId": "omni",
+      "title": "OMNI",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "omni_bx": "nT",
+        "omni_by": "nT",
+        "omni_bz": "nT",
+        "omni_speed": "km/s",
+        "omni_proton_density": "cm^-3",
+        "omni_flow_pressure": "nPa",
+        "omni_ae": "nT",
+        "omni_sym_h": "nT"
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "default": ["omni_bx"],
+          "values": [
+            "omni_bx",
+            "omni_by",
+            "omni_bz",
+            "omni_speed",
+            "omni_proton_density",
+            "omni_flow_pressure",
+            "omni_ae",
+            "omni_sym_h"
+          ]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "omni_bx": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_by": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_bz": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_speed": {
+          "source": "omni",
+          "units": "km/s",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_proton_density": {
+          "source": "omni",
+          "units": "cm^-3",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_flow_pressure": {
+          "source": "omni",
+          "units": "nPa",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_ae": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_sym_h": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
+      "productId": "kp",
+      "title": "KP",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "kp": ""
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "default": ["kp"],
+          "values": ["kp"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "kp": {
+          "source": "kp",
+          "units": "",
+          "frequencySeconds": 10800,
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
+      "productId": "kyoto-dst",
+      "title": "KYOTO-DST",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "kyoto_dst": "nT"
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "default": ["kyoto_dst"],
+          "values": ["kyoto_dst"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "kyoto_dst": {
+          "source": "kyoto",
+          "units": "nT",
+          "frequencySeconds": 3600,
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
+      "productId": "nmdb",
+      "title": "NMDB",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "nmdb_irk3_counts": "counts"
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "default": ["nmdb_irk3_counts"],
+          "values": ["nmdb_irk3_counts"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "nmdb_irk3_counts": {
+          "source": "nmdb",
+          "units": "counts",
+          "frequencySeconds": 600,
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
+      "productId": "giro",
+      "title": "GIRO",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "giro_al945_fof2": "MHz",
+        "giro_al945_hmf2": "km"
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "default": ["giro_al945_fof2"],
+          "values": ["giro_al945_fof2", "giro_al945_hmf2"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "giro_al945_fof2": {
+          "source": "giro",
+          "units": "MHz",
+          "frequencySeconds": 450,
+          "offsetSeconds": 0
+        },
+        "giro_al945_hmf2": {
+          "source": "giro",
+          "units": "km",
+          "frequencySeconds": 450,
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
+      "productId": "timeseries",
+      "title": "TIMESERIES",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "omni_bx": "nT",
+        "omni_by": "nT",
+        "omni_bz": "nT",
+        "omni_speed": "km/s",
+        "omni_proton_density": "cm^-3",
+        "omni_flow_pressure": "nPa",
+        "omni_ae": "nT",
+        "omni_sym_h": "nT",
+        "kp": "",
+        "kyoto_dst": "nT"
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "default": ["omni_bx"],
+          "values": [
+            "omni_bx",
+            "omni_by",
+            "omni_bz",
+            "omni_speed",
+            "omni_proton_density",
+            "omni_flow_pressure",
+            "omni_ae",
+            "omni_sym_h",
+            "kp",
+            "kyoto_dst"
+          ]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "omni_bx": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_by": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_bz": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_speed": {
+          "source": "omni",
+          "units": "km/s",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_proton_density": {
+          "source": "omni",
+          "units": "cm^-3",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_flow_pressure": {
+          "source": "omni",
+          "units": "nPa",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_ae": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "omni_sym_h": {
+          "source": "omni",
+          "units": "nT",
+          "frequencySeconds": 60,
+          "offsetSeconds": 0
+        },
+        "kp": {
+          "source": "kp",
+          "units": "",
+          "frequencySeconds": 10800,
+          "offsetSeconds": 0
+        },
+        "kyoto_dst": {
+          "source": "kyoto",
+          "units": "nT",
+          "frequencySeconds": 3600,
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
+      "productId": "roti-map",
+      "title": "ROTI-MAP",
+      "category": "maps",
+      "graphType": "map",
+      "available": true,
+      "units": "TECU/min",
+      "parameterSchema": [
+        {
+          "name": "timestamp",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "select",
+          "required": false,
+          "default": "full",
+          "values": ["full", "medium", "low"]
+        },
+        {
+          "name": "format",
+          "type": "select",
+          "required": false,
+          "default": "arrow",
+          "values": ["arrow", "json"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": true,
+        "projection": true,
+        "renderJobs": true,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": false,
+      "columnMetadata": {}
+    },
+    {
+      "productId": "tec-adjusted-map",
+      "title": "TEC-ADJUSTED-MAP",
+      "category": "maps",
+      "graphType": "map",
+      "available": true,
+      "units": "TECU",
+      "parameterSchema": [
+        {
+          "name": "timestamp",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "select",
+          "required": false,
+          "default": "full",
+          "values": ["full", "medium", "low"]
+        },
+        {
+          "name": "format",
+          "type": "select",
+          "required": false,
+          "default": "arrow",
+          "values": ["arrow", "json"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": true,
+        "projection": true,
+        "renderJobs": true,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": false,
+      "columnMetadata": {}
+    },
+    {
+      "productId": "gim-map",
+      "title": "GIM-MAP",
+      "category": "maps",
+      "graphType": "map",
+      "available": true,
+      "units": "TECU",
+      "parameterSchema": [
+        {
+          "name": "timestamp",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "resolution",
+          "type": "select",
+          "required": false,
+          "default": "full",
+          "values": ["full", "medium", "low"]
+        },
+        {
+          "name": "format",
+          "type": "select",
+          "required": false,
+          "default": "arrow",
+          "values": ["arrow", "json"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": true,
+        "projection": true,
+        "renderJobs": true,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {}
+    },
+    {
+      "productId": "roti-keogram",
+      "title": "ROTI-KEOGRAM",
+      "category": "ionosphere",
+      "graphType": "keogram",
+      "available": true,
+      "units": "TECU/min",
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "timeStepMinutes",
+          "type": "select",
+          "required": false,
+          "default": 5.0,
+          "values": [1.0, 5.0, 10.0, 15.0, 30.0, 60.0]
+        },
+        {
+          "name": "latitudeStepDegrees",
+          "type": "select",
+          "required": false,
+          "default": 2.5,
+          "values": [1.0, 2.5, 5.0, 10.0]
+        },
+        {
+          "name": "hemisphere",
+          "type": "select",
+          "required": false,
+          "default": "west",
+          "values": ["west", "east", "all"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": true,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": false,
+      "columnMetadata": {}
+    },
+    {
+      "productId": "tec-adjusted-keogram",
+      "title": "TEC-ADJUSTED-KEOGRAM",
+      "category": "ionosphere",
+      "graphType": "keogram",
+      "available": true,
+      "units": "TECU",
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "timeStepMinutes",
+          "type": "select",
+          "required": false,
+          "default": 5.0,
+          "values": [1.0, 5.0, 10.0, 15.0, 30.0, 60.0]
+        },
+        {
+          "name": "latitudeStepDegrees",
+          "type": "select",
+          "required": false,
+          "default": 2.5,
+          "values": [1.0, 2.5, 5.0, 10.0]
+        },
+        {
+          "name": "hemisphere",
+          "type": "select",
+          "required": false,
+          "default": "west",
+          "values": ["west", "east", "all"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": true,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": false,
+      "columnMetadata": {}
+    }
+  ]
+}

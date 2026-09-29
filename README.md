@@ -31,6 +31,21 @@ The backend uses `files/processed/data.csv` and preserves the existing notebook
 caches and pipeline interfaces. See [backend setup and API contracts](docs/backend.md)
 for Arrow maps, streaming keograms, render jobs, configuration and tests.
 
+## Web interface
+
+The Stage 1 workspace lives in `frontend/`. With Node 22.12+ and the backend
+running separately on port 8000:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Use `npm run dev:mock` for a standalone demo with
+MSW synthetic data. See the [frontend guide](frontend/README.md) for controls,
+API integration, persistence, and unit/browser test commands.
+
 ## Running the Pipeline
 You can run the pipeline from Python by calling the existing entrypoint in `main.py` or by constructing `MainPipelineConfig` and calling `run_main_pipeline`.
 
