@@ -14,8 +14,13 @@ export const queryClient = new QueryClient({
   },
 });
 const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-function url(path: string) {
-  if (!path.startsWith("/api/v1/")) throw new Error("Unexpected API URL");
+export function url(path: string) {
+  if (
+    !path.startsWith("/api/v1/") ||
+    path.includes("..") ||
+    path.includes("\\")
+  )
+    throw new Error("Unexpected API URL");
   return `${base}${path}`;
 }
 export class ApiError extends Error {
@@ -23,11 +28,12 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public details: unknown = {},
+    public requestId?: string,
   ) {
     super(message);
   }
 }
-async function fetchApi(path: string, init?: RequestInit) {
+export async function fetchApi(path: string, init?: RequestInit) {
   const response = await fetch(url(path), init);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
@@ -35,6 +41,7 @@ async function fetchApi(path: string, init?: RequestInit) {
       body.code || `HTTP_${response.status}`,
       body.message || response.statusText,
       body.details,
+      response.headers.get("X-Request-ID") ?? undefined,
     );
   }
   return response;
@@ -61,7 +68,7 @@ export async function decodeResult(response: Response): Promise<Result> {
   }
   return resultSchema.parse(await response.json());
 }
-function pause(signal: AbortSignal, ms: number) {
+export function pause(signal: AbortSignal, ms: number) {
   return new Promise<void>((resolve, reject) => {
     signal.throwIfAborted();
     const abort = () => {
@@ -80,11 +87,11 @@ export const apiClient = {
     catalogSchema.parse(
       await (await fetchApi("/api/v1/catalog", { signal })).json(),
     ),
-  availability: async (productId: string, signal?: AbortSignal) =>
+  availability: async (productId: string, signal?: AbortSignal, offset = 0) =>
     availabilitySchema.parse(
       await (
         await fetchApi(
-          `/api/v1/products/${encodeURIComponent(productId)}/availability?limit=10`,
+          `/api/v1/products/${encodeURIComponent(productId)}/availability?limit=100&offset=${offset}`,
           { signal },
         )
       ).json(),
@@ -115,9 +122,8 @@ export const apiClient = {
     try {
       for (;;) {
         signal.throwIfAborted();
-        const status = jobSchema.parse(
-          await (await fetchApi(job.statusUrl, { signal })).json(),
-        );
+        const statusResponse = await fetchApi(job.statusUrl, { signal });
+        const status = jobSchema.parse(await statusResponse.json());
         progress(status.status);
         if (status.status === "completed")
           return await decodeResult(await fetchApi(job.resultUrl, { signal }));
@@ -126,6 +132,7 @@ export const apiClient = {
             status.error?.code || "JOB_FAILED",
             status.error?.message || "Job failed",
             status.error?.details,
+            statusResponse.headers.get("X-Request-ID") ?? undefined,
           );
         if (status.status === "cancelled")
           throw new ApiError("JOB_CANCELLED", "Job was cancelled");

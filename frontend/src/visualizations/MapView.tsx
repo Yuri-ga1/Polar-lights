@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MapboxOverlay } from "@deck.gl/mapbox";
@@ -6,19 +6,38 @@ import { ScatterplotLayer } from "@deck.gl/layers";
 import type { PickingInfo } from "@deck.gl/core";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
-import { bounds, color } from "./colors";
+import { bounds, styledColor } from "./colors";
+import { Colorbar } from "./Colorbar";
+import { useWorkspace } from "../store";
 import "maplibre-gl/dist/maplibre-gl.css";
 // Bundle the worker and its imports in both Vite development and production.
 maplibregl.setWorkerUrl(workerUrl);
-export default function MapView({
-  result,
-  style,
-}: {
+const PolarMap = lazy(() => import("./PolarMap"));
+type Props = {
   result: MapResult;
   style: StyleSpec;
-}) {
+  chartId: string;
+  projectionAllowed: boolean;
+};
+export default function MapView(props: Props) {
+  return props.projectionAllowed &&
+    props.style.map.projection !== "geographic" ? (
+    <Suspense fallback={<p>Loading polar view…</p>}>
+      <PolarMap
+        result={props.result}
+        style={props.style}
+        chartId={props.chartId}
+      />
+    </Suspense>
+  ) : (
+    <GeographicMap {...props} />
+  );
+}
+function GeographicMap({ result, style, chartId }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const overlay = useRef<MapboxOverlay | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const initial = useRef(style.map);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const [hover, setHover] = useState<{
@@ -26,10 +45,7 @@ export default function MapView({
     lon: number;
     value: number | null;
   } | null>(null);
-  const range = useMemo(
-    () => bounds(result.value, style),
-    [result, style.vmin, style.vmax],
-  );
+  const range = useMemo(() => bounds(result.value, style), [result, style]);
   const indexes = useMemo(
     () => Array.from({ length: result.lat.length }, (_, i) => i),
     [result],
@@ -41,8 +57,9 @@ export default function MapView({
     try {
       map = new maplibregl.Map({
         container: host.current,
-        center: [0, 45],
-        zoom: 0.7,
+        center: [initial.current.longitude, initial.current.latitude],
+        zoom: initial.current.zoom,
+        canvasContextAttributes: { preserveDrawingBuffer: true },
         attributionControl: false,
         style: {
           version: 8,
@@ -65,6 +82,27 @@ export default function MapView({
           ],
         },
       });
+      mapRef.current = map;
+      map.on("moveend", (e) => {
+        if (!e.originalEvent || !map) return;
+        const s = useWorkspace.getState(),
+          chart = s.charts.find((c) => c.id === chartId);
+        if (!chart) return;
+        const center = map.getCenter();
+        s.update(chartId, {
+          styleSpec: {
+            ...chart.styleSpec,
+            map: {
+              ...chart.styleSpec.map,
+              longitude: center.lng,
+              latitude: center.lat,
+              zoom: map.getZoom(),
+              bearing: map.getBearing(),
+              pitch: map.getPitch(),
+            },
+          },
+        });
+      });
       map.addControl(
         new maplibregl.NavigationControl({ showCompass: false }),
         "top-right",
@@ -83,8 +121,58 @@ export default function MapView({
       observer?.disconnect();
       map?.remove();
       overlay.current = null;
+      mapRef.current = null;
     };
-  }, []);
+  }, [chartId]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    map.jumpTo({
+      center: [style.map.longitude, style.map.latitude],
+      zoom: style.map.zoom,
+      bearing: style.map.bearing,
+      pitch: style.map.pitch,
+    });
+    map.setLayoutProperty(
+      "land",
+      "visibility",
+      style.map.coastline ? "visible" : "none",
+    );
+    map.setPaintProperty("background", "background-color", style.background);
+    if (!map.getSource("graticule")) {
+      const lines: number[][][] = [];
+      for (let lat = -60; lat <= 60; lat += 30)
+        lines.push(Array.from({ length: 73 }, (_, i) => [-180 + i * 5, lat]));
+      for (let lon = -180; lon < 180; lon += 30)
+        lines.push(Array.from({ length: 35 }, (_, i) => [lon, -85 + i * 5]));
+      map.addSource("graticule", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: lines.map((coordinates) => ({
+            type: "Feature",
+            properties: {},
+            geometry: { type: "LineString", coordinates },
+          })),
+        },
+      });
+      map.addLayer({
+        id: "graticule",
+        type: "line",
+        source: "graticule",
+        paint: {
+          "line-color": "#91a5b0",
+          "line-opacity": 0.5,
+          "line-width": 1,
+        },
+      });
+    }
+    map.setLayoutProperty(
+      "graticule",
+      "visibility",
+      style.map.graticule ? "visible" : "none",
+    );
+  }, [style.map, style.background, ready]);
   useEffect(() => {
     setHover(null);
   }, [result]);
@@ -96,15 +184,12 @@ export default function MapView({
           data: indexes,
           pickable: true,
           getPosition: (i) => [result.lon[i], result.lat[i]],
-          getRadius: 16000,
-          radiusMinPixels: 3,
-          radiusMaxPixels: 12,
-          getFillColor: (i) =>
-            result.value[i] == null
-              ? [128, 128, 128, 160]
-              : color(result.value[i]!, range[0], range[1], style.palette),
+          getRadius: style.map.pointSize,
+          radiusUnits: "pixels",
+          opacity: style.map.opacity,
+          getFillColor: (i) => styledColor(result.value[i], ...range, style),
           updateTriggers: {
-            getFillColor: [result, style.palette, ...range],
+            getFillColor: [result, style, ...range],
             getPosition: [result],
           },
           onHover: (info: PickingInfo<number>) =>
@@ -120,7 +205,7 @@ export default function MapView({
         }),
       ],
     });
-  }, [indexes, result, style.palette, range, ready]);
+  }, [indexes, result, style, range, ready]);
   const units =
     typeof result.metadata.units === "string" ? result.metadata.units : "";
   return (
@@ -150,28 +235,12 @@ export default function MapView({
           "Hover a point for coordinates and value"
         )}
       </div>
-      {style.legend && (
-        <div className="map-legend">
-          <div
-            style={{
-              background: `linear-gradient(to right, ${[0, 0.25, 0.5, 0.75, 1]
-                .map(
-                  (t) =>
-                    `rgba(${color(
-                      range[0] + t * (range[1] - range[0]),
-                      ...range,
-                      style.palette,
-                    )
-                      .map((v, i) => (i === 3 ? v / 255 : v))
-                      .join(",")})`,
-                )
-                .join(",")})`,
-            }}
-          />
-          <span>
-            {range[0].toPrecision(3)} — {range[1].toPrecision(3)} {units}
-          </span>
-        </div>
+      <Colorbar style={style} range={range} units={units} />
+      {style.map.labels && (
+        <span className="map-view-label">
+          Geographic · {style.map.latitude.toFixed(1)}°,{" "}
+          {style.map.longitude.toFixed(1)}°
+        </span>
       )}
       <span className="map-attribution">Natural Earth · public domain</span>
     </div>

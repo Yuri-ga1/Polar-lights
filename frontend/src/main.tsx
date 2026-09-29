@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { queryClient } from "./api/client";
 import "./styles.css";
+import "./advanced.css";
 async function start() {
   if (import.meta.env.VITE_MOCK_API === "true") {
     const { worker } = await import("./mocks/browser");

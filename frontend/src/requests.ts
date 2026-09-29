@@ -1,4 +1,5 @@
-import { apiClient, queryClient } from "./api/client";
+import { apiClient, ApiError, queryClient } from "./api/client";
+import { sliceCache } from "./api/sliceCache";
 import { requestParameters, validation, type Product } from "./api/contracts";
 import { useWorkspace } from "./store";
 const requests = new Map<string, AbortController>();
@@ -42,10 +43,16 @@ export async function requestChart(id: string, product: Product) {
   try {
     // Per-card keys prevent one card's cancellation from aborting another's request.
     const cached =
-      queryClient.getQueryData<Awaited<ReturnType<typeof apiClient.data>>>(key);
+      product.graphType === "map"
+        ? sliceCache.get(product.productId, parameters, id)
+        : queryClient.getQueryData<Awaited<ReturnType<typeof apiClient.data>>>(
+            key,
+          );
     const state = queryClient.getQueryState(key);
     const result =
-      cached && state && Date.now() - state.dataUpdatedAt < 60_000
+      cached &&
+      (product.graphType === "map" ||
+        (state && Date.now() - state.dataUpdatedAt < 60_000))
         ? cached
         : await apiClient.data(
             product.productId,
@@ -61,7 +68,12 @@ export async function requestChart(id: string, product: Product) {
             },
           );
     if (!current()) return;
-    queryClient.setQueryData(key, result);
+    if (result.dataType === "map")
+      sliceCache.set(product.productId, parameters, result, id);
+    else {
+      queryClient.removeQueries({ queryKey: ["chart-data", id] });
+      queryClient.setQueryData(key, result);
+    }
     useWorkspace.getState().update(id, { appliedDataSpec: parameters });
     useWorkspace.getState().setRuntime(id, { status: "loaded", result });
   } catch (error) {
@@ -70,13 +82,32 @@ export async function requestChart(id: string, product: Product) {
         status: "error",
         result: previous,
         error: error instanceof Error ? error.message : "Request failed",
+        errorCode: error instanceof ApiError ? error.code : "CLIENT_ERROR",
+        requestId: error instanceof ApiError ? error.requestId : undefined,
       });
   } finally {
     if (requests.get(id) === controller) requests.delete(id);
   }
 }
 export function removeChart(id: string) {
-  cancelRequest(id);
-  queryClient.removeQueries({ queryKey: ["chart-data", id] });
   useWorkspace.getState().remove(id);
 }
+// Deletion, undo and import all pass through this cleanup; toolbar/shortcuts cannot bypass it.
+useWorkspace.subscribe((s, previous) => {
+  if (s.epoch !== previous.epoch)
+    for (const id of [...requests.keys()]) cancelRequest(id);
+  if (s.charts === previous.charts) return;
+  const removed = previous.charts.filter(
+    (c) => !s.charts.some((next) => next.id === c.id),
+  );
+  if (!removed.length) return;
+  const runtime = { ...useWorkspace.getState().runtime };
+  for (const c of removed) {
+    requests.get(c.id)?.abort();
+    requests.delete(c.id);
+    sliceCache.release(c.id);
+    queryClient.removeQueries({ queryKey: ["chart-data", c.id] });
+    delete runtime[c.id];
+  }
+  useWorkspace.setState({ runtime });
+});

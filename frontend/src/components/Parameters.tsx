@@ -1,5 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { apiClient } from "../api/client";
+import { lazy, Suspense } from "react";
+import { StyleEditor } from "./StyleEditor";
+import { Timeline } from "./Timeline";
+import { LayoutActions } from "./WorkspaceTools";
+const BatchRender = lazy(() =>
+  import("./BatchRender").then((m) => ({ default: m.BatchRender })),
+);
 import { validation, type Product, type Parameter } from "../api/contracts";
 import { appliedChanged, useWorkspace, type ChartSpec } from "../store";
 import { cancelRequest, requestChart } from "../requests";
@@ -74,18 +79,6 @@ export function Parameters({
 }) {
   const runtime = useWorkspace((s) => s.runtime[chart.id]);
   const errors = validation(product, chart.dataSpec);
-  const availability = useQuery({
-    queryKey: ["availability", product.productId],
-    queryFn: ({ signal }) => apiClient.availability(product.productId, signal),
-  });
-  const style = (patch: Partial<ChartSpec["styleSpec"]>) =>
-    useWorkspace
-      .getState()
-      .update(chart.id, { styleSpec: { ...chart.styleSpec, ...patch } });
-  const rangeInvalid =
-    chart.styleSpec.vmin != null &&
-    chart.styleSpec.vmax != null &&
-    chart.styleSpec.vmin >= chart.styleSpec.vmax;
   return (
     <div className="parameters" key={chart.id}>
       <div className="panel-heading">
@@ -105,29 +98,7 @@ export function Parameters({
             <Field key={p.name} parameter={p} chart={chart} />
           ))}
         </fieldset>
-        <details className="availability">
-          <summary>Data availability</summary>
-          {availability.isPending ? (
-            <p>Checking local index…</p>
-          ) : availability.error ? (
-            <p>
-              Availability could not be checked. You can still request data.
-            </p>
-          ) : (
-            <>
-              <p>
-                {availability.data.total} indexed entries ·{" "}
-                {product.remoteAcquisition
-                  ? "Backend can acquire remote data"
-                  : "Local data required"}
-              </p>
-              {availability.data.timestamps.map((t) => (
-                <code key={t}>{t}</code>
-              ))}
-              <small>{product.availabilityStrategy}</small>
-            </>
-          )}
-        </details>
+        <Timeline key={chart.id} chart={chart} product={product} />
         {errors.length > 0 && <p className="hint">{errors.join(" · ")}</p>}
         {appliedChanged(chart) && (
           <p className="hint">
@@ -147,68 +118,13 @@ export function Parameters({
           </button>
         )}
       </form>
-      <fieldset>
-        <legend>Style</legend>
-        <label className="field">
-          Title
-          <input
-            value={chart.styleSpec.title}
-            onChange={(e) => style({ title: e.target.value })}
-          />
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={chart.styleSpec.legend}
-            onChange={(e) => style({ legend: e.target.checked })}
-          />{" "}
-          Show legend
-        </label>
-        {product.capabilities.colorbar && (
-          <>
-            <label className="field">
-              Palette
-              <select
-                value={chart.styleSpec.palette}
-                onChange={(e) =>
-                  style({
-                    palette: e.target
-                      .value as ChartSpec["styleSpec"]["palette"],
-                  })
-                }
-              >
-                <option value="viridis">Viridis</option>
-                <option value="plasma">Plasma</option>
-                <option value="ice">Ice</option>
-              </select>
-            </label>
-            <div className="range-fields">
-              {(["vmin", "vmax"] as const).map((key) => (
-                <label className="field" key={key}>
-                  {key}
-                  <input
-                    type="number"
-                    step="any"
-                    placeholder="Auto"
-                    value={chart.styleSpec[key] ?? ""}
-                    onChange={(e) =>
-                      style({
-                        [key]:
-                          e.target.value === ""
-                            ? undefined
-                            : Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-            {rangeInvalid && (
-              <p role="alert">vmax must exceed vmin. Using automatic bounds.</p>
-            )}
-          </>
-        )}
-      </fieldset>
+      <LayoutActions chart={chart} />
+      <StyleEditor key={chart.id} chart={chart} product={product} />
+      {product.capabilities.renderJobs && (
+        <Suspense fallback={<p>Loading render controls…</p>}>
+          <BatchRender key={chart.id} chart={chart} />
+        </Suspense>
+      )}
     </div>
   );
 }

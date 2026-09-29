@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -14,6 +14,13 @@ import { type Product } from "./api/contracts";
 import { useWorkspace } from "./store";
 import { ChartCard } from "./components/ChartCard";
 import { Parameters } from "./components/Parameters";
+import {
+  LayoutActions,
+  WorkspaceTools,
+  useShortcuts,
+} from "./components/WorkspaceTools";
+import { intersects } from "./workspace/geometry";
+import type { Rect } from "./workspace/schema";
 function LibraryItem({ product }: { product: Product }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: product.productId,
@@ -27,10 +34,7 @@ function LibraryItem({ product }: { product: Product }) {
       className={`library-item ${isDragging ? "dragging" : ""}`}
       disabled={!product.available}
       onClick={() => useWorkspace.getState().add(product)}
-      title={
-        product.description ||
-        `${product.graphType} · ${product.availabilityStrategy}`
-      }
+      title={product.description || `${product.title} · ${product.graphType}`}
     >
       <span className={`product-icon ${product.graphType}`}>
         {product.graphType === "map"
@@ -47,8 +51,45 @@ function LibraryItem({ product }: { product: Product }) {
     </button>
   );
 }
+function ProductList({ products }: { products: Product[] }) {
+  const [top, setTop] = useState(0);
+  if (products.length < 80)
+    return products.map((p) => <LibraryItem key={p.productId} product={p} />);
+  const rowHeight = 76,
+    start = Math.max(0, Math.floor(top / rowHeight) - 3),
+    end = Math.min(products.length, start + 14);
+  return (
+    <div
+      className="virtual-library"
+      onScroll={(e) => setTop(e.currentTarget.scrollTop)}
+      style={{ height: 500, overflowY: "auto" }}
+    >
+      <div
+        style={{ height: products.length * rowHeight, position: "relative" }}
+      >
+        {products.slice(start, end).map((p, i) => (
+          <div
+            key={p.productId}
+            style={{
+              position: "absolute",
+              top: (start + i) * rowHeight,
+              height: rowHeight,
+              width: "100%",
+            }}
+          >
+            <LibraryItem product={p} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 function Canvas({ products }: { products: Product[] }) {
   const charts = useWorkspace((s) => s.charts);
+  const origin = useRef<{ x: number; y: number; additive: boolean } | null>(
+    null,
+  );
+  const [rubber, setRubber] = useState<Rect | null>(null);
   const { setNodeRef, isOver } = useDroppable({ id: "canvas" });
   const width = Math.max(
     1400,
@@ -67,8 +108,42 @@ function Canvas({ products }: { products: Product[] }) {
         className={`canvas ${isOver ? "drop-active" : ""}`}
         style={{ width, height }}
         onPointerDown={(e) => {
-          if (e.target === e.currentTarget)
-            useWorkspace.getState().select(null);
+          if (e.target !== e.currentTarget) return;
+          const box = e.currentTarget.getBoundingClientRect();
+          origin.current = {
+            x: e.clientX - box.left,
+            y: e.clientY - box.top,
+            additive: e.shiftKey,
+          };
+          e.currentTarget.setPointerCapture(e.pointerId);
+          if (!e.shiftKey) useWorkspace.getState().select(null);
+        }}
+        onPointerMove={(e) => {
+          if (!origin.current) return;
+          const box = e.currentTarget.getBoundingClientRect(),
+            x = e.clientX - box.left,
+            y = e.clientY - box.top;
+          setRubber({
+            x: Math.min(x, origin.current.x),
+            y: Math.min(y, origin.current.y),
+            width: Math.abs(x - origin.current.x),
+            height: Math.abs(y - origin.current.y),
+          });
+        }}
+        onPointerUp={() => {
+          if (origin.current && rubber)
+            useWorkspace.getState().selectMany(
+              charts
+                .filter((c) => intersects(c.layoutSpec, rubber))
+                .map((c) => c.id),
+              origin.current.additive,
+            );
+          origin.current = null;
+          setRubber(null);
+        }}
+        onPointerCancel={() => {
+          origin.current = null;
+          setRubber(null);
         }}
       >
         {!charts.length && (
@@ -94,17 +169,33 @@ function Canvas({ products }: { products: Product[] }) {
             product={products.find((p) => p.productId === chart.productId)}
           />
         ))}
+        {rubber && (
+          <div
+            data-export-ignore
+            className="selection-rectangle"
+            style={{
+              left: rubber.x,
+              top: rubber.y,
+              width: rubber.width,
+              height: rubber.height,
+            }}
+          />
+        )}
       </div>
     </div>
   );
 }
 export default function App() {
+  useShortcuts();
   const catalog = useQuery({
     queryKey: ["catalog"],
     queryFn: ({ signal }) => apiClient.catalog(signal),
   });
   const charts = useWorkspace((s) => s.charts);
   const selectedId = useWorkspace((s) => s.selectedId);
+  const selectedIds = useWorkspace((s) => s.selectedIds);
+  const [leftOpen, setLeftOpen] = useState(true),
+    [rightOpen, setRightOpen] = useState(true);
   const persistenceError = useWorkspace((s) => s.persistenceError);
   const [search, setSearch] = useState("");
   const sensors = useSensors(
@@ -133,6 +224,13 @@ export default function App() {
     <DndContext sensors={sensors} onDragEnd={drop}>
       <div className="app-shell">
         <header className="app-header">
+          <button
+            aria-label="Toggle library"
+            aria-expanded={leftOpen}
+            onClick={() => setLeftOpen(!leftOpen)}
+          >
+            Library
+          </button>
           <div className="brand-mark">◒</div>
           <div>
             <strong>Polar Lights</strong>
@@ -146,14 +244,23 @@ export default function App() {
               : "Backend API"}{" "}
             <i /> {charts.length} charts
           </span>
+          <button
+            aria-label="Toggle inspector"
+            aria-expanded={rightOpen}
+            onClick={() => setRightOpen(!rightOpen)}
+          >
+            Inspector
+          </button>
         </header>
         {persistenceError && (
           <div className="storage-alert" role="alert">
             {persistenceError}
           </div>
         )}
-        <main>
-          <aside className="library">
+        <main
+          className={`${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"}`}
+        >
+          <aside className="library" hidden={!leftOpen}>
             <div className="panel-heading">
               <span className="eyebrow">EXPLORE</span>
               <h2>Chart library</h2>
@@ -186,15 +293,13 @@ export default function App() {
                     }[group]
                   }
                 </summary>
-                {products
-                  .filter(
+                <ProductList
+                  products={products.filter(
                     (p) =>
                       p.graphType === group &&
                       p.title.toLowerCase().includes(search.toLowerCase()),
-                  )
-                  .map((p) => (
-                    <LibraryItem key={p.productId} product={p} />
-                  ))}
+                  )}
+                />
               </details>
             ))}
             <div className="library-note">
@@ -204,16 +309,27 @@ export default function App() {
             </div>
           </aside>
           <section className="workspace">
+            <WorkspaceTools />
             <div className="canvas-toolbar">
               <strong>Workspace</strong>
-              <span>Free canvas</span>
+              <span>{selectedIds.length} selected</span>
               <small>Drag headers to move · pull corners to resize</small>
             </div>
             <Canvas products={products} />
           </section>
-          <aside className="inspector">
-            {selected && selectedProduct ? (
-              <Parameters chart={selected} product={selectedProduct} />
+          <aside className="inspector" hidden={!rightOpen}>
+            {selectedIds.length > 1 ? (
+              <div className="parameters">
+                <h2>{selectedIds.length} charts selected</h2>
+                <p>Common layout actions</p>
+                <LayoutActions />
+              </div>
+            ) : selected && selectedProduct ? (
+              <Parameters
+                key={selected.id}
+                chart={selected}
+                product={selectedProduct}
+              />
             ) : (
               <div className="inspector-empty">
                 <span className="eyebrow">INSPECTOR</span>

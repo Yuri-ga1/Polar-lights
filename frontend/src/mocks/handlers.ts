@@ -3,6 +3,11 @@ import { tableFromArrays, tableToIPC } from "apache-arrow";
 import rawCatalog from "./catalog.json";
 import { catalogSchema } from "../api/contracts";
 import { type DataSpec, type Result } from "../api/contracts";
+import { renderSpecSchema, type RenderSpec } from "../api/renderJobs";
+const renderJobs = new Map<
+  string,
+  { spec: RenderSpec; polls: number; cancelled: boolean }
+>();
 const catalog = catalogSchema.parse(rawCatalog);
 type Request = { productId: string; parameters: DataSpec };
 const jobs = new Map<
@@ -133,6 +138,87 @@ function response(request: Request) {
   return HttpResponse.json(result);
 }
 export const handlers = [
+  http.get("*/api/v1/render-assets", () =>
+    HttpResponse.json({
+      assetVersion: "a".repeat(64),
+      maplibreVersion: "5.6.1",
+      playwrightVersion: "1.55.0",
+      dpr: 1,
+      files: { "maplibre-gl.js": "b".repeat(64), "style.json": "c".repeat(64) },
+    }),
+  ),
+  http.post("*/api/v1/map-render-jobs", async ({ request }) => {
+    const parsed = renderSpecSchema.safeParse(await request.json());
+    if (!parsed.success)
+      return HttpResponse.json(
+        {
+          code: "VALIDATION_ERROR",
+          message: "Invalid render specification",
+          details: {},
+        },
+        { status: 422 },
+      );
+    const jobId = crypto.randomUUID();
+    renderJobs.set(jobId, { spec: parsed.data, polls: 0, cancelled: false });
+    return HttpResponse.json(
+      {
+        jobId,
+        status: "queued",
+        createdAt: 1,
+        updatedAt: 1,
+        resultUrl: `/api/v1/map-render-jobs/${jobId}/files`,
+      },
+      { status: 202 },
+    );
+  }),
+  http.get("*/api/v1/map-render-jobs/:id", ({ params }) => {
+    const job = renderJobs.get(String(params.id));
+    return HttpResponse.json({
+      jobId: params.id,
+      createdAt: 1,
+      updatedAt: 2,
+      resultUrl: `/api/v1/map-render-jobs/${params.id}/files`,
+      status: job?.cancelled
+        ? "cancelled"
+        : job && ++job.polls > 1
+          ? "completed"
+          : "processing",
+    });
+  }),
+  http.delete("*/api/v1/map-render-jobs/:id", ({ params }) => {
+    const job = renderJobs.get(String(params.id));
+    if (job) job.cancelled = true;
+    return HttpResponse.json({
+      jobId: params.id,
+      status: "cancelled",
+      createdAt: 1,
+      updatedAt: 2,
+      resultUrl: `/api/v1/map-render-jobs/${params.id}/files`,
+    });
+  }),
+  http.get("*/api/v1/map-render-jobs/:id/files", ({ params }) =>
+    HttpResponse.json({
+      jobId: params.id,
+      status: "completed",
+      files: ["spec.json", "frame_0000.png"].map((name) => ({
+        name,
+        url: `/api/v1/map-render-jobs/${params.id}/files/${name}`,
+      })),
+    }),
+  ),
+  http.get("*/api/v1/map-render-jobs/:id/files/:name", ({ params }) =>
+    params.name === "spec.json"
+      ? HttpResponse.json(renderJobs.get(String(params.id))?.spec)
+      : new HttpResponse(
+          Uint8Array.from(
+            atob(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5WQAAAAASUVORK5CYII=",
+            ),
+            (c) => c.charCodeAt(0),
+          ),
+          { headers: { "Content-Type": "image/png" } },
+        ),
+  ),
   http.get("*/api/v1/health", () =>
     HttpResponse.json({ status: "ok", apiVersion: "1.0.0" }),
   ),

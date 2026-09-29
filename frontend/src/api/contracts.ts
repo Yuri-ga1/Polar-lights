@@ -96,6 +96,11 @@ export const availabilitySchema = z
     timestamps: z.array(z.string()).default([]),
     dates: z.array(z.string()).default([]),
     columns: z.array(z.string()).default([]),
+    intervals: z
+      .array(
+        z.object({ column: z.string(), start: z.string(), end: z.string() }),
+      )
+      .default([]),
     total: z.number(),
     nextOffset: z.number().nullable(),
     datasetVersion: z.string(),
