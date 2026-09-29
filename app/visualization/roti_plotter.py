@@ -604,9 +604,9 @@ def plot_map(
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, save_name or f"{product.hdf_name.upper()}.png")
 
+    fig.canvas.draw()
     fig.savefig(
         save_path,
-        bbox_inches="tight",
         pad_inches=0.08,
     )
     return fig
