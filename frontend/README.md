@@ -1,4 +1,4 @@
-# Polar Lights web workspace — Stage 2
+# Polar Lights web workspace — Stage 1
 
 React/TypeScript workspace for the existing FastAPI backend. The library and data controls come from `/api/v1/catalog`; no scientific acquisition, raw-file parsing, or processing runs in the frontend.
 
@@ -40,7 +40,7 @@ MSW intercepts the same API routes. The header identifies synthetic data. Use `2
 - Select a card and complete its required fields in the inspector. All dates are interpreted as UTC, independent of the browser timezone. Press **Build chart** to request data.
 - Each card has independent draft parameters, last-applied parameters, request status, errors, and results. Editing parameters does not send a request. Errors preserve the previous valid visualization. Retry uses the current draft.
 - Drag the header to move, pull an edge/corner to resize, and use the header buttons to duplicate or delete. Click empty canvas space to deselect.
-- Title, subtitle, axes, lines, markers, fonts, margins, legend, palette, and the full colorbar editor are local styling. Map hover uses deck.gl picking on local arrays; no hover request is sent.
+- Title, legend, palette, and color limits are local styling. Map hover uses deck.gl picking on local arrays; no hover request is sent.
 - Workspace specifications save to localStorage. Reload restores cards, drafts, last-applied parameters, style, layout, and selection. Datasets and request statuses are never persisted. Press **Build chart** to fetch restored cards. Duplicates copy the spec, receive a new ID, and likewise wait for an explicit build.
 
 ## Validation
@@ -48,8 +48,6 @@ MSW intercepts the same API routes. The header identifies synthetic data. Use `2
 ```sh
 npm run build
 npm test
-npm run lint
-npm run format:check
 npx playwright install chromium
 npm run test:e2e
 ```
@@ -59,13 +57,13 @@ To use an existing Chromium binary, set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`. B
 From the repository root, validate the real API contract:
 
 ```sh
-.venv/bin/python frontend/tests/test_backend_contract.py
+.venv/bin/python -m unittest tests.test_web_api_contract
 ```
 
 To run the same browser workflow against the real backend and isolated synthetic storage, start this server from the repository root:
 
 ```sh
-.venv/bin/python frontend/tests/backend_fixture.py
+PYTHONPATH=. .venv/bin/python tests/web_backend_fixture.py
 ```
 
 Then, with port 5173 free:
@@ -77,24 +75,7 @@ POLAR_REAL_API=1 npm run test:e2e
 
 To validate the production bundle against this server, run `npm run build`, then `POLAR_REAL_API=1 POLAR_PREVIEW=1 npm run test:e2e`. The MSW-only error scenario is skipped in real-API mode.
 
-On Windows use `.venv\Scripts\python.exe` and set environment variables with PowerShell, for example `$env:POLAR_REAL_API='1'`. The fixture and contract test look for Python Playwright's Chromium in `.cache/playwright` by default; set `PLAYWRIGHT_BROWSERS_PATH` to use another installation. Install it with `python -m playwright install chromium` in the same environment. The fixture copies MapLibre assets from the installed frontend package, seeds only its own temporary directory, and removes that directory on exit. The contract test runs an actual asynchronous render job and downloads its artifacts. `POLAR_EXTERNAL_SERVER=1` runs browser tests against an already started frontend server.
-
-## Advanced workspace
-
-- Shift-click or drag a selection rectangle; groups select, move and resize together. The inspector shows only layout actions for a multiple selection. Use all six alignments, horizontal/vertical distribution, grouping, ordering and lock/unlock.
-- Free canvas has eight resize handles, numeric geometry, grid snapping and alignment guides. Grid mode preserves the free positions, data, styles and loaded results when switching back.
-- Undo/redo stores up to 80 UI snapshots. Request status, scientific results and render-job polling are separate from history. Delete, copy/paste, duplicate, undo/redo and preset export have Ctrl/Cmd shortcuts. Text fields retain their editing shortcuts; focused cards move with arrow keys (Shift for 20 pixels).
-- Map capabilities come from the catalog. Geographic, north-polar and south-polar displays are available when projection is supported. No geomagnetic/MLT mode is advertised without backend support. Polar display projects already loaded geographic coordinates and does not perform scientific transformations.
-- Availability is advisory. The map timeline debounces by 350 ms and aborts superseded requests; stale responses cannot replace a newer frame. It reuses a shared in-memory LRU bounded to eight slices / 64 MiB and a 60-second freshness window. Neighbour prefetch is deliberately omitted: visiting a frame can trigger expensive backend acquisition. Scientific arrays are never stored in presets or localStorage.
-- Presets export as `schemaVersion: 2`; Stage 1 `version: 1` / `schemaVersion: 1` presets migrate through Zod validation. Unknown versions, duplicate IDs and invalid selections are rejected before changing the workspace. Import restores specifications; Build chart reloads data explicitly.
-- Card exports: PNG, PDF, JSON and SVG for loaded Plotly charts. WebGL maps have PNG/PDF only. Workspace PNG/PDF preserve positions, sizes, order and rendered appearance; JSON preserves specifications. Raster exports are limited to 32 megapixels. PDF embeds the rendered PNG; Plotly SVG uses vector output. Downloaded scientific data are not embedded in JSON.
-- Library and inspector can be collapsed; small screens use overlay panels and the canvas scrolls horizontally. Library buttons provide a keyboard/click alternative to dragging.
-
-## Server map series
-
-The existing `/api/v1/render-assets` and `/api/v1/map-render-jobs` API is used unchanged. MapLibre **5.6.1** is pinned in both frontend and Python renderer; Playwright **1.55.0** is pinned for reproducible browser execution. Install backend assets with `python -m app.backend.setup_render`, then install Chromium with `python -m playwright install chromium`. In deployment, configure `POLAR_RENDER_ASSETS` as needed.
-
-Select a supported map, open **Server map series**, enter up to 48 UTC timestamps and submit. The UI snapshots the render specification and displays queued/processing/completed/failed/cancelled status, cancellation and artifact links, including the `spec.json` manifest. The backend does not publish numeric progress, so no percentage is invented. Server rendering uses the existing fixed geographic blue/red renderer; use card export for the interactive card's custom style. Preview uses the backend's exact pinned assets and the currently loaded frame.
+The temporary server seeds only its own temporary directory, uses the existing storage/service/API, and removes the data on exit. The API contract test separately exercises actual async jobs via `Prefer: respond-async`.
 
 ## Implementation and contract decisions
 
@@ -104,7 +85,7 @@ Select a supported map, open **Server map series**, enter up to 48 UTC timestamp
 - Maps default to Arrow, as specified by the backend. Arrow IPC schema metadata uses JSON-encoded values. Nulls survive decoding. Time series and keograms currently return JSON; no invented Arrow time-series endpoint is used.
 - `nullPolicy`, column frequency, and offset distinguish `missing_data` from `no_sample_expected`. Off-grid nulls are omitted from a column's plotted sample grid; expected missing samples stay as gaps. All response metadata remains accessible in the card footer.
 - MapLibre plus deck.gl render point maps with WebGL. Natural Earth land geometry is bundled so maps do not depend on a tile service. Plotly has a separate lazy bundle for line plots and latitude × time keograms. Resize observers update renderer size without fetching data.
-- TanStack Query caches catalog, availability and time-series results; map slices use the bounded LRU. AbortController and per-request identity protect against stale responses; deleting a card releases its renderer and cache ownership. MSW, Arrow decoding, renderers, batch controls and image/PDF exporters are lazy-loaded. Large visualization bundles load only when needed.
-- No scientific backend implementation or API contract was changed for Stage 2.
+- TanStack Query caches catalog, availability, and per-card data. Successful results can be reused for 60 seconds after an explicit Build. AbortController and per-request identity protect against stale responses; deleting a card releases its renderer and cached results. MSW, Arrow decoding, and renderers are lazy-loaded.
+- The API's render jobs, projection choices, and Stage 2 layout tools are outside Stage 1. No backend source files were changed.
 
 Basemap: Natural Earth 1:110m land, public domain, from [natural-earth-vector](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson). Renderer integration follows [deck.gl MapboxOverlay](https://deck.gl/docs/api-reference/mapbox/mapbox-overlay); browser mocking follows [MSW browser integration](https://mswjs.io/docs/integrations/browser/).

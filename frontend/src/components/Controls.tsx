@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 export function Field({
   label,
   children,
@@ -48,8 +48,6 @@ export function Numeric({
   max?: number;
   step?: number;
 }) {
-  const [draft, setDraft] = useState(String(value ?? ""));
-  useEffect(() => setDraft(String(value ?? "")), [value]);
   return (
     <Field label={label}>
       <input
@@ -57,11 +55,9 @@ export function Numeric({
         step={step}
         min={min}
         max={max}
-        value={draft}
+        value={value ?? ""}
         placeholder="Auto"
-        onBlur={() => setDraft(String(value ?? ""))}
         onChange={(e) => {
-          setDraft(e.target.value);
           if (e.target.value === "") {
             onChange(undefined);
             return;

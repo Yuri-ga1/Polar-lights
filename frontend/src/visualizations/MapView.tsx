@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-csp-worker.js?url";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { ScatterplotLayer } from "@deck.gl/layers";
 import type { PickingInfo } from "@deck.gl/core";
@@ -107,11 +107,7 @@ function GeographicMap({ result, style, chartId }: Props) {
         new maplibregl.NavigationControl({ showCompass: false }),
         "top-right",
       );
-      const deck = new MapboxOverlay({
-        interleaved: false,
-        deviceProps: { webgl: { preserveDrawingBuffer: true } },
-        layers: [],
-      });
+      const deck = new MapboxOverlay({ interleaved: false, layers: [] });
       overlay.current = deck;
       map.addControl(deck);
       map.on("load", () => setReady(true));

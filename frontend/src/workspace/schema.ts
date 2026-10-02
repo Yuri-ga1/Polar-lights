@@ -120,11 +120,6 @@ export const workspaceSchema = z
   .superRefine((w, ctx) => {
     if (new Set(w.charts.map((c) => c.id)).size !== w.charts.length)
       ctx.addIssue({ code: "custom", message: "Duplicate chart IDs" });
-    if (w.selectedIds.some((id) => !w.charts.some((c) => c.id === id)))
-      ctx.addIssue({
-        code: "custom",
-        message: "Selection references an unknown chart",
-      });
   });
 export type WorkspaceSpec = z.infer<typeof workspaceSchema>;
 export const presetSchema = z.object({
@@ -141,10 +136,7 @@ export function parsePreset(input: unknown): WorkspaceSpec {
     .passthrough()
     .parse(input);
   if (envelope.schemaVersion === 2) return presetSchema.parse(input).workspace;
-  if (
-    (envelope.schemaVersion === undefined && envelope.version === 1) ||
-    envelope.schemaVersion === 1
-  ) {
+  if (envelope.version === 1 || envelope.schemaVersion === 1) {
     const old = z
       .object({
         charts: z.array(z.unknown()),
