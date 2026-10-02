@@ -200,7 +200,7 @@
       "graphType": "timeseries",
       "available": true,
       "units": {
-        "nmdb_irk3_counts": "counts"
+        "nmdb_irk2_amplitude_percent": "relative amplitude (%)"
       },
       "parameterSchema": [
         {
@@ -217,8 +217,8 @@
           "name": "columns",
           "type": "multiselect",
           "required": true,
-          "default": ["nmdb_irk3_counts"],
-          "values": ["nmdb_irk3_counts"]
+          "default": ["nmdb_irk2_amplitude_percent"],
+          "values": ["nmdb_irk2_amplitude_percent"]
         }
       ],
       "capabilities": {
@@ -228,13 +228,17 @@
         "async": true
       },
       "availabilityStrategy": "local-index-then-acquire",
-      "remoteAcquisition": true,
+      "remoteAcquisition": false,
       "columnMetadata": {
-        "nmdb_irk3_counts": {
+        "nmdb_irk2_amplitude_percent": {
           "source": "nmdb",
-          "units": "counts",
+          "units": "relative amplitude (%)",
           "frequencySeconds": 600,
-          "offsetSeconds": 0
+          "offsetSeconds": 0,
+          "station": "IRK2",
+          "latitude": 52.37,
+          "longitude": 100.55,
+          "altitudeMeters": 2000
         }
       }
     },

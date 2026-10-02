@@ -134,30 +134,42 @@ class SourceAdapters:
         return pd.concat(frames, ignore_index=True) if frames else None
 
     def nmdb(self, start, end, columns):
-        from app.nmdb.nmdb_downloader import NmdbDownloader
-        from app.nmdb.nmdb_processor import NmdbProcessor
-
-        folder = self.raw_dir("nmdb")
-        stations = [column_spec(c).raw_name for c in columns]
-        path = self.download(
-            NmdbDownloader(folder).download,
-            start=start.to_pydatetime(),
-            end=end.to_pydatetime(),
-            stations=stations,
-            tresolution=10,
-            filename=f"counts10_{'_'.join(stations)}_{start:%Y%m%d%H%M}-{end:%Y%m%d%H%M}.txt",
+        """Read processed relative-amplitude series from nmdb.csv."""
+        path = self.root / "processed" / "nmdb.csv"
+        frame = BaseProcessor().read_processed(path)
+        stations = {column_spec(c).raw_name: c for c in columns}
+        available = [station for station in stations if station in frame]
+        if not available:
+            return pd.DataFrame()
+        selected = BaseProcessor().select_processed(path, start, end)
+        selected = selected.rename(
+            columns={station: stations[station] for station in available}
         )
+        return selected[[*BaseProcessor.time_columns, *[stations[s] for s in available]]]
 
-        def parse():
-            p = NmdbProcessor(folder)
-            text = p._strip_html_tags(
-                p._extract_ascii_block(Path(path).read_text(encoding="utf-8"))
+    def nmdb_station_metadata(self):
+        """Read station coordinates and altitude from the processed dimension file."""
+        path = self.root / "processed" / "nmdb_stations.csv"
+        if not path.is_file():
+            return {}
+        try:
+            frame = pd.read_csv(path, usecols=["station", "lat", "lon", "alt"])
+            frame["station"] = frame["station"].astype(str).str.upper()
+            for column in ("lat", "lon", "alt"):
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+            frame = frame.dropna(subset=["lat", "lon"]).drop_duplicates(
+                "station", keep="last"
             )
-            return p._parse_table(p._keep_only_table(text)).rename(
-                columns={s: f"nmdb_{s.lower()}_counts" for s in stations}
-            )
-
-        return self.process(parse)
+            return {
+                row.station: {
+                    "latitude": float(row.lat),
+                    "longitude": float(row.lon),
+                    **({"altitudeMeters": float(row.alt)} if pd.notna(row.alt) else {}),
+                }
+                for row in frame.itertuples(index=False)
+            }
+        except (OSError, ValueError, pd.errors.ParserError):
+            return {}
 
     def giro(self, start, end, columns):
         from app.ionosonde.ionosonde_downloader import IonosondeDownloader
@@ -192,10 +204,10 @@ class SourceAdapters:
     def import_legacy(self, storage):
         """Non-destructive import. Old caches remain available to notebooks.
 
-        Legacy NMDB contains window-relative amplitudes, not counts; it must
-        never be relabelled as the backend's stable count-rate measurements.
+        NMDB is imported from the processed variation file and kept under an
+        explicit amplitude-percent column name so it is never confused with counts.
         """
-        for source in ("omni", "kp", "kyoto"):
+        for source in ("omni", "kp", "kyoto", "nmdb"):
             path = self.root / "processed" / f"{source}.csv"
             if not path.is_file():
                 continue
@@ -203,9 +215,17 @@ class SourceAdapters:
             mapping = {
                 s.raw_name: s.name for s in COLUMNS.values() if s.source == source
             }
+            if source == "nmdb":
+                mapping = {
+                    column: f"nmdb_{column.lower()}_amplitude_percent"
+                    for column in frame.columns
+                    if column not in BaseProcessor.time_columns
+                    and column.strip().lower() not in {"datetime", "date"}
+                }
             frame = frame.rename(columns=mapping)
             columns = [c for c in mapping.values() if c in frame]
             if columns:
                 storage.merge(
-                    frame[[*BaseProcessor.time_columns, *columns]], overwrite=False
+                    frame[[*BaseProcessor.time_columns, *columns]],
+                    overwrite=(source == "nmdb"),
                 )

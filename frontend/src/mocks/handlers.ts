@@ -108,6 +108,7 @@ export function mockResult({ productId, parameters: p }: Request): Result {
         columns.map((c) => [
           c,
           {
+            ...product.columnMetadata[c],
             units: units[c],
             frequencySeconds: frequency(c),
             offsetSeconds: 0,

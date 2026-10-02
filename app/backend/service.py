@@ -44,16 +44,20 @@ class DataService:
 
     def catalog(self):
         with self._cache_lock:
+            station_path = self.settings.root / "processed" / "nmdb_stations.csv"
             signature = (
-                self.storage.path.stat().st_mtime_ns
-                if self.storage.path.exists()
-                else None
+                self.storage.path.stat().st_mtime_ns if self.storage.path.exists() else None,
+                station_path.stat().st_mtime_ns if station_path.exists() else None,
             )
             if self._catalog_cache is None or self._catalog_cache[0] != signature:
                 self._catalog_cache = (
                     signature,
                     catalog(
-                        self.storage.read().columns, bool(self.settings.simurg_email)
+                        self.storage.read().columns,
+                        bool(self.settings.simurg_email),
+                        self.adapters.nmdb_station_metadata()
+                        if hasattr(self.adapters, "nmdb_station_metadata")
+                        else {},
                     ),
                 )
             return self._catalog_cache[1]
@@ -202,11 +206,17 @@ class DataService:
         column_metadata = {}
         for column, spec in specs.items():
             expected = spec.policy.expected(p.start, p.end)
+            station = {}
+            if spec.source == "nmdb" and hasattr(
+                self.adapters, "nmdb_station_metadata"
+            ):
+                station = self.adapters.nmdb_station_metadata().get(spec.raw_name, {})
             column_metadata[column] = {
                 "source": spec.source,
                 "units": spec.units,
                 "frequencySeconds": spec.seconds,
                 "offsetSeconds": 0,
+                **({"station": spec.raw_name, **station} if station else {}),
                 "datasetVersion": self.storage.version(frame[[column]].dropna()),
                 "missingIntervals": [[iso(a), iso(b)] for a, b in missing[column]],
                 "missingCount": int(frame.reindex(expected)[column].isna().sum()),

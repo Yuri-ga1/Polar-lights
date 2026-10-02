@@ -76,6 +76,13 @@ export default function PlotView({
       ];
     }
     return Object.keys(result.columns).map((column, i) => {
+      const station = result.metadata.columnMetadata?.[column] as
+        { latitude?: number; longitude?: number } | undefined;
+      const locationText =
+        station?.latitude != null && station.longitude != null
+          ? `${station.latitude.toFixed(3)}°, ${station.longitude.toFixed(3)}°`
+          : "";
+      const location = locationText ? ` · ${locationText}` : "";
       const units =
         result.metadata.columnMetadata?.[column]?.units ||
         (typeof result.metadata.units === "object"
@@ -88,10 +95,10 @@ export default function PlotView({
         line: { width: style.lineWidth, dash: style.lineDash },
         marker: { size: style.markerSize, symbol: style.markerSymbol },
         ...seriesPoints(result, column),
-        name: `${column}${units ? ` (${units})` : ""}`,
+        name: `${column}${location}${units ? ` (${units})` : ""}`,
         yaxis: i ? `y${i + 1}` : "y",
         connectgaps: false,
-        hovertemplate: `%{x}<br>%{y} ${units}<br>%{customdata}<extra>${column}</extra>`,
+        hovertemplate: `%{x}<br>%{y} ${units}<br>%{customdata}${locationText ? `<br>Station position: ${locationText}` : ""}<extra>${column}</extra>`,
       } as Data;
     });
   }, [result, style, productId]);

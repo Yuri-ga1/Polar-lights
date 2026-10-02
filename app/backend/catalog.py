@@ -50,10 +50,13 @@ PRODUCTS = ("omni", "kp", "kyoto-dst", "nmdb", "giro", "timeseries", *MAPS, *KEO
 def column_spec(name):
     if name in COLUMNS:
         return COLUMNS[name]
-    # Native sampling policies are station-specific; these configured products
-    # use 10-minute NMDB counts and the 7.5-minute AL945 GIRO schedule.
-    if re.fullmatch(r"nmdb_[a-z0-9]{3,6}_counts", name):
-        return Column(name, "nmdb", "counts", 600, name.split("_")[1].upper())
+    # Processed NMDB station values are relative amplitude percentages sampled
+    # every ten minutes in files/processed/nmdb.csv.
+    match = re.fullmatch(r"nmdb_([a-z0-9]{3,6})_amplitude_percent", name)
+    if match:
+        return Column(
+            name, "nmdb", "relative amplitude (%)", 600, match.group(1).upper()
+        )
     if re.fullmatch(r"giro_al945_(fof2|hmf2)", name):
         return Column(
             name,
@@ -81,10 +84,9 @@ def product_columns(product, known=()):
         return ["kyoto_dst"]
     if product == "nmdb":
         return sorted(
-            {
-                "nmdb_irk3_counts",
-                *[c for c in known if c.startswith("nmdb_") and c.endswith("_counts")],
-            }
+            c
+            for c in known
+            if c.startswith("nmdb_") and c.endswith("_amplitude_percent")
         )
     if product == "giro":
         return ["giro_al945_fof2", "giro_al945_hmf2"]
@@ -102,7 +104,7 @@ def validate_columns(product, columns):
     return {s.name: s for s in specs}
 
 
-def catalog(known=(), remote_maps=False):
+def catalog(known=(), remote_maps=False, station_metadata=None):
     products = []
     for product in PRODUCTS:
         if product in KEOGRAMS:
@@ -198,13 +200,23 @@ def catalog(known=(), remote_maps=False):
                 "availabilityStrategy": "local-index-then-acquire",
                 "remoteAcquisition": (remote_maps or product == "gim-map")
                 if is_map
-                else True,
+                else product != "nmdb",
                 "columnMetadata": {
                     c: {
                         "source": column_spec(c).source,
                         "units": column_spec(c).units,
                         "frequencySeconds": column_spec(c).seconds,
                         "offsetSeconds": 0,
+                        **(
+                            {
+                                "station": column_spec(c).raw_name,
+                                **station_metadata[column_spec(c).raw_name],
+                            }
+                            if column_spec(c).source == "nmdb"
+                            and station_metadata
+                            and column_spec(c).raw_name in station_metadata
+                            else {}
+                        ),
                     }
                     for c in columns
                 },
