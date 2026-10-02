@@ -8,7 +8,7 @@ import {
 import { ScatterplotLayer, PathLayer, TextLayer } from "@deck.gl/layers";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
-import { bounds, drawOrder, styledColor } from "./colors";
+import { bounds, drawOrder, mapColor } from "./colors";
 import { Colorbar } from "./Colorbar";
 import { useWorkspace } from "../store";
 export function projectPolar(
@@ -194,7 +194,7 @@ export default function PolarMap({
           getRadius: style.map.pointSize,
           radiusUnits: "pixels",
           opacity: style.map.opacity,
-          getFillColor: (i) => styledColor(result.value[i], ...range, style),
+          getFillColor: (i) => mapColor(result.value[i], ...range, style),
           pickable: true,
           onHover: (info: PickingInfo) =>
             setHover(info.index >= 0 ? indices[info.index] : null),

@@ -115,6 +115,18 @@ export function styledColor(
       : Math.round(v + (cb[i] - v) * Math.max(0, Math.min(1, fraction))),
   ) as [number, number, number, number];
 }
+/** Map points outside the selected range use the palette endpoint, not a
+ * separate under/over swatch. Scientific values themselves stay unchanged. */
+export function mapColor(
+  value: number | null,
+  min: number,
+  max: number,
+  style: StyleSpec,
+): [number, number, number, number] {
+  if (value === null || !Number.isFinite(value))
+    return rgb(style.colorbar.noData);
+  return styledColor(Math.max(min, Math.min(max, value)), min, max, style);
+}
 export function styledScale(style: StyleSpec): [number, string][] {
   if (style.colorbar.mode === "discrete") {
     return Array.from({ length: style.colorbar.levels }, (_, i) => {

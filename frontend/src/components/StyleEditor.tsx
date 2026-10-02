@@ -281,15 +281,6 @@ export function StyleEditor({
               />
             ),
           )}
-          {(["under", "over", "noData"] as const).map((key) => (
-            <Text
-              key={key}
-              label={`${key} color`}
-              type="color"
-              value={c[key]}
-              onChange={(v) => cb({ [key]: v })}
-            />
-          ))}
           <Text
             label="Colorbar title"
             value={c.title}
@@ -394,6 +385,14 @@ export function StyleEditor({
             value={m.showNoData}
             onChange={(showNoData) => map({ showNoData })}
           />
+          {m.showNoData && (
+            <Text
+              label="No-data color"
+              type="color"
+              value={c.noData}
+              onChange={(noData) => cb({ noData })}
+            />
+          )}
           {(["longitude", "latitude", "zoom", "bearing", "pitch"] as const).map(
             (key) => (
               <Numeric

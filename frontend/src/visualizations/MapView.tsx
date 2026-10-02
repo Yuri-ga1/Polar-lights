@@ -6,7 +6,7 @@ import { ScatterplotLayer } from "@deck.gl/layers";
 import type { PickingInfo } from "@deck.gl/core";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
-import { bounds, drawOrder, styledColor } from "./colors";
+import { bounds, drawOrder, mapColor } from "./colors";
 import { Colorbar } from "./Colorbar";
 import { useWorkspace } from "../store";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -187,7 +187,7 @@ function GeographicMap({ result, style, chartId }: Props) {
           getRadius: style.map.pointSize,
           radiusUnits: "pixels",
           opacity: style.map.opacity,
-          getFillColor: (i) => styledColor(result.value[i], ...range, style),
+          getFillColor: (i) => mapColor(result.value[i], ...range, style),
           updateTriggers: {
             getFillColor: [result, style, ...range],
             getPosition: [result],
