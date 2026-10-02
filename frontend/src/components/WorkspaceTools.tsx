@@ -224,7 +224,8 @@ export function WorkspaceTools() {
           accept="application/json,.json"
           aria-label="Import workspace file"
           onChange={async (e) => {
-            const selected = e.target.files?.[0];
+            const input = e.currentTarget;
+            const selected = input.files?.[0];
             if (!selected) return;
             try {
               if (selected.size > 2_000_000)
@@ -234,7 +235,7 @@ export function WorkspaceTools() {
             } catch (err) {
               setError(err instanceof Error ? err.message : "Invalid preset");
             }
-            e.target.value = "";
+            input.value = "";
           }}
         />
       </div>

@@ -27,7 +27,7 @@
     "apache-arrow": "^20.0.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
-    "maplibre-gl": "^6.11.2",
+    "maplibre-gl": "5.6.1",
     "plotly.js-cartesian-dist-min": "^3.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
-    "@playwright/test": "^1.55.0",
+    "@playwright/test": "1.55.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

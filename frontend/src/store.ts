@@ -107,6 +107,16 @@ export const useWorkspace = create<Workspace>((set, get) => {
       future: [],
     });
   };
+  // Applied parameters describe the displayed result, not a historical UI edit.
+  const restoreHistory = (frame: WorkspaceSpec) => ({
+    ...frame,
+    charts: frame.charts.map((chart) => {
+      const current = get().charts.find((c) => c.id === chart.id);
+      return current && get().runtime[chart.id]?.result
+        ? { ...chart, appliedDataSpec: current.appliedDataSpec }
+        : chart;
+    }),
+  });
   const selection = (ids: string[], additive = false) => {
     const s = get(),
       expanded = expandedIds(s.charts, ids),
@@ -231,6 +241,15 @@ export const useWorkspace = create<Workspace>((set, get) => {
           y: c.layoutSpec.y + 32,
           z: Math.max(0, ...s.charts.map((c) => c.layoutSpec.z)) + i + 1,
           locked: false,
+          ...(c.layoutSpec.free
+            ? {
+                free: {
+                  ...c.layoutSpec.free,
+                  x: c.layoutSpec.free.x + 32,
+                  y: c.layoutSpec.free.y + 32,
+                },
+              }
+            : {}),
         };
         return c;
       });
@@ -461,7 +480,7 @@ export const useWorkspace = create<Workspace>((set, get) => {
         prev = s.past.at(-1);
       if (!prev) return;
       set({
-        ...prev,
+        ...restoreHistory(prev),
         selectedId: prev.selectedIds.at(-1) ?? null,
         past: s.past.slice(0, -1),
         future: [snapshot(s), ...s.future].slice(0, 80),
@@ -473,7 +492,7 @@ export const useWorkspace = create<Workspace>((set, get) => {
         next = s.future[0];
       if (!next) return;
       set({
-        ...next,
+        ...restoreHistory(next),
         selectedId: next.selectedIds.at(-1) ?? null,
         past: [...s.past, snapshot(s)].slice(-80),
         future: s.future.slice(1),

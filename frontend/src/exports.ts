@@ -105,7 +105,9 @@ export async function exportVisual(format: "png" | "pdf" | "svg", id?: string) {
           n instanceof HTMLElement &&
           (n.hasAttribute("data-export-ignore") ||
             n.tagName === "BUTTON" ||
-            n.classList.contains("maplibregl-control-container") ||
+            // The deck.gl canvas also lives inside the control container.
+            // Hide actual controls, never their shared parent.
+            n.classList.contains("maplibregl-ctrl") ||
             n.classList.contains("map-hud"))
         ),
     });

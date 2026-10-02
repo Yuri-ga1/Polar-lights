@@ -55,6 +55,7 @@ export default function PolarMap({
   );
   const range = useMemo(() => bounds(result.value, style), [result, style]);
   const initial = useRef(style.map);
+  useEffect(() => setHover(null), [result, north]);
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/land.geojson", { signal: controller.signal })
