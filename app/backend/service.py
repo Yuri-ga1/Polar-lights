@@ -72,10 +72,14 @@ class DataService:
                 int((p.end - p.start).total_seconds() / (p.timeStepMinutes * 60)) + 1
             ) * int(180 / p.latitudeStepDegrees)
             if (
-                p.end - p.start
-            ).total_seconds() > 31 * 86400 or cells > self.settings.max_cells:
+                (p.end.date() - p.start.date()).days > 2
+                or cells > self.settings.max_cells
+            ):
                 raise BackendError(
-                    "INVALID_REQUEST", "Keogram exceeds range or cell limit", 413
+                    "INVALID_REQUEST",
+                    "Keogram exceeds three calendar dates or the cell limit",
+                    413,
+                    maxCalendarDates=3,
                 )
             return
         validate_columns(request.productId, p.columns)

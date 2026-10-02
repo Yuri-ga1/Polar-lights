@@ -160,8 +160,26 @@ export function validation(product: Product, data: DataSpec): string[] {
     typeof data.start === "string" &&
     typeof data.end === "string" &&
     data.end < data.start
-  )
+  ) {
     errors.push("end must be on or after start");
+  } else if (
+    typeof data.start === "string" &&
+    typeof data.end === "string" &&
+    Number.isFinite(Date.parse(data.start)) &&
+    Number.isFinite(Date.parse(data.end))
+  ) {
+    if (product.graphType === "keogram") {
+      const start = Date.parse(`${data.start.slice(0, 10)}T00:00:00Z`);
+      const end = Date.parse(`${data.end.slice(0, 10)}T00:00:00Z`);
+      if (end - start > 2 * 24 * 60 * 60 * 1000)
+        errors.push("Map range cannot exceed three calendar dates");
+    } else if (
+      product.graphType === "timeseries" &&
+      Date.parse(data.end) - Date.parse(data.start) > 31 * 24 * 60 * 60 * 1000
+    ) {
+      errors.push("Time-series range cannot exceed 31 days");
+    }
+  }
   return errors;
 }
 // Build only the schema-declared parameters. No chartId or UI properties cross the API boundary.

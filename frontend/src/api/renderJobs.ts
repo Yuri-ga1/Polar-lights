@@ -28,7 +28,13 @@ export const renderSpecSchema = z
     assetVersion: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict()
-  .refine((s) => s.maximum > s.minimum, "Maximum must exceed minimum");
+  .refine((s) => s.maximum > s.minimum, "Maximum must exceed minimum")
+  .refine((s) => {
+    const days = s.timestamps.map((value) =>
+      Date.parse(`${value.slice(0, 10)}T00:00:00Z`),
+    );
+    return Math.max(...days) - Math.min(...days) <= 2 * 24 * 60 * 60 * 1000;
+  }, "Map render range cannot exceed three calendar dates");
 export type RenderSpec = z.infer<typeof renderSpecSchema>;
 export const renderFilesSchema = z.object({
   jobId: z.string(),

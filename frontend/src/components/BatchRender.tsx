@@ -98,7 +98,8 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       <summary>Server map series</summary>
       <p className="hint">
         Server series uses its fixed blue/red palette and geographic camera. Use
-        card export to retain custom appearance. Maximum 48 frames.
+        card export to retain custom appearance. Maximum 48 frames across three
+        calendar dates.
       </p>
       {assets.error ? (
         <p role="alert">

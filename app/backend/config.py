@@ -12,7 +12,7 @@ class Settings:
     max_cells: int = 1_000_000
     max_points: int = 2_000_000
     max_response_bytes: int = 64 * 1024 * 1024
-    max_days: int = 366
+    max_days: int = 31
     job_timeout: int = 1800
     job_workers: int = 2
     max_jobs: int = 32

@@ -66,6 +66,8 @@ class KeogramParameters(StrictModel):
     def ordered(self):
         if self.end < self.start:
             raise ValueError("end must be greater than or equal to start")
+        if (self.end.date() - self.start.date()).days > 2:
+            raise ValueError("Keogram range cannot exceed three calendar dates")
         return self
 
 
@@ -218,4 +220,7 @@ class MapRenderSpec(StrictModel):
             raise ValueError("Invalid map center")
         if self.maximum <= self.minimum:
             raise ValueError("maximum must exceed minimum")
+        dates = [value.date() for value in self.timestamps]
+        if (max(dates) - min(dates)).days > 2:
+            raise ValueError("Map render range cannot exceed three calendar dates")
         return self
