@@ -53,9 +53,20 @@ export function bounds(
     low = 0;
     high = 1;
   }
-  const min = style.colorbar.range === "manual" ? (style.vmin ?? low) : low,
-    max = style.colorbar.range === "manual" ? (style.vmax ?? high) : high;
+  const fixedRange =
+    style.colorbar.range === "manual" || style.colorbar.range === "recommended";
+  const min = fixedRange ? (style.vmin ?? low) : low,
+    max = fixedRange ? (style.vmax ?? high) : high;
   return max > min ? [min, max] : [low, high > low ? high : low + 1];
+}
+export function drawOrder(
+  values: readonly (number | null)[],
+  showNoData: boolean,
+): number[] {
+  return values
+    .map((_, index) => index)
+    .filter((index) => showNoData || values[index] != null)
+    .sort((a, b) => (values[a] ?? -Infinity) - (values[b] ?? -Infinity));
 }
 export function colorScale(palette: StyleSpec["palette"]): [number, string][] {
   return palettes[palette].map((c, i, a) => [

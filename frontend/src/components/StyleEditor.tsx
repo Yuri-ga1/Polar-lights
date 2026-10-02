@@ -201,9 +201,18 @@ export function StyleEditor({
           <Choice
             label="Color range"
             value={c.range}
-            options={["auto", "manual"]}
+            options={
+              s.vmin !== undefined && s.vmax !== undefined
+                ? ["recommended", "auto", "manual"]
+                : ["auto", "manual"]
+            }
             onChange={(range) => cb({ range })}
           />
+          {c.range === "recommended" && (
+            <p className="hint">
+              Product range: {s.vmin} to {s.vmax}.
+            </p>
+          )}
           {c.range === "manual" && (
             <>
               <Numeric
@@ -380,6 +389,11 @@ export function StyleEditor({
             step={0.05}
             onChange={(v) => v !== undefined && map({ opacity: v })}
           />
+          <Check
+            label="Show no-data points"
+            value={m.showNoData}
+            onChange={(showNoData) => map({ showNoData })}
+          />
           {(["longitude", "latitude", "zoom", "bearing", "pitch"] as const).map(
             (key) => (
               <Numeric
@@ -411,6 +425,69 @@ export function StyleEditor({
             Polar views use an azimuthal equidistant display of geographic
             coordinates.
           </p>
+        </details>
+      )}
+      {product.productId === "kp" && (
+        <details open>
+          <summary>Geomagnetic storm levels</summary>
+          <p className="hint">G1–G5 are horizontal Kp reference lines.</p>
+          {s.stormLines.map((line, index) => (
+            <fieldset key={line.level}>
+              <legend>
+                {line.level} · Kp {line.value}
+              </legend>
+              <Check
+                label={`Show ${line.level}`}
+                value={line.visible}
+                onChange={(visible) =>
+                  update({
+                    stormLines: s.stormLines.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, visible } : item,
+                    ),
+                  })
+                }
+              />
+              <Text
+                label={`${line.level} color`}
+                type="color"
+                value={line.color}
+                onChange={(color) =>
+                  update({
+                    stormLines: s.stormLines.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, color } : item,
+                    ),
+                  })
+                }
+              />
+              <Numeric
+                label={`${line.level} width`}
+                value={line.width}
+                min={0.5}
+                max={12}
+                step={0.5}
+                onChange={(width) =>
+                  width !== undefined &&
+                  update({
+                    stormLines: s.stormLines.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, width } : item,
+                    ),
+                  })
+                }
+              />
+              <Choice
+                label={`${line.level} style`}
+                value={line.dash}
+                options={["solid", "dot", "dash", "dashdot"]}
+                onChange={(dash) =>
+                  update({
+                    stormLines: s.stormLines.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, dash } : item,
+                    ),
+                  })
+                }
+              />
+            </fieldset>
+          ))}
         </details>
       )}
     </section>

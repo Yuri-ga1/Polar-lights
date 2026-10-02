@@ -20,7 +20,7 @@ export const colorbarSchema = z.object({
     .array(z.object({ at: number.min(0).max(1), color: hex }))
     .max(32)
     .default([]),
-  range: z.enum(["auto", "manual"]).default("auto"),
+  range: z.enum(["recommended", "auto", "manual"]).default("auto"),
   mode: z.enum(["continuous", "discrete"]).default("continuous"),
   levels: z.number().int().min(2).max(32).default(7),
   under: hex.default("#233b75"),
@@ -31,6 +31,14 @@ export const colorbarSchema = z.object({
   ticks: z.array(number).max(32).default([]),
   font: text.default("system-ui"),
   fontSize: number.min(8).max(32).default(10),
+});
+const stormLineSchema = z.object({
+  level: z.enum(["G1", "G2", "G3", "G4", "G5"]),
+  value: number.min(0).max(9),
+  visible: z.boolean().default(false),
+  color: hex.default("#c84040"),
+  width: number.min(0.5).max(12).default(1.5),
+  dash: z.enum(["solid", "dot", "dash", "dashdot"]).default("dash"),
 });
 export const styleSchema = z.object({
   title: text,
@@ -68,6 +76,7 @@ export const styleSchema = z.object({
     .default({}),
   modebar: z.boolean().default(true),
   scrollZoom: z.boolean().default(false),
+  stormLines: z.array(stormLineSchema).max(5).default([]),
   colorbar: colorbarSchema.default({}),
   map: z
     .object({
@@ -79,6 +88,7 @@ export const styleSchema = z.object({
       labels: z.boolean().default(true),
       pointSize: number.min(1).max(30).default(3),
       opacity: number.min(0).max(1).default(0.85),
+      showNoData: z.boolean().default(false),
       longitude: number.min(-180).max(180).default(0),
       latitude: number.min(-85).max(85).default(45),
       zoom: number.min(0).max(10).default(0.7),
@@ -189,6 +199,26 @@ export function serializePreset(workspace: WorkspaceSpec) {
 export function emptyWorkspace(): WorkspaceSpec {
   return workspaceSchema.parse({ charts: [] });
 }
-export function defaultStyle(title: string): StyleSpec {
-  return styleSchema.parse({ title, legend: true, palette: "viridis" });
+export function defaultStyle(title: string, productId?: string): StyleSpec {
+  const mapMaximum =
+    productId === "roti-map" ? 1 : productId?.endsWith("-map") ? 60 : undefined;
+  return styleSchema.parse({
+    title,
+    legend: true,
+    palette: "viridis",
+    ...(mapMaximum === undefined
+      ? {}
+      : { vmin: 0, vmax: mapMaximum, colorbar: { range: "recommended" } }),
+    ...(productId === "kp"
+      ? {
+          stormLines: [
+            ["G1", 5],
+            ["G2", 6],
+            ["G3", 7],
+            ["G4", 8],
+            ["G5", 9],
+          ].map(([level, value]) => ({ level, value, visible: false })),
+        }
+      : {}),
+  });
 }

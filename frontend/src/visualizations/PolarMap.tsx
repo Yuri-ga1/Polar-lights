@@ -8,7 +8,7 @@ import {
 import { ScatterplotLayer, PathLayer, TextLayer } from "@deck.gl/layers";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
-import { bounds, styledColor } from "./colors";
+import { bounds, drawOrder, styledColor } from "./colors";
 import { Colorbar } from "./Colorbar";
 import { useWorkspace } from "../store";
 export function projectPolar(
@@ -48,10 +48,10 @@ export default function PolarMap({
   const north = style.map.projection === "north-polar";
   const indices = useMemo(
     () =>
-      result.lat
-        .map((_, i) => i)
-        .filter((i) => (north ? result.lat[i] >= 0 : result.lat[i] <= 0)),
-    [result, north],
+      drawOrder(result.value, style.map.showNoData).filter((i) =>
+        north ? result.lat[i] >= 0 : result.lat[i] <= 0,
+      ),
+    [result, north, style.map.showNoData],
   );
   const range = useMemo(() => bounds(result.value, style), [result, style]);
   const initial = useRef(style.map);

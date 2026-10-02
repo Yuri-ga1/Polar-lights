@@ -235,6 +235,7 @@ export const ChartCard = memo(function ChartCard({
                     result={result}
                     style={chart.styleSpec}
                     chartId={chart.id}
+                    productId={chart.productId}
                   />
                 )}
               </Suspense>

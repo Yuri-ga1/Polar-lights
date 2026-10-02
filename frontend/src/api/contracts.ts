@@ -116,8 +116,13 @@ export type DataSpec = Record<string, string | number | string[]>;
 export function defaults(product: Product): DataSpec {
   return Object.fromEntries(
     product.parameterSchema
-      .filter((p) => p.default != null)
-      .map((p) => [p.name, structuredClone(p.default!)]),
+      .filter((p) => p.default != null || p.type === "datetime")
+      .map((p) => [
+        p.name,
+        p.default != null
+          ? structuredClone(p.default)
+          : `${new Date().toISOString().slice(0, 10)}T00:00:00Z`,
+      ]),
   );
 }
 export function validation(product: Product, data: DataSpec): string[] {

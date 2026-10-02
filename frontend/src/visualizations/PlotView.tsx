@@ -6,14 +6,17 @@ import type { StyleSpec } from "../store";
 import { seriesPoints } from "./series";
 import { heatmapScale } from "./colors";
 import { registerSvg } from "../exports";
+import { KP_BAR_WIDTH_MS, kpColor, kpNotation } from "./kp";
 export default function PlotView({
   result,
   style,
   chartId,
+  productId,
 }: {
   result: Exclude<Result, { dataType: "map" }>;
   style: StyleSpec;
   chartId: string;
+  productId: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
@@ -54,6 +57,24 @@ export default function PlotView({
         },
       ];
     }
+    if (productId === "kp") {
+      const points = seriesPoints(result, "kp");
+      const values = points.y.map((value) => value ?? 0);
+      return [
+        {
+          type: "bar",
+          x: points.x,
+          y: values,
+          width: points.x.map(() => KP_BAR_WIDTH_MS),
+          marker: { color: values.map(kpColor) },
+          text: values.map(kpNotation),
+          textposition: "auto",
+          name: "Kp",
+          hovertemplate: "%{x}<br>Kp %{text}<br>%{customdata}<extra></extra>",
+          customdata: points.customdata,
+        } as Data,
+      ];
+    }
     return Object.keys(result.columns).map((column, i) => {
       const units =
         result.metadata.columnMetadata?.[column]?.units ||
@@ -73,7 +94,7 @@ export default function PlotView({
         hovertemplate: `%{x}<br>%{y} ${units}<br>%{customdata}<extra>${column}</extra>`,
       } as Data;
     });
-  }, [result, style]);
+  }, [result, style, productId]);
   useEffect(() => {
     const node = host.current!;
     const layout: Partial<Layout> = {
@@ -130,6 +151,40 @@ export default function PlotView({
           },
         });
       });
+      if (productId === "kp") {
+        layout.yaxis = {
+          title: { text: "Kp", font: { size: style.labelSize } },
+          range: [0, 9],
+          tickvals: [0, 3, 6, 9],
+          showgrid: style.grid,
+          visible: style.axes,
+          fixedrange: false,
+        };
+        layout.shapes = style.stormLines
+          .filter((line) => line.visible)
+          .map((line) => ({
+            type: "line",
+            xref: "paper",
+            x0: 0,
+            x1: 1,
+            yref: "y",
+            y0: line.value,
+            y1: line.value,
+            line: { color: line.color, width: line.width, dash: line.dash },
+            name: line.level,
+          }));
+        layout.annotations = style.stormLines
+          .filter((line) => line.visible)
+          .map((line) => ({
+            xref: "paper",
+            x: 1,
+            y: line.value,
+            text: line.level,
+            showarrow: false,
+            xanchor: "left",
+            font: { color: line.color, size: style.labelSize },
+          }));
+      }
     } else
       layout.yaxis = {
         title: {
@@ -150,7 +205,7 @@ export default function PlotView({
       scrollZoom: style.scrollZoom,
       modeBarButtonsToRemove: ["sendDataToCloud"],
     }).catch((e) => setError(String(e)));
-  }, [data, result, style]);
+  }, [data, result, style, productId]);
   useEffect(
     () =>
       registerSvg(chartId, () =>

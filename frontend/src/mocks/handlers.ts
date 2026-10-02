@@ -94,7 +94,9 @@ export function mockResult({ productId, parameters: p }: Request): Result {
         time.map((t, i) =>
           i === 5 || (Date.parse(t) / 1000) % frequency(c) !== 0
             ? null
-            : Math.sin(i * 0.4 + j) * 3 + j * 10,
+            : c === "kp"
+              ? [1, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5][i % 8]
+              : Math.sin(i * 0.4 + j) * 3 + j * 10,
         ),
       ]),
     ),

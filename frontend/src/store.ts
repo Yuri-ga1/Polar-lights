@@ -28,9 +28,50 @@ export type Runtime = {
   progress?: string;
 };
 export const STORAGE_KEY = "polar-lights.workspace.v1";
+function productPresentation(chart: ChartSpec): ChartSpec {
+  const maximum =
+    chart.productId === "roti-map"
+      ? 1
+      : chart.productId === "tec-adjusted-map" || chart.productId === "gim-map"
+        ? 60
+        : undefined;
+  const style = chart.styleSpec;
+  if (
+    maximum !== undefined &&
+    style.colorbar.range === "auto" &&
+    style.vmin === undefined &&
+    style.vmax === undefined
+  )
+    return {
+      ...chart,
+      styleSpec: {
+        ...style,
+        vmin: 0,
+        vmax: maximum,
+        colorbar: { ...style.colorbar, range: "recommended" },
+      },
+    };
+  if (chart.productId === "kp" && !style.stormLines.length)
+    return {
+      ...chart,
+      styleSpec: {
+        ...style,
+        stormLines: defaultStyle("", "kp").stormLines,
+      },
+    };
+  return chart;
+}
+function normalizePresentation(workspace: WorkspaceSpec): WorkspaceSpec {
+  return {
+    ...workspace,
+    charts: workspace.charts.map(productPresentation),
+  };
+}
 function restore() {
   try {
-    return parsePreset(JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"));
+    return normalizePresentation(
+      parsePreset(JSON.parse(localStorage.getItem(STORAGE_KEY) || "null")),
+    );
   } catch {
     return emptyWorkspace();
   }
@@ -164,7 +205,7 @@ export const useWorkspace = create<Workspace>((set, get) => {
           id,
           productId: product.productId,
           dataSpec: defaults(product),
-          styleSpec: defaultStyle(product.title),
+          styleSpec: defaultStyle(product.title, product.productId),
           layoutSpec: {
             x: position?.x ?? 32 + offset,
             y: position?.y ?? 32 + offset,
@@ -481,7 +522,7 @@ export const useWorkspace = create<Workspace>((set, get) => {
       });
     },
     importPreset: (input) => {
-      const next = parsePreset(input);
+      const next = normalizePresentation(parsePreset(input));
       commit(next);
       set({ runtime: {}, epoch: get().epoch + 1 });
     },
