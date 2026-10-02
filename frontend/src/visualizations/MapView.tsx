@@ -6,11 +6,11 @@ import { ScatterplotLayer } from "@deck.gl/layers";
 import type { PickingInfo } from "@deck.gl/core";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
-import { bounds, styledColor } from "./colors";
+import { bounds, drawOrder, styledColor } from "./colors";
 import { Colorbar } from "./Colorbar";
 import { useWorkspace } from "../store";
 import "maplibre-gl/dist/maplibre-gl.css";
-// Bundle the worker and its imports in both Vite development and production.
+// Vite emits MapLibre 6's bundled ESM worker for development and production.
 maplibregl.setWorkerUrl(workerUrl);
 const PolarMap = lazy(() => import("./PolarMap"));
 type Props = {
@@ -47,8 +47,8 @@ function GeographicMap({ result, style, chartId }: Props) {
   } | null>(null);
   const range = useMemo(() => bounds(result.value, style), [result, style]);
   const indexes = useMemo(
-    () => Array.from({ length: result.lat.length }, (_, i) => i),
-    [result],
+    () => drawOrder(result.value, style.map.showNoData),
+    [result.value, style.map.showNoData],
   );
   useEffect(() => {
     if (!host.current) return;
