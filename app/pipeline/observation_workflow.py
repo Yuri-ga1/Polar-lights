@@ -21,6 +21,7 @@ ObservationSource = Literal["aurorasaurus", "spaceweatherlive"]
 # Helper function
 # ---------------------------------------------------------------------------
 
+
 def load_observations_from_csv(csv_path: str, date_iso: str) -> List[Dict[str, str]]:
     """Load observation records for a specific date from a CSV file.
 
@@ -99,14 +100,11 @@ def run_observation_workflow(
     paths = DataPaths.from_root(download_dir)
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Keep the source-specific CSVs independent when users switch providers.
     if source not in {"aurorasaurus", "spaceweatherlive"}:
         raise ValueError("source must be 'aurorasaurus' or 'spaceweatherlive'")
 
-    # Keep source caches separate: otherwise changing the source would mix
-    # observations from unrelated datasets in one map.
-    csv_name = "aurora_data.csv" if source == "aurorasaurus" else "spaceweatherlive_aurora_data.csv"
-    csv_path = str(paths.processed_file(csv_name.removesuffix(".csv")))
+    # Both providers share one normalized cache and the same map.
+    csv_path = str(paths.processed_file("aurora_data"))
 
     observations: list[dict[str, str]] = []
 
@@ -117,21 +115,30 @@ def run_observation_workflow(
     if cached_rows:
         observations.extend(cached_rows)
 
-    if source == "aurorasaurus":
-        aurora_rows = [] if cached_rows else fetch_and_process_aurorasaurus(
-            date, csv_path, download_dir=str(paths.raw_source("aurora")), auto_download=True
+    aurora_rows: list[dict[str, str]] = []
+    if not cached_rows:
+        providers = (
+            lambda: fetch_and_process_aurorasaurus(
+                date,
+                csv_path,
+                download_dir=str(paths.raw_source("aurora")),
+                auto_download=True,
+            ),
+            lambda: _fetch_spaceweatherlive(
+                date, csv_path, str(paths.raw_source("aurora"))
+            ),
         )
-    else:
-        aurora_rows = [] if cached_rows else _fetch_spaceweatherlive(
-            date, csv_path, str(paths.raw_source("aurora"))
-        )
+        for acquire in providers:
+            try:
+                aurora_rows.extend(acquire())
+            except Exception as exc:  # noqa: BLE001 — continue with the other provider
+                print(f"Aurora provider acquisition failed for {date_iso}: {exc}")
     observations.extend(aurora_rows)
 
     # If no CSV exists after processing, report and return early.
     if not os.path.exists(csv_path):
-        print(f'File {csv_path} was not created because there is no observation')
+        print(f"File {csv_path} was not created because there is no observation")
         return []
-
 
     save_path = os.path.join(plots_dir, "Observation_map.png")
     plotter = AuroraMapPlotter(

@@ -622,6 +622,29 @@
       "availabilityStrategy": "local-index-then-acquire",
       "remoteAcquisition": false,
       "columnMetadata": {}
+    },
+    {
+      "productId": "aurora-map",
+      "title": "Aurora observations",
+      "category": "maps",
+      "graphType": "map",
+      "available": true,
+      "units": "observations",
+      "parameterSchema": [
+        {
+          "name": "timestamp",
+          "type": "datetime",
+          "required": true
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true
     }
   ]
 }

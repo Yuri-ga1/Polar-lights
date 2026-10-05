@@ -98,7 +98,9 @@ export function Parameters({
             <Field key={p.name} parameter={p} chart={chart} />
           ))}
         </fieldset>
-        <Timeline key={chart.id} chart={chart} product={product} />
+        {product.productId !== "aurora-map" && (
+          <Timeline key={chart.id} chart={chart} product={product} />
+        )}
         {errors.length > 0 && <p className="hint">{errors.join(" · ")}</p>}
         {appliedChanged(chart) && (
           <p className="hint">

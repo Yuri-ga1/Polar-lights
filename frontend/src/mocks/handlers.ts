@@ -16,6 +16,48 @@ const jobs = new Map<
 >();
 export function mockResult({ productId, parameters: p }: Request): Result {
   const product = catalog.products.find((x) => x.productId === productId)!;
+  if (productId === "aurora-map")
+    return {
+      dataType: "aurora",
+      observations: Array.from({ length: 24 }, (_, i) => ({
+        lat: 48 + (i % 8) * 3.2,
+        lon: -18 + Math.floor(i / 8) * 18 + (i % 3) * 3,
+        colors: [["Green"], ["Green", "Red"], ["Purple"], ["Blue", "Green"]][
+          i % 4
+        ],
+        sectorColors: [
+          ["#008000"],
+          ["#008000", "#ff0000"],
+          ["#800080"],
+          ["#0000ff", "#008000"],
+        ][i % 4],
+        time: `${String((i * 3) % 24).padStart(2, "0")}:00:00`,
+        durationMinutes: 30,
+        forms: "Arc",
+      })),
+      overlays: {
+        terminator: [
+          Array.from({ length: 49 }, (_, i) => {
+            const lon = -180 + i * 7.5;
+            return [lon, 20 * Math.sin((lon * Math.PI) / 180)];
+          }),
+        ],
+        nightPolygons: [
+          [
+            [-180, -90],
+            [-20, -90],
+            [-20, 90],
+            [-180, 90],
+            [-180, -90],
+          ],
+        ],
+      },
+      metadata: {
+        timestamp: String(p.timestamp),
+        pointCount: 24,
+        datasetVersion: "mock-aurora-v1",
+      },
+    };
   if (product.graphType === "map") {
     const lat = Array.from(
       { length: 180 },
@@ -226,6 +268,20 @@ export const handlers = [
     HttpResponse.json({ status: "ok", apiVersion: "1.0.0" }),
   ),
   http.get("*/api/v1/catalog", () => HttpResponse.json(catalog)),
+  http.post("*/api/v1/aurora-map/geomagnetic-lines", async ({ request }) => {
+    const { latitudes } = (await request.json()) as { latitudes: number[] };
+    return HttpResponse.json({
+      lines: latitudes.map((latitude) => ({
+        latitude,
+        paths: [
+          Array.from({ length: 49 }, (_, i) => [
+            -180 + i * 7.5,
+            latitude + Math.sin(i / 7) * 5,
+          ]),
+        ],
+      })),
+    });
+  }),
   http.get("*/api/v1/products/:id/availability", ({ params }) =>
     HttpResponse.json({
       productId: params.id,

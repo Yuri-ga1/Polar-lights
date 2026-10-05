@@ -51,6 +51,44 @@ class MapRequest(StrictModel):
     parameters: MapParameters
 
 
+class AuroraMapParameters(StrictModel):
+    timestamp: datetime
+
+    _zone = field_validator("timestamp")(
+        classmethod(SeriesParameters.require_zone.__func__)
+    )
+
+
+class AuroraMapRequest(StrictModel):
+    productId: Literal["aurora-map"]
+    parameters: AuroraMapParameters
+
+
+class AuroraGeomagneticLinesRequest(StrictModel):
+    timestamp: datetime
+    latitudes: list[float] = Field(min_length=1)
+
+    _zone = field_validator("timestamp")(
+        classmethod(SeriesParameters.require_zone.__func__)
+    )
+
+    @field_validator("latitudes")
+    @classmethod
+    def validate_latitudes(cls, values):
+        if any(not -90 <= latitude <= 90 for latitude in values):
+            raise ValueError("Geomagnetic latitudes must be between -90 and 90")
+        return values
+
+
+class AuroraGeomagneticLine(BaseModel):
+    latitude: float
+    paths: list[list[tuple[float, float]]]
+
+
+class AuroraGeomagneticLinesResponse(BaseModel):
+    lines: list[AuroraGeomagneticLine]
+
+
 class KeogramParameters(StrictModel):
     start: datetime
     end: datetime
@@ -77,7 +115,8 @@ class KeogramRequest(StrictModel):
 
 
 DataRequest = Annotated[
-    SeriesRequest | MapRequest | KeogramRequest, Field(discriminator="productId")
+    SeriesRequest | MapRequest | KeogramRequest | AuroraMapRequest,
+    Field(discriminator="productId"),
 ]
 
 
@@ -183,6 +222,13 @@ class MapJsonResponse(BaseModel):
     lat: list[float]
     lon: list[float]
     value: list[float | None]
+    metadata: dict
+
+
+class AuroraMapResponse(BaseModel):
+    dataType: Literal["aurora"] = "aurora"
+    observations: list[dict]
+    overlays: dict
     metadata: dict
 
 

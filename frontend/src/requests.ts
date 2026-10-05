@@ -43,11 +43,13 @@ export async function requestChart(id: string, product: Product) {
   try {
     // Per-card keys prevent one card's cancellation from aborting another's request.
     const cached =
-      product.graphType === "map"
-        ? sliceCache.get(product.productId, parameters, id)
-        : queryClient.getQueryData<Awaited<ReturnType<typeof apiClient.data>>>(
-            key,
-          );
+      product.productId === "aurora-map"
+        ? undefined
+        : product.graphType === "map"
+          ? sliceCache.get(product.productId, parameters, id)
+          : queryClient.getQueryData<Awaited<ReturnType<typeof apiClient.data>>>(
+              key,
+            );
     const state = queryClient.getQueryState(key);
     const result =
       cached &&

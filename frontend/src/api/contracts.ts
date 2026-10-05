@@ -46,6 +46,25 @@ export const metadataSchema = z
 const numbers = z.array(z.number().nullable());
 export const resultSchema = z.discriminatedUnion("dataType", [
   z.object({
+    dataType: z.literal("aurora"),
+    observations: z.array(
+      z.object({
+        lat: z.number(),
+        lon: z.number(),
+        colors: z.array(z.string()),
+        sectorColors: z.array(z.string()),
+        time: z.string(),
+        durationMinutes: z.number(),
+        forms: z.string(),
+      }),
+    ),
+    overlays: z.object({
+      terminator: z.array(z.array(z.tuple([z.number(), z.number()]))),
+      nightPolygons: z.array(z.array(z.tuple([z.number(), z.number()]))),
+    }),
+    metadata: metadataSchema,
+  }),
+  z.object({
     dataType: z.literal("map"),
     lat: z.array(z.number()),
     lon: z.array(z.number()),
@@ -112,6 +131,15 @@ export type Product = z.infer<typeof productSchema>;
 export type Parameter = z.infer<typeof parameterSchema>;
 export type Result = z.infer<typeof resultSchema>;
 export type MapResult = Extract<Result, { dataType: "map" }>;
+export type AuroraResult = Extract<Result, { dataType: "aurora" }>;
+export const geomagneticLineSchema = z.object({
+  lines: z.array(
+    z.object({
+      latitude: z.number(),
+      paths: z.array(z.array(z.tuple([z.number(), z.number()]))),
+    }),
+  ),
+});
 export type DataSpec = Record<string, string | number | string[]>;
 export function defaults(product: Product): DataSpec {
   return Object.fromEntries(

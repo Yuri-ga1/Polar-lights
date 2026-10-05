@@ -21,6 +21,9 @@ from .jobs import JobRunner, JobStore
 from .logging import get_logger
 from .logging import request_id as request_context_id
 from .models import (
+    AuroraGeomagneticLinesRequest,
+    AuroraGeomagneticLinesResponse,
+    AuroraMapResponse,
     AvailabilityResponse,
     CatalogResponse,
     DataRequest,
@@ -168,6 +171,13 @@ def create_app(settings=None, service=None, *, start_jobs=True):
     def health() -> dict:
         return {"status": "ok", "apiVersion": "1.0.0"}
 
+    @app.post(
+        "/api/v1/aurora-map/geomagnetic-lines",
+        response_model=AuroraGeomagneticLinesResponse,
+    )
+    def aurora_geomagnetic_lines(body: AuroraGeomagneticLinesRequest) -> dict:
+        return service.aurora_geomagnetic_lines(body.timestamp, body.latitudes)
+
     @app.get(
         "/api/v1/catalog",
         response_model=CatalogResponse,
@@ -190,7 +200,10 @@ def create_app(settings=None, service=None, *, start_jobs=True):
 
     @app.post(
         "/api/v1/data",
-        response_model=SeriesResponse | MapJsonResponse | KeogramResponse,
+        response_model=SeriesResponse
+        | MapJsonResponse
+        | KeogramResponse
+        | AuroraMapResponse,
         responses={
             200: {
                 "content": {

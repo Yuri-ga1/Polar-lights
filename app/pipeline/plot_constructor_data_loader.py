@@ -84,7 +84,7 @@ class PlotConstructorDataLoader:
             f"Unsupported datetime format: {value}. "
             "Use YYYY-MM-DD or YYYY-MM-DD HH:MM:SS"
         )
-    
+
     @classmethod
     def _parse_plot_time(cls, value: Any) -> datetime:
         if isinstance(value, datetime):
@@ -188,7 +188,9 @@ class PlotConstructorDataLoader:
         return any(self._normalize(name) in requested for name in names)
 
     @classmethod
-    def _merge_plot_params(cls, plots: list[str | dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    def _merge_plot_params(
+        cls, plots: list[str | dict[str, Any]]
+    ) -> dict[str, dict[str, Any]]:
         merged: dict[str, dict[str, Any]] = {}
 
         for item in plots:
@@ -210,7 +212,7 @@ class PlotConstructorDataLoader:
         except Exception as exc:
             print(f"Download warning: {exc}")
             return None
-        
+
     @classmethod
     def _collect_group_fields(cls, plots: list[str | dict[str, Any]]) -> set[str]:
         fields: set[str] = set()
@@ -227,7 +229,7 @@ class PlotConstructorDataLoader:
                     fields.add(cls._normalize(str(field)))
 
         return fields
-    
+
     def _filter_by_datetime_range(self, df: pd.DataFrame | None) -> pd.DataFrame | None:
         if df is None or df.empty:
             return df
@@ -305,13 +307,18 @@ class PlotConstructorDataLoader:
             while missing_times:
                 request_date = min(missing_times).date() + timedelta(days=1)
                 files_before = set(processor.local_files(DataProduct.ROTI))
-                self._safe_download(lambda d=request_date: downloader.download(d.isoformat()))
+                self._safe_download(
+                    lambda d=request_date: downloader.download(d.isoformat())
+                )
                 files_after = processor.local_files(DataProduct.ROTI)
                 selected_files, updated_missing_times = self._select_roti_files(
                     files_after,
                     required_times,
                 )
-                if set(files_after) == files_before and updated_missing_times == missing_times:
+                if (
+                    set(files_after) == files_before
+                    and updated_missing_times == missing_times
+                ):
                     break
                 missing_times = updated_missing_times
                 if not missing_times:
@@ -343,8 +350,7 @@ class PlotConstructorDataLoader:
         for path in file_paths:
             keys = SimurgProcessor._file_time_keys(path)
             available = {
-                SimurgProcessor._parse_time(key).replace(tzinfo=None)
-                for key in keys
+                SimurgProcessor._parse_time(key).replace(tzinfo=None) for key in keys
             }
             covered = set(required_times) & available
             if covered:
@@ -353,7 +359,9 @@ class PlotConstructorDataLoader:
         required = set(required_times)
         candidates = sorted(coverage.items(), key=lambda item: str(item[0]))
         coverers = {
-            value: [idx for idx, (_, covered) in enumerate(candidates) if value in covered]
+            value: [
+                idx for idx, (_, covered) in enumerate(candidates) if value in covered
+            ]
             for value in required
         }
         remaining = required.copy()
@@ -410,7 +418,9 @@ class PlotConstructorDataLoader:
             colorbar_label=params.get("colorbar_label", KeogramConfig.colorbar_label),
         )
 
-        target_date = datetime.strptime(self.primary_date_str, "%Y-%m-%d").date() - timedelta(days=1)
+        target_date = datetime.strptime(
+            self.primary_date_str, "%Y-%m-%d"
+        ).date() - timedelta(days=1)
         processor = SimurgProcessor(folder_path=out_dir)
         available_times = processor.available_times(
             target_date,
@@ -420,7 +430,9 @@ class PlotConstructorDataLoader:
             return None
 
         day_start, day_finish = self._resolve_keogram_datetime_range(params)
-        keogram_times = resolve_keogram_times(available_times, day_start, day_finish, cfg)
+        keogram_times = resolve_keogram_times(
+            available_times, day_start, day_finish, cfg
+        )
 
         time_slices = processor.iter_slices(
             target_date,
@@ -476,9 +488,10 @@ class PlotConstructorDataLoader:
         processor = SimurgProcessor(folder_path=out_dir)
 
         requested_times = self._resolve_requested_times(params)
-        dates = sorted({
-            value.strftime("%Y-%m-%d") for value in requested_times
-        }) or self.download_dates
+        dates = (
+            sorted({value.strftime("%Y-%m-%d") for value in requested_times})
+            or self.download_dates
+        )
 
         loaded: dict[datetime, Any] = {}
         downloader = AdjustedTecDownloader(client=client, out_dir=out_dir)
@@ -495,7 +508,8 @@ class PlotConstructorDataLoader:
                 self._safe_download(lambda d=date_str: downloader.download(d))
 
             day_times = [
-                value for value in requested_times
+                value
+                for value in requested_times
                 if value.strftime("%Y-%m-%d") == date_str
             ] or None
             day_data = processor.load(
@@ -515,7 +529,10 @@ class PlotConstructorDataLoader:
         out_dir = str(self.paths.raw_source("gim"))
 
         requested_times = self._resolve_requested_times(params)
-        dates = sorted({value.strftime("%Y-%m-%d") for value in requested_times}) or self.download_dates
+        dates = (
+            sorted({value.strftime("%Y-%m-%d") for value in requested_times})
+            or self.download_dates
+        )
 
         for date_str in dates:
             self._safe_download(
@@ -536,7 +553,9 @@ class PlotConstructorDataLoader:
     def _load_ionosonde(self, params: dict[str, Any] | None = None):
         params = params or {}
         code = params.get("code")
-        station = None if code is None else (code[0] if isinstance(code, list) else code)
+        station = (
+            None if code is None else (code[0] if isinstance(code, list) else code)
+        )
 
         out_dir = str(self.paths.raw_source("giro"))
 
@@ -575,7 +594,9 @@ class PlotConstructorDataLoader:
 
         return OmniProcessor(folder_path=out_dir).load(self.primary_date_str)
 
-    def _aurora_stub(self, date_str: str | None = None, params: dict[str, Any] | None = None) -> pd.DataFrame:
+    def _aurora_stub(
+        self, date_str: str | None = None, params: dict[str, Any] | None = None
+    ) -> pd.DataFrame:
         """
         Load aurora observations for the full constructor date range.
 
@@ -585,11 +606,7 @@ class PlotConstructorDataLoader:
         out_dir = str(self.paths.raw_source("aurora"))
 
         params = params or {}
-        source = str(params.get("source", "aurorasaurus")).lower()
-        if source not in {"aurorasaurus", "spaceweatherlive"}:
-            raise ValueError("Aurora observation source must be 'aurorasaurus' or 'spaceweatherlive'.")
-        csv_name = "aurora_data.csv" if source == "aurorasaurus" else "spaceweatherlive_aurora_data.csv"
-        csv_path = os.path.join(out_dir, csv_name)
+        csv_path = str(self.paths.processed_file("aurora_data"))
 
         expected_columns = [
             "date",
@@ -616,7 +633,9 @@ class PlotConstructorDataLoader:
 
             df = df[expected_columns].copy()
 
-            df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime(
+                "%Y-%m-%d"
+            )
             df["time"] = df["time"].fillna("").astype(str)
 
             df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
@@ -652,28 +671,30 @@ class PlotConstructorDataLoader:
             if not os.path.exists(csv_path):
                 return False
             cached = pd.read_csv(csv_path, usecols=["date"])
-            return target_date in pd.to_datetime(cached["date"], errors="coerce").dt.strftime("%Y-%m-%d").values
+            return (
+                target_date
+                in pd.to_datetime(cached["date"], errors="coerce")
+                .dt.strftime("%Y-%m-%d")
+                .values
+            )
 
         all_rows: list[dict[str, Any]] = []
 
         for current_date_str in self.download_dates:
             target_date = datetime.strptime(current_date_str, "%Y-%m-%d").date()
 
-            if source == "aurorasaurus":
-                rows = self._safe_download(
+            if not has_cached_date(current_date_str):
+                for provider in (
                     lambda d=target_date: fetch_and_process_aurorasaurus(
                         d, csv_path, download_dir=out_dir, auto_download=True
-                    ) if not has_cached_date(d.strftime("%Y-%m-%d")) else []
-                )
-            else:
-                rows = self._safe_download(
+                    ),
                     lambda d=target_date: self._fetch_spaceweatherlive_for_constructor(
                         d, csv_path, out_dir
-                    ) if not has_cached_date(d.strftime("%Y-%m-%d")) else []
-                )
-
-            if rows:
-                all_rows.extend(rows)
+                    ),
+                ):
+                    rows = self._safe_download(provider)
+                    if rows:
+                        all_rows.extend(rows)
 
         if all_rows:
             return normalize_observations_df(pd.DataFrame(all_rows))
@@ -688,8 +709,12 @@ class PlotConstructorDataLoader:
         return empty_observations_df()
 
     @staticmethod
-    def _fetch_spaceweatherlive_for_constructor(day: date, csv_path: str, out_dir: str) -> list[dict[str, Any]]:
-        storage = ObservationHDF5Storage(os.path.join(out_dir, "spaceweather_observations.h5"))
+    def _fetch_spaceweatherlive_for_constructor(
+        day: date, csv_path: str, out_dir: str
+    ) -> list[dict[str, Any]]:
+        storage = ObservationHDF5Storage(
+            os.path.join(out_dir, "spaceweather_observations.h5")
+        )
         finder = ObservationLinksFinder()
         parser = ObservationParser()
         processor = ObservationProcessor(save_path=csv_path)
@@ -712,9 +737,11 @@ class PlotConstructorDataLoader:
         finally:
             finder.close()
 
-    def load_for_requested_plots(self, plots: list[str | dict[str, Any]]) -> dict[str, Any]:
+    def load_for_requested_plots(
+        self, plots: list[str | dict[str, Any]]
+    ) -> dict[str, Any]:
         self._validate_map_times_in_range(plots)
-        
+
         names = {
             self._normalize(item if isinstance(item, str) else item.get("name", ""))
             for item in plots
@@ -738,8 +765,7 @@ class PlotConstructorDataLoader:
 
         if self._contains(names, "adjusted tec", "tec adjusted"):
             results["Adjusted TEC"] = self._load_adjusted_tec(
-                params_by_plot.get("adjusted tec")
-                or params_by_plot.get("tec adjusted")
+                params_by_plot.get("adjusted tec") or params_by_plot.get("tec adjusted")
             )
 
         if self._contains(names, "gim"):
@@ -756,8 +782,7 @@ class PlotConstructorDataLoader:
 
         if self._contains(names, "cosmic ray", "cosmic rays", "cosmic"):
             results["Cosmic Ray"] = self._load_cosmic_ray(
-                params_by_plot.get("cosmic ray")
-                or params_by_plot.get("cosmic rays")
+                params_by_plot.get("cosmic ray") or params_by_plot.get("cosmic rays")
             )
 
         if self._contains(names, "omni"):

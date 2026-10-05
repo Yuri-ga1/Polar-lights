@@ -5,6 +5,7 @@ import {
   catalogSchema,
   jobSchema,
   resultSchema,
+  geomagneticLineSchema,
   type DataSpec,
   type Result,
 } from "./contracts";
@@ -141,5 +142,21 @@ export const apiClient = {
     } finally {
       signal.removeEventListener("abort", cancel);
     }
+  },
+  async auroraGeomagneticLines(
+    timestamp: string,
+    latitudes: number[],
+    signal: AbortSignal,
+  ) {
+    return geomagneticLineSchema.parse(
+      await (
+        await fetchApi("/api/v1/aurora-map/geomagnetic-lines", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ timestamp, latitudes }),
+          signal,
+        })
+      ).json(),
+    );
   },
 };

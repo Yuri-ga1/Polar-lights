@@ -444,6 +444,14 @@ footer pre {
 .field select {
   font-size: 11px;
 }
+.geomagnetic-line-editor {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.geomagnetic-line-editor .field {
+  flex: 1;
+}
 .check {
   display: flex;
   align-items: center;
@@ -561,6 +569,57 @@ footer pre {
   width: 125px;
   border-radius: 3px;
   margin-bottom: 4px;
+}
+.map-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+}
+.map-shell .map-canvas {
+  position: absolute;
+  inset: 0;
+}
+.map-shell .map-legend {
+  display: grid;
+  gap: 3px;
+  color: #42556a;
+}
+.map-shell .map-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: capitalize;
+}
+.map-shell .map-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.map-shell .map-legend .aurora-legend-symbol {
+  width: 13px;
+  height: 13px;
+  background: conic-gradient(
+    #168a48 0deg 72deg,
+    #d92f43 72deg 144deg,
+    #803db1 144deg 216deg,
+    #2871cf 216deg 288deg,
+    #e3c72f 288deg 360deg
+  );
+  border: 1px solid #ffffff;
+  box-shadow: 0 0 0 1px #536271;
+}
+.map-meta {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: #ffffffe8;
+  color: #557180;
+  font-size: 9px;
+  pointer-events: none;
 }
 .map-attribution {
   position: absolute;

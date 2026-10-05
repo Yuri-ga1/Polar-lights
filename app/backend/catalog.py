@@ -44,7 +44,17 @@ MAPS = {
     "gim-map": ("gim", "TECU"),
 }
 KEOGRAMS = {"roti-keogram": "roti-map", "tec-adjusted-keogram": "tec-adjusted-map"}
-PRODUCTS = ("omni", "kp", "kyoto-dst", "nmdb", "giro", "timeseries", *MAPS, *KEOGRAMS)
+PRODUCTS = (
+    "omni",
+    "kp",
+    "kyoto-dst",
+    "nmdb",
+    "giro",
+    "timeseries",
+    "aurora-map",
+    *MAPS,
+    *KEOGRAMS,
+)
 
 
 def column_spec(name):
@@ -104,9 +114,37 @@ def validate_columns(product, columns):
     return {s.name: s for s in specs}
 
 
-def catalog(known=(), remote_maps=False, station_metadata=None):
+def catalog(known=(), remote_maps=False, station_metadata=None, aurora_default=None):
     products = []
     for product in PRODUCTS:
+        if product == "aurora-map":
+            products.append(
+                {
+                    "productId": product,
+                    "title": "Aurora observations",
+                    "category": "maps",
+                    "graphType": "map",
+                    "available": True,
+                    "units": "observations",
+                    "parameterSchema": [
+                        {
+                            "name": "timestamp",
+                            "type": "datetime",
+                            "required": True,
+                            "default": aurora_default,
+                        },
+                    ],
+                    "capabilities": {
+                        "colorbar": False,
+                        "projection": False,
+                        "renderJobs": False,
+                        "async": True,
+                    },
+                    "availabilityStrategy": "local-index-then-acquire",
+                    "remoteAcquisition": True,
+                }
+            )
+            continue
         if product in KEOGRAMS:
             products.append(
                 {

@@ -15,6 +15,7 @@ import { cancelRequest, removeChart, requestChart } from "../requests";
 import { snapPosition } from "../workspace/geometry";
 import { ChartExport } from "./WorkspaceTools";
 const MapView = lazy(() => import("../visualizations/MapView"));
+const AuroraMapView = lazy(() => import("../visualizations/AuroraMapView"));
 const PlotView = lazy(() => import("../visualizations/PlotView"));
 class VisualBoundary extends Component<
   { children: ReactNode },
@@ -221,7 +222,13 @@ export const ChartCard = memo(function ChartCard({
                   <div className="placeholder">Loading visualization…</div>
                 }
               >
-                {result.dataType === "map" ? (
+                {result.dataType === "aurora" ? (
+                  <AuroraMapView
+                    result={result}
+                    style={chart.styleSpec}
+                    chartId={chart.id}
+                  />
+                ) : result.dataType === "map" ? (
                   <MapView
                     result={result}
                     style={chart.styleSpec}

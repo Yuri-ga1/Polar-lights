@@ -89,6 +89,9 @@ export const styleSchema = z.object({
       pointSize: number.min(1).max(30).default(3),
       opacity: number.min(0).max(1).default(0.85),
       showNoData: z.boolean().default(false),
+      showAuroraGeomagnetic: z.boolean().default(true),
+      auroraGeomagneticLatitudes: z.array(number.min(-90).max(90)).default([0]),
+      showAuroraTerminator: z.boolean().default(true),
       longitude: number.min(-180).max(180).default(0),
       latitude: number.min(-85).max(85).default(45),
       zoom: number.min(0).max(10).default(0.7),
@@ -201,7 +204,11 @@ export function emptyWorkspace(): WorkspaceSpec {
 }
 export function defaultStyle(title: string, productId?: string): StyleSpec {
   const mapMaximum =
-    productId === "roti-map" ? 1 : productId?.endsWith("-map") ? 60 : undefined;
+    productId === "roti-map"
+      ? 1
+      : productId && productId !== "aurora-map" && productId.endsWith("-map")
+        ? 60
+        : undefined;
   return styleSchema.parse({
     title,
     legend: true,

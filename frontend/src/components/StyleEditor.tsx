@@ -25,9 +25,33 @@ export function StyleEditor({
   const map = (patch: Partial<typeof m>) => update({ map: { ...m, ...patch } });
   const [stops, setStops] = useState(JSON.stringify(c.stops));
   const [stopError, setStopError] = useState("");
+  const [latitudeDrafts, setLatitudeDrafts] = useState(() =>
+    m.auroraGeomagneticLatitudes.map(String),
+  );
+  const [latitudeError, setLatitudeError] = useState("");
   useEffect(() => {
     setStops(JSON.stringify(c.stops));
   }, [c.stops]);
+  useEffect(() => {
+    setLatitudeDrafts(m.auroraGeomagneticLatitudes.map(String));
+  }, [m.auroraGeomagneticLatitudes]);
+  const applyLatitudes = () => {
+    const values = latitudeDrafts.map((draft) => {
+      const normalized = draft.trim().replace("−", "-").replace(",", ".");
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return NaN;
+      return Number(normalized);
+    });
+    if (
+      values.some(
+        (value) => !Number.isFinite(value) || value < -90 || value > 90,
+      )
+    ) {
+      setLatitudeError("Enter each latitude between -90 and 90.");
+      return;
+    }
+    setLatitudeError("");
+    map({ auroraGeomagneticLatitudes: values });
+  };
   return (
     <section aria-label="Appearance">
       <fieldset>
@@ -341,15 +365,18 @@ export function StyleEditor({
           {stopError && <p role="alert">{stopError}</p>}
         </details>
       )}
-      {projectionOptions(product).length > 0 && (
+      {(projectionOptions(product).length > 0 ||
+        product.productId === "aurora-map") && (
         <details open>
           <summary>Map view</summary>
-          <Choice
-            label="Projection"
-            value={m.projection}
-            options={projectionOptions(product)}
-            onChange={(projection) => map({ projection })}
-          />
+          {projectionOptions(product).length > 0 && (
+            <Choice
+              label="Projection"
+              value={m.projection}
+              options={projectionOptions(product)}
+              onChange={(projection) => map({ projection })}
+            />
+          )}
           <Check
             label="Coastline"
             value={m.coastline}
@@ -365,6 +392,74 @@ export function StyleEditor({
             value={m.labels}
             onChange={(labels) => map({ labels })}
           />
+          {product.productId === "aurora-map" && (
+            <>
+              <Check
+                label="Show geomagnetic line"
+                value={m.showAuroraGeomagnetic}
+                onChange={(showAuroraGeomagnetic) =>
+                  map({ showAuroraGeomagnetic })
+                }
+              />
+              {latitudeDrafts.map((draft, index) => (
+                <div className="geomagnetic-line-editor" key={index}>
+                  <Field label={`Geomagnetic latitude ${index + 1} (°)`}>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={draft}
+                      onChange={(event) => {
+                        const next = [...latitudeDrafts];
+                        next[index] = event.target.value;
+                        setLatitudeDrafts(next);
+                        setLatitudeError("");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          applyLatitudes();
+                        }
+                      }}
+                    />
+                  </Field>
+                  <button
+                    type="button"
+                    aria-label={`Remove geomagnetic latitude ${index + 1}`}
+                    onClick={() => {
+                      setLatitudeDrafts(
+                        latitudeDrafts.filter(
+                          (_, lineIndex) => lineIndex !== index,
+                        ),
+                      );
+                      setLatitudeError("");
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setLatitudeDrafts([...latitudeDrafts, ""]);
+                  setLatitudeError("");
+                }}
+              >
+                Add geomagnetic line
+              </button>
+              <button type="button" onClick={applyLatitudes}>
+                Apply lines
+              </button>
+              {latitudeError && <p role="alert">{latitudeError}</p>}
+              <Check
+                label="Solar terminator"
+                value={m.showAuroraTerminator}
+                onChange={(showAuroraTerminator) =>
+                  map({ showAuroraTerminator })
+                }
+              />
+            </>
+          )}
           <Numeric
             label="Point size"
             value={m.pointSize}

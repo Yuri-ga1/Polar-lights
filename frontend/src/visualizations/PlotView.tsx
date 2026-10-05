@@ -13,7 +13,7 @@ export default function PlotView({
   chartId,
   productId,
 }: {
-  result: Exclude<Result, { dataType: "map" }>;
+  result: Exclude<Result, { dataType: "map" | "aurora" }>;
   style: StyleSpec;
   chartId: string;
   productId: string;
