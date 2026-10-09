@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+import json
+import os
 import threading
 from contextvars import copy_context
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Callable
 
 from app.pipeline.adjusted_tec_pipeline import run_adjusted_tec_pipeline
@@ -15,11 +18,12 @@ from app.pipeline.roti_pipeline import run_roti_pipeline
 from app.simurg.simurg_client import SimurgClient
 
 from app.logging_config import logged_stage
+from app.configuration import current, manager, pin
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class MainPipelineConfig:
     date_str: str
     download_base_dir: str = "files"
@@ -29,6 +33,27 @@ class MainPipelineConfig:
     simurg_email: str | None = None
     map_projection: str | None = None
     observation_source: ObservationSource = "aurorasaurus"
+    _snapshot: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def __init__(self, date_str: str, download_base_dir: str | None = None,
+                 plots_base_dir: str | None = None, ionosonde_code: str | None = None,
+                 cosmic_station_codes: list[str] | None = None,
+                 simurg_email: str | None = None, map_projection: str | None = None,
+                 observation_source: ObservationSource | None = None):
+        snapshot = current()
+        values = {
+            "date_str": date_str,
+            "download_base_dir": download_base_dir if download_base_dir is not None else snapshot["backend"]["root"],
+            "plots_base_dir": plots_base_dir if plots_base_dir is not None else snapshot["pipeline"]["plots_base_dir"],
+            "ionosonde_code": ionosonde_code,
+            "cosmic_station_codes": cosmic_station_codes,
+            "simurg_email": simurg_email,
+            "map_projection": map_projection,
+            "observation_source": observation_source if observation_source is not None else snapshot["pipeline"]["observation_source"],
+        }
+        for name, value in values.items():
+            object.__setattr__(self, name, value)
+        object.__setattr__(self, "_snapshot", snapshot)
 
 
 @dataclass(frozen=True)
@@ -39,7 +64,7 @@ class ThreadSpec:
 
 
 def _build_simurg_client(config: MainPipelineConfig) -> SimurgClient | None:
-    email = config.simurg_email or 'Storm_Plotter_Jupyter_Notebook@gmail.com'
+    email = config.simurg_email or os.getenv("SIMURG_EMAIL") or 'Storm_Plotter_Jupyter_Notebook@gmail.com'
     if not email:
         logger.warning("SIMuRG email is missing; adjusted TEC and ROTI pipelines skipped.")
         return None
@@ -102,6 +127,25 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
 
 @logged_stage("pipeline", entry=True)
 def run_main_pipeline(config: MainPipelineConfig) -> None:
+    manager().start()
+    with pin(config._snapshot or current()) as snapshot:
+        _run_main_pipeline(config, snapshot)
+
+
+def _run_main_pipeline(config: MainPipelineConfig, snapshot) -> None:
+    output = Path(config.plots_base_dir) / config.date_str
+    output.mkdir(parents=True, exist_ok=True)
+    temporary = output / "effective-config.tmp"
+    temporary.write_text(json.dumps({"settings": snapshot, "job": {
+        "date_str": config.date_str,
+        "download_base_dir": config.download_base_dir,
+        "plots_base_dir": config.plots_base_dir,
+        "ionosonde_code": config.ionosonde_code,
+        "cosmic_station_codes": config.cosmic_station_codes,
+        "map_projection": config.map_projection,
+        "observation_source": config.observation_source,
+    }}, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.replace(output / "effective-config.json")
     simurg_client = _build_simurg_client(config)
     specs = _build_thread_specs(config, simurg_client)
     exceptions: list[tuple[str, BaseException]] = []

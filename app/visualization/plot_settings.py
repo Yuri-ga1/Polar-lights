@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from app.configuration import current
 
 # --- Константы ---
 POINT_RADIUS = 2
@@ -19,7 +20,7 @@ def set_plt_def_params():
     plt.style.use('seaborn-v0_8-whitegrid')
     PLOTTING_PARAMS = {
         'font.size': 30,
-        'figure.dpi': DPI,
+        'figure.dpi': current()['plotting']['dpi'],
         #'font.family': 'serif',
         #'font.family': 'monospace',
         #'font.style': 'normal',
@@ -43,7 +44,7 @@ def set_constructor_def_params():
     plt.style.use('seaborn-v0_8-whitegrid')
     PLOTTING_PARAMS = {
         'font.size': 24,
-        'figure.dpi': DPI,
+        'figure.dpi': current()['plotting']['dpi'],
         # 'font.family': 'serif',
         # 'font.family': 'monospace',
         # 'font.style': 'normal',

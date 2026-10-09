@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import requests
 
 from app.logging_config import get_logger
+from app.configuration import current
 
 logger = get_logger(__name__)
 
@@ -16,14 +17,15 @@ class SimurgClient:
         self,
         email: str,
         base_url: str = "https://simurg.iszf.irk.ru",
-        polling_interval: int = 60,
-        timeout: int = 30,
+        polling_interval: int | None = None,
+        timeout: int | None = None,
         verify: bool = True
     ) -> None:
         self.api_url = f'{base_url.rstrip("/")}/api'
         self.download_url = f'{base_url.rstrip("/")}/ufiles'
-        self.timeout = timeout
-        self.polling_interval = polling_interval
+        settings = current()["downloads"]
+        self.timeout = settings["simurg_timeout"] if timeout is None else timeout
+        self.polling_interval = settings["simurg_polling_interval"] if polling_interval is None else polling_interval
         self.verify = verify
         self.email = email
         self.query_ids: set[str] = set()
