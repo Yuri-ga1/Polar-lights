@@ -1,9 +1,14 @@
+import { logger } from "./logging";
 import { apiClient, ApiError, queryClient } from "./api/client";
 import { sliceCache } from "./api/sliceCache";
 import { requestParameters, validation, type Product } from "./api/contracts";
 import { useWorkspace } from "./store";
 const requests = new Map<string, AbortController>();
 export function cancelRequest(id: string) {
+  if (requests.has(id))
+    logger.info("data_cancelled", "Data operation cancelled", {
+      context: { chart_id: id },
+    });
   requests.get(id)?.abort();
   requests.delete(id);
   const old = useWorkspace.getState().runtime[id];
@@ -23,6 +28,10 @@ export async function requestChart(id: string, product: Product) {
   )
     return;
   cancelRequest(id);
+  const began = performance.now();
+  logger.info("data_started", "Data operation started", {
+    context: { product: product.productId, chart_id: id },
+  });
   const controller = new AbortController();
   requests.set(id, controller);
   const parameters = requestParameters(
@@ -47,9 +56,9 @@ export async function requestChart(id: string, product: Product) {
         ? undefined
         : product.graphType === "map"
           ? sliceCache.get(product.productId, parameters, id)
-          : queryClient.getQueryData<Awaited<ReturnType<typeof apiClient.data>>>(
-              key,
-            );
+          : queryClient.getQueryData<
+              Awaited<ReturnType<typeof apiClient.data>>
+            >(key);
     const state = queryClient.getQueryState(key);
     const result =
       cached &&
@@ -78,7 +87,16 @@ export async function requestChart(id: string, product: Product) {
     }
     useWorkspace.getState().update(id, { appliedDataSpec: parameters });
     useWorkspace.getState().setRuntime(id, { status: "loaded", result });
+    logger.info("data_completed", "Data operation completed", {
+      duration_ms: performance.now() - began,
+      context: { product: product.productId, chart_id: id },
+    });
   } catch (error) {
+    if (current())
+      logger.warning("data_failed", "Data loading failed", {
+        request_id: error instanceof ApiError ? error.requestId : undefined,
+        context: { product: product.productId },
+      });
     if (current())
       useWorkspace.getState().setRuntime(id, {
         status: "error",
@@ -92,6 +110,7 @@ export async function requestChart(id: string, product: Product) {
   }
 }
 export function removeChart(id: string) {
+  logger.info("chart_removed", "Chart removed", { context: { chart_id: id } });
   useWorkspace.getState().remove(id);
 }
 // Deletion, undo and import all pass through this cleanup; toolbar/shortcuts cannot bypass it.

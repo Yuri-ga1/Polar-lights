@@ -9,7 +9,7 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: process.env.POLAR_BACKEND_URL || "http://localhost:8000",
-        changeOrigin: true,
+        changeOrigin: false, // Preserve browser Host for telemetry Origin validation.
       },
     },
   },

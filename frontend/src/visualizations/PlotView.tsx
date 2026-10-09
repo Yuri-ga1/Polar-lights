@@ -1,3 +1,4 @@
+import { logger } from "../logging";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Plotly from "plotly.js-cartesian-dist-min";
 import type { Data, Layout } from "plotly.js";
@@ -211,7 +212,10 @@ export default function PlotView({
       displayModeBar: style.modebar,
       scrollZoom: style.scrollZoom,
       modeBarButtonsToRemove: ["sendDataToCloud"],
-    }).catch((e) => setError(String(e)));
+    }).catch((e) => {
+      setError(String(e));
+      logger.warning("plot_render_failed", "Plot rendering failed");
+    });
   }, [data, result, style, productId]);
   useEffect(
     () =>

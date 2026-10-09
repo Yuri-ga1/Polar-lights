@@ -1,3 +1,4 @@
+import { logger } from "./logging";
 import { create } from "zustand";
 import { ApiError } from "./api/client";
 import { renderApi, type RenderSpec, type RenderFiles } from "./api/renderJobs";
@@ -14,6 +15,8 @@ export const useRenderTasks = create<{ tasks: Record<string, Task> }>(() => ({
 }));
 const controllers = new Map<string, AbortController>();
 export function cancelRender(id: string) {
+  if (controllers.has(id))
+    logger.info("render_cancelled", "Render operation cancelled");
   controllers.get(id)?.abort();
   controllers.delete(id);
   const task = useRenderTasks.getState().tasks[id];
@@ -24,6 +27,8 @@ export function cancelRender(id: string) {
 }
 export async function startRender(id: string, spec: RenderSpec) {
   cancelRender(id);
+  const began = performance.now();
+  logger.info("render_started", "Render operation started");
   const immutable = Object.freeze(structuredClone(spec));
   const controller = new AbortController();
   controllers.set(id, controller);
@@ -44,7 +49,14 @@ export async function startRender(id: string, spec: RenderSpec) {
       (status) => update({ status: status.status }),
     );
     update({ status: "completed", files });
+    logger.info("render_completed", "Render operation completed", {
+      duration_ms: performance.now() - began,
+    });
   } catch (error) {
+    if (!controller.signal.aborted)
+      logger.warning("render_failed", "Render operation failed", {
+        request_id: error instanceof ApiError ? error.requestId : undefined,
+      });
     update({
       status: "failed",
       error:

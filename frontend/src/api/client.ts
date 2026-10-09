@@ -1,3 +1,4 @@
+import { logger, authHeaders } from "../logging";
 import { QueryClient } from "@tanstack/react-query";
 import {
   acceptedSchema,
@@ -35,8 +36,28 @@ export class ApiError extends Error {
   }
 }
 export async function fetchApi(path: string, init?: RequestInit) {
-  const response = await fetch(url(path), init);
+  const requestId = crypto.randomUUID();
+  const headers = new Headers(init?.headers);
+  Object.entries(authHeaders()).forEach(([key, value]) =>
+    headers.set(key, value),
+  );
+  headers.set("X-Request-ID", requestId);
+  let response: Response;
+  try {
+    response = await fetch(url(path), { ...init, headers });
+  } catch (error) {
+    if (!init?.signal?.aborted)
+      logger.warning("api_network_failed", "API network request failed", {
+        request_id: requestId,
+        context: { path: path.split("?")[0] },
+      });
+    throw error;
+  }
   if (!response.ok) {
+    logger.warning("api_request_failed", "API request failed", {
+      request_id: response.headers.get("X-Request-ID") || requestId,
+      context: { path: path.split("?")[0], status: response.status },
+    });
     const body = await response.json().catch(() => ({}));
     throw new ApiError(
       body.code || `HTTP_${response.status}`,
@@ -112,6 +133,10 @@ export const apiClient = {
     });
     if (response.status !== 202) return decodeResult(response);
     const job = acceptedSchema.parse(await response.json());
+    logger.info("job_accepted", "Background job accepted", {
+      job_id: job.jobId,
+      request_id: response.headers.get("X-Request-ID") || undefined,
+    });
     const cancel = () => {
       void fetchApi(job.statusUrl, { method: "DELETE" }).catch(() => {});
     };

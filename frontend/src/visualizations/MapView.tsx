@@ -1,3 +1,4 @@
+import { logger } from "../logging";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
@@ -111,7 +112,10 @@ function GeographicMap({ result, style, chartId }: Props) {
       overlay.current = deck;
       map.addControl(deck);
       map.on("load", () => setReady(true));
-      map.on("error", (e) => setError(e.error.message));
+      map.on("error", (e) => {
+        setError(e.error.message);
+        logger.warning("map_render_failed", "Map rendering failed");
+      });
       observer = new ResizeObserver(() => map?.resize());
       observer.observe(host.current);
     } catch (e) {
