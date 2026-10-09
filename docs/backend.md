@@ -257,3 +257,5 @@ Arrow, один HDF5 slice, потоковая кеограмма, очеред�
 В логах backend доступны requestId/jobId, productId, параметры, cache hit/miss,
 missing intervals, Downloader/Processor, длительность стадий, версия и размер
 ответа. Настройте logging level INFO в конфигурации сервера для записи этих событий.
+
+Настройки TOML, приоритеты и режимы Hot Reload описаны в [конфигурации](configuration.md).

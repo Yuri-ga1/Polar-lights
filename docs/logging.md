@@ -254,3 +254,5 @@ gzip/очистку, процессы, контекст, исключения, f
 - [notebooks/00_examples_and_run.ipynb](../notebooks/00_examples_and_run.ipynb)
 - [notebooks/01_plot_constructor.ipynb](../notebooks/01_plot_constructor.ipynb)
 - [tests/test_logging.py](../tests/test_logging.py)
+
+Настройки `logging.toml` и режимы Hot Reload описаны в [конфигурации](configuration.md).

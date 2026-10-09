@@ -30,6 +30,8 @@ Open `http://127.0.0.1:8000/docs` for the catalog, availability, data and job AP
 The backend uses `files/processed/data.csv` and preserves the existing notebook
 caches and pipeline interfaces. See [backend setup and API contracts](docs/backend.md)
 for Arrow maps, streaming keograms, render jobs, configuration and tests.
+Runtime TOML settings, Hot Reload rules and job snapshots are documented in
+[configuration](docs/configuration.md).
 
 ## Web interface
 

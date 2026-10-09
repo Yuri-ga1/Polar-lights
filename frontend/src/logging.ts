@@ -21,10 +21,32 @@ export function authHeaders(): Record<string, string> {
   return apiKey ? { "X-API-Key": apiKey } : {};
 }
 const levels: Level[] = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"];
-const minimum = Math.max(
+let minimum = Math.max(
   0,
   levels.indexOf((import.meta.env.VITE_LOG_LEVEL || "INFO") as Level),
 );
+async function refreshPublicConfig() {
+  if (import.meta.env.VITE_MOCK_API === "true") return;
+  try {
+    const response = await fetch(`${apiBase}/api/v1/config/public`, {
+      headers: authHeaders(),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return;
+    const data: unknown = await response.json();
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "frontendLogLevel" in data &&
+      typeof data.frontendLogLevel === "string" &&
+      levels.includes(data.frontendLogLevel as Level)
+    ) {
+      minimum = levels.indexOf(data.frontendLogLevel as Level);
+    }
+  } catch {
+    /* Keep the last known level while offline. */
+  }
+}
 const queue: object[] = [];
 let installed = false;
 let sending = false;
@@ -137,6 +159,10 @@ export function errorDetails(error: Error) {
 export function installLogging() {
   if (installed) return;
   installed = true;
+  void refreshPublicConfig();
+  setInterval(() => {
+    void refreshPublicConfig();
+  }, 5000);
   window.addEventListener("error", (event) =>
     logger.error("javascript_error", "Unhandled JavaScript error", {
       error:
