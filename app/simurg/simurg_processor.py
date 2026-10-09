@@ -10,6 +10,8 @@ import h5py
 from numpy.typing import NDArray
 from app.base_classes.base_processor import BaseProcessor
 
+from app.logging_config import logged_stage
+
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 class SimurgData(dict):
@@ -203,6 +205,7 @@ class SimurgProcessor(BaseProcessor):
 
         return None
 
+    @logged_stage("processing", entry=False)
     def load(
         self,
         date_value: Union[str, date, datetime],
@@ -404,6 +407,7 @@ class SimurgProcessor(BaseProcessor):
             return set()
 
     @classmethod
+    @logged_stage("processing", entry=False)
     def load_files(
         cls,
         file_paths: list[Path],

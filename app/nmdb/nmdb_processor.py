@@ -10,6 +10,8 @@ import numpy as np
 from app.base_classes.base_processor import BaseProcessor
 from app.storage.data_paths import DataPaths
 
+from app.logging_config import logged_stage
+
 
 class NmdbProcessor(BaseProcessor):
     """
@@ -308,6 +310,7 @@ class NmdbProcessor(BaseProcessor):
 
     # ---------- public ----------
 
+    @logged_stage("processing", entry=False)
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
         """
         Ищет подходящий nmdb_*.txt в папке и возвращает DataFrame.

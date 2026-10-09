@@ -8,6 +8,8 @@ from typing import Callable, Iterable, Union
 
 import pandas as pd
 
+from app.logging_config import logged_stage, get_logger
+
 
 class BaseProcessor(ABC):
     """Базовый класс для всех `*Processor` с общими утилитами."""
@@ -152,6 +154,7 @@ class BaseProcessor(ABC):
         intervals.append((first, previous))
         return intervals
 
+    @logged_stage("processing", entry=False)
     def get_data(self, processed_path: str | Path, start: str | datetime, end: str | datetime, acquire_missing: Callable, *, unique_keys: Iterable[str] | None = None, columns: Iterable[str] | None = None, frequency_policies: dict | None = None) -> pd.DataFrame:
         """Processed-first retrieval shared by tabular processors."""
         if columns is not None:
@@ -167,6 +170,7 @@ class BaseProcessor(ABC):
             frame = storage.read()
             policies = {column: frequency_policies[column] for column in columns}
             missing = storage.missing(frame, start, end, policies)
+            get_logger(__name__).info("Processed cache inspected", extra={"event": "cache_miss" if any(missing.values()) else "cache_hit", "context": {"source": type(self).__name__, "start": start, "end": end, "missing_intervals": {key: len(value) for key, value in missing.items()}}})
             if any(missing.values()):
                 rows = acquire_missing(missing)
                 if rows is not None and not rows.empty:
@@ -174,6 +178,7 @@ class BaseProcessor(ABC):
                 frame = storage.read()
             return frame.reindex(columns=columns).loc[utc(start):utc(end)]
         missing = self.missing_intervals(processed_path, start, end)
+        get_logger(__name__).info("Processed cache inspected", extra={"event": "cache_miss" if missing else "cache_hit", "context": {"source": type(self).__name__, "start": start, "end": end, "missing_intervals": len(missing)}})
         if missing:
             rows = acquire_missing(missing)
             if rows is not None and not rows.empty:

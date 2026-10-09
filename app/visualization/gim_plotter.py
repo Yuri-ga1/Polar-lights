@@ -21,6 +21,8 @@ from app.visualization.plot_utils import (
     resolve_map_projection,
 )
 
+from app.logging_config import logged_stage, get_logger
+
 
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
 FIGSIZE_WIDTH = 18
@@ -135,6 +137,7 @@ def resolve_plot_times(
     return resolved_times
 
 
+@logged_stage("plot", entry=True)
 def plot_gim_maps(
     data: Dict[datetime, NDArray],
     plot_times,
@@ -199,10 +202,12 @@ def plot_gim_maps(
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, "GIM.png")
     fig.savefig(save_path, bbox_inches="tight", pad_inches=0.08)
+    get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": save_path}})
 
     return fig
 
 
+@logged_stage("plot", entry=True)
 def plot_gim_map_on_ax(
     ax: plt.Axes,
     arr: NDArray,

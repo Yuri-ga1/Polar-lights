@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sys
+import time
+
+from app.logging_config import get_logger
 from threading import Lock
 from typing import TextIO
 
@@ -31,6 +34,7 @@ class ProgressBar:
         self._current = 0
         self._finished = False
         self._closed = False
+        self._last_log = time.monotonic()
 
         self._set_current(current)
         if auto_render:
@@ -85,6 +89,10 @@ class ProgressBar:
         self._current = current
 
     def _render_unlocked(self) -> None:
+        now = time.monotonic()
+        if now - self._last_log >= 30:
+            get_logger(__name__).info("Operation progress", extra={"event": "operation_progress", "context": {"description": self.description, "percent": self.percentage}})
+            self._last_log = now
         self._closed = False
         completed_width = self._current * self.width // self.total
         bar = "#" * completed_width + "-" * (self.width - completed_width)

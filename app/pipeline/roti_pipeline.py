@@ -17,6 +17,8 @@ from app.visualization.keogram_plotter import (
 from app.visualization.roti_plotter import plot_map
 from app.pipeline.keogram_coordinates import convert_keogram_slices_to_magnetic
 
+from app.logging_config import logged_stage
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +37,7 @@ def _pick_plot_times(data: dict[datetime, object], max_plots: int = 4) -> list[d
     return selected
 
 
+@logged_stage("pipeline", entry=True)
 def run_roti_pipeline(
     date_str: str,
     download_dir: str,

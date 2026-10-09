@@ -8,6 +8,10 @@ import requests
 
 from app.progress_bar import ProgressBar
 
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
+
 
 class BaseDownloader:
     """Базовый класс для загрузчиков."""
@@ -29,6 +33,7 @@ class BaseDownloader:
             return file_path
         return None
 
+    @logged_stage("download", entry=False)
     def _download_result(
         self,
         url: str,
@@ -45,10 +50,10 @@ class BaseDownloader:
         
         existing_file = self._get_existing_file(filename)
         if existing_file:
-            print(f"Using cached file: {existing_file}")
+            logger.info(f"Using cached file: {existing_file}", extra={"event": "cache_hit"})
             return existing_file
         
-        print(f"Downloading results from {url}")
+        logger.info(f"Downloading results from {url}", extra={"event": "download_status"})
 
         def _extract_total_size(resp: requests.Response, offset: int) -> Optional[int]:
             content_range = resp.headers.get("Content-Range")
@@ -76,7 +81,8 @@ class BaseDownloader:
                     headers=headers,
                     stream=True,
                 )
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                logger.warning("Download interrupted; retrying", extra={"event": "download_retry", "error": {"type": type(exc).__name__, "message": str(exc)}, "context": {"delay_seconds": polling_interval}})
                 time.sleep(polling_interval)
                 continue
 
@@ -106,7 +112,8 @@ class BaseDownloader:
                             f.write(chunk)
                             if progress is not None:
                                 progress.update(min(total_size, f.tell()))
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                logger.warning("Download interrupted; retrying", extra={"event": "download_retry", "error": {"type": type(exc).__name__, "message": str(exc)}, "context": {"delay_seconds": polling_interval}})
                 time.sleep(polling_interval)
                 continue
 

@@ -4,6 +4,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class SimurgClient:
     """Базовый клиент для работы с SIMuRG API."""
@@ -32,7 +36,7 @@ class SimurgClient:
         args_params: Dict[str, Any],
     ) -> List[str]:
         """Создаёт запрос к SIMuRG и возвращает список новых query_id."""
-        print('Create new request')
+        logger.info('Create new request', extra={"event": "download_status"})
         url = f"{self.api_url}"
         known_ids = self._to_id_set(self.checking_by_mail())
         payload: Dict[str, Any] = {
@@ -227,7 +231,7 @@ class SimurgClient:
         # Find existing
         queries = self.checking_by_mail()
         matched = [q for q in queries if self._payload_match(q, method, payload_args)]
-        print(f'Found {len(matched)} requests with same params')
+        logger.info(f'Found {len(matched)} requests with same params', extra={"event": "download_status"})
 
         if matched:
             # Prefer done, else newest by created
@@ -237,7 +241,7 @@ class SimurgClient:
             )[0]
             req_iq = str(chosen.get("id"))
             self.query_ids.add(req_iq)
-            print(f'Found created request with id: {req_iq}')
+            logger.info(f'Found created request with id: {req_iq}', extra={"event": "download_status"})
             return req_iq
 
         created_query_ids = self.create_query(start_time, end_time, method, payload_args)

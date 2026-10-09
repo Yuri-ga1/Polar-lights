@@ -8,6 +8,8 @@ import requests
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import logged_stage
+
 class OmniDownloader(BaseDownloader):
     """Класс для загрузки данных OMNI (1‑минутное разрешение)."""
 
@@ -66,6 +68,7 @@ class OmniDownloader(BaseDownloader):
                 return text
         return text
 
+    @logged_stage("download", entry=False)
     def download(self, date_str: str, filename: Optional[str] = None) -> str:
         d = datetime.strptime(date_str, "%Y-%m-%d")
 
@@ -96,6 +99,7 @@ class OmniDownloader(BaseDownloader):
 
         return self._write_text_file(filename, data_text)
 
+    @logged_stage("download", entry=False)
     def download_range(self, start: datetime, end: datetime, columns: Iterable[str]) -> str:
         """Backend range API; the existing monthly download API is unchanged.
 

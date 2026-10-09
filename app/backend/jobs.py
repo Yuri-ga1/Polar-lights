@@ -20,6 +20,9 @@ from pathlib import Path
 from filelock import FileLock, Timeout
 from pydantic import TypeAdapter
 
+from app.logging_config import configure_logging, get_logging_config
+from app.logging_config import request_id as current_request_id
+
 from .errors import BackendError
 from .logging import get_logger
 from .logging import job_id as current_job_id
@@ -41,6 +44,9 @@ class JobStore:
                 id TEXT PRIMARY KEY, kind TEXT NOT NULL, hash TEXT NOT NULL,
                 payload TEXT NOT NULL, status TEXT NOT NULL, created REAL NOT NULL,
                 updated REAL NOT NULL, error TEXT, media TEXT, files TEXT)""")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS job_context (id TEXT PRIMARY KEY, request_id TEXT)"
+            )
 
     def connect(self):
         db = sqlite3.connect(self.db, timeout=30, isolation_level=None)
@@ -73,7 +79,19 @@ class JobStore:
                 "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (job_id, kind, digest, canonical, "queued", now, now, None, None, None),
             )
+            db.execute(
+                "INSERT OR REPLACE INTO job_context VALUES (?,?)",
+                (job_id, current_request_id.get()),
+            )
             db.commit()
+            logger.info(
+                "Job created",
+                extra={
+                    "event": "job_created",
+                    "job_id": job_id,
+                    "context": {"kind": kind},
+                },
+            )
             return job_id
 
     def get(self, job_id, kind=None):
@@ -107,7 +125,7 @@ class JobStore:
 
     def update(self, job_id, status, *, error=None, media=None, files=None):
         with closing(self.connect()) as db:
-            db.execute(
+            changed = db.execute(
                 """UPDATE jobs SET status=?,updated=?,error=?,media=COALESCE(?,media),files=COALESCE(?,files)
                           WHERE id=? AND status NOT IN ('completed','failed','cancelled')""",
                 (
@@ -119,6 +137,12 @@ class JobStore:
                     job_id,
                 ),
             )
+
+        if not changed.rowcount:
+            return
+        logger.info(
+            "Job status updated", extra={"event": "job_" + status, "job_id": job_id}
+        )
 
     def cancel(self, job_id, kind=None):
         self.get(job_id, kind)
@@ -140,11 +164,19 @@ class JobStore:
         return path, row["media"] or "application/octet-stream"
 
 
-def execute_job(settings, job_id):
+def execute_job(settings, job_id, logging_config=None):
     """Spawn-safe worker entrypoint. A worker never mutates notebook caches."""
-    current_job_id.set(job_id)
+    configure_logging(logging_config)
+    job_token = current_job_id.set(job_id)
+    began = time.perf_counter()
     store = JobStore(settings)
     row = store.get(job_id)
+    with closing(store.connect()) as db:
+        context = db.execute(
+            "SELECT request_id FROM job_context WHERE id=?", (job_id,)
+        ).fetchone()
+    request_token = current_request_id.set(context[0] if context else None)
+    logger.info("Job started", extra={"event": "job_started"})
     try:
         from .service import DataService
 
@@ -172,6 +204,7 @@ def execute_job(settings, job_id):
             temporary.replace(directory / "result.bin")
             store.update(job_id, "completed", files=["result.bin"], media=media)
     except BackendError as exc:
+        logger.error("Job failed", exc_info=exc, extra={"event": "job_failure"})
         store.update(job_id, "failed", error=exc.body())
     except Exception:
         logger.exception("jobId=%s worker failed", job_id)
@@ -182,6 +215,17 @@ def execute_job(settings, job_id):
                 "PROCESSING_FAILED", "Job processing failed", 500
             ).body(),
         )
+
+    finally:
+        logger.info(
+            "Job execution finished",
+            extra={
+                "event": "job_finished",
+                "duration_ms": round((time.perf_counter() - began) * 1000, 3),
+            },
+        )
+        current_request_id.reset(request_token)
+        current_job_id.reset(job_token)
 
 
 class JobRunner:
@@ -266,7 +310,7 @@ class JobRunner:
                         self.store.update(job_id, "downloading")
                         process = context.Process(
                             target=execute_job,
-                            args=(self.store.settings, job_id),
+                            args=(self.store.settings, job_id, get_logging_config()),
                             daemon=True,
                         )
                         process.start()

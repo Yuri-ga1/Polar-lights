@@ -10,6 +10,10 @@ import requests
 from app.base_classes.base_downloader import BaseDownloader
 from app.simurg.simurg_client import SimurgClient
 
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
+
 __all__ = [
     "RotiDownloader",
     "AdjustedTecDownloader",
@@ -72,7 +76,7 @@ class _SimurgDownloader(BaseDownloader):
 
             existing_file = self._get_existing_file(filename)
             if existing_file:
-                print(f"Using local cached SIMuRG file: {existing_file}")
+                logger.info(f"Using local cached SIMuRG file: {existing_file}", extra={"event": "cache_hit"})
                 return existing_file
 
         return None
@@ -140,14 +144,15 @@ class _SimurgDownloader(BaseDownloader):
         candidates.sort(key=lambda item: item[0], reverse=True)
         _, url, size = candidates[0]
         if size is not None:
-            print(
+            logger.info(
                 f"Found remote SIMuRG {product_type} file: {url} "
                 f"({size / 1024**3:.2f} GB, approximately {size / (4.25 * 1024**3):.1f} days)"
-            )
+            , extra={"event": "download_status"})
         else:
-            print(f"Found remote SIMuRG {product_type} file: {url} (size unavailable)")
+            logger.info(f"Found remote SIMuRG {product_type} file: {url} (size unavailable)", extra={"event": "download_status"})
         return self._download_result(url)
 
+    @logged_stage("download", entry=False)
     def download(self, date_str: str, end_date: Optional[str] = None) -> str:
         """Запускает формирование запроса и скачивает результат.
 
@@ -220,6 +225,7 @@ class _SimurgDownloader(BaseDownloader):
 
         return downloaded_paths[0]
 
+    @logged_stage("download", entry=False)
     def _download_result(self, url: str) -> str:
         return super()._download_result(
             url,

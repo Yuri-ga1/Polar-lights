@@ -20,6 +20,8 @@ from app.visualization.gim_plotter import plot_gim_maps
 from app.visualization.ionosonde_plotter import plot_ionosonde
 from app.visualization.solar_and_indexes_plotter import plot_sw_symh_dst_kp
 
+from app.logging_config import logged_stage
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,11 +53,12 @@ def _resolve_cosmic_stations(
         requested_available = [station for station in requested_stations if station in station_columns]
         if requested_available:
             return requested_available
-        logger.warning("Запрошенные станции не найдены в данных NMDB: %s", list(requested_stations))
+        logger.warning("Requested stations missing from NMDB data: %s", list(requested_stations))
 
     return station_columns[:fallback_count]
 
 
+@logged_stage("pipeline", entry=True)
 def run_misc_pipeline(
     date_str: str,
     download_dir: str,

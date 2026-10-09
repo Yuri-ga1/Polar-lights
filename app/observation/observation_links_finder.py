@@ -9,6 +9,10 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class ObservationLinksFinder:
     """Fetch SpaceWeatherLive observation links for a calendar date."""
@@ -35,10 +39,10 @@ class ObservationLinksFinder:
     def _request(self, url: str, **kwargs) -> Optional[requests.Response]:
         for attempt in range(1, self.max_attempts + 1):
             delay = random.uniform(self.MIN_REQUEST_DELAY, self.MAX_REQUEST_DELAY)
-            print(
+            logger.info(
                 f"SpaceWeatherLive request {attempt}/{self.max_attempts}: "
                 f"waiting {delay:.1f}s before {url}"
-            )
+            , extra={"event": "download_retry"})
             time.sleep(delay)
             try:
                 response = self.session.get(url, **kwargs)
@@ -49,10 +53,10 @@ class ObservationLinksFinder:
                 error = str(exc)
 
             if attempt == self.max_attempts:
-                print(
+                logger.warning(
                     f"SpaceWeatherLive: failed to get data from {url} after "
                     f"{self.max_attempts} attempts ({error}). Continuing."
-                )
+                , extra={"event": "data_quality_warning"})
         return None
 
     def _fetch_observations_payload(self, date_str: str) -> Optional[dict]:
@@ -70,10 +74,10 @@ class ObservationLinksFinder:
                 return None
             return response.json()
         except ValueError as exc:
-            print(
+            logger.warning(
                 f"SpaceWeatherLive: invalid response for {date_str}: {exc}. "
                 "Continuing without observations."
-            )
+            , extra={"event": "data_quality_warning"})
             return None
 
     def get_observation_count(self, date_str: str) -> Optional[int]:

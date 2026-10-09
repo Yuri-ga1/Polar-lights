@@ -11,6 +11,10 @@ import requests
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
+
 
 class NmdbDownloader(BaseDownloader):
     """Загрузчик данных космических лучей из NMDB.
@@ -123,13 +127,14 @@ class NmdbDownloader(BaseDownloader):
             station_metadata = self._download_station_metadata()
 
             if not station_metadata:
-                print("NMDB station metadata warning: no station metadata parsed")
+                logger.warning("NMDB station metadata warning: no station metadata parsed", extra={"event": "data_quality_warning"})
                 return
 
             self._save_station_metadata(station_metadata)
         except Exception as exc:
-            print(f"NMDB station metadata warning: {exc}")
+            logger.warning(f"NMDB station metadata warning: {exc}", extra={"event": "data_quality_warning"})
 
+    @logged_stage("download", entry=False)
     def download(
         self,
         start: Union[str, datetime],

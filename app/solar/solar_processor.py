@@ -18,6 +18,8 @@ from app.base_classes.base_processor import BaseProcessor
 from app.solar.models import ProjectedRegion, SolarDiskData, utc_datetime
 from app.solar.solar_downloader import HelioviewerDownloader, SRSDownloader
 
+from app.logging_config import logged_stage
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,6 +128,7 @@ class SolarProcessor(BaseProcessor):
                 )
         return projected
 
+    @logged_stage("processing", entry=False)
     def load(self, config):
         with HelioviewerDownloader(config) as downloader:
             closest, path, url = downloader.download()

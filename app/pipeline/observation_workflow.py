@@ -15,6 +15,10 @@ from app.observation.observation_processor import ObservationProcessor
 from app.storage.hdf5_storage import ObservationHDF5Storage
 from app.storage.data_paths import DataPaths
 
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
+
 ObservationSource = Literal["aurorasaurus", "spaceweatherlive"]
 
 # ---------------------------------------------------------------------------
@@ -55,6 +59,7 @@ def load_observations_from_csv(csv_path: str, date_iso: str) -> List[Dict[str, s
     return observations
 
 
+@logged_stage("pipeline", entry=True)
 def run_observation_workflow(
     date: date,
     download_dir: str = "files",
@@ -132,12 +137,12 @@ def run_observation_workflow(
             try:
                 aurora_rows.extend(acquire())
             except Exception as exc:  # noqa: BLE001 — continue with the other provider
-                print(f"Aurora provider acquisition failed for {date_iso}: {exc}")
+                logger.warning(f"Aurora provider acquisition failed for {date_iso}: {exc}", extra={"event": "data_quality_warning"})
     observations.extend(aurora_rows)
 
     # If no CSV exists after processing, report and return early.
     if not os.path.exists(csv_path):
-        print(f"File {csv_path} was not created because there is no observation")
+        logger.warning(f"File {csv_path} was not created because there is no observation", extra={"event": "data_quality_warning"})
         return []
 
     save_path = os.path.join(plots_dir, "Observation_map.png")
@@ -182,9 +187,9 @@ def _fetch_spaceweatherlive(
             try:
                 row = processor.process(parser.parse(link), persist=False)
             except (RuntimeError, ValueError, KeyError) as exc:
-                print(
+                logger.warning(
                     f"SpaceWeatherLive: skipping malformed observation at {link}: {exc}"
-                )
+                , extra={"event": "data_quality_warning"})
                 continue
             if row.get("date") == date_iso:
                 processor.to_csv(row)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import logged_stage
+
 
 class AurorasaurusDownloader(BaseDownloader):
     """Downloader for the Aurorasaurus Web Observations dataset."""
@@ -15,6 +17,7 @@ class AurorasaurusDownloader(BaseDownloader):
     def __init__(self, out_dir: str = "files") -> None:
         super().__init__(out_dir=out_dir)
 
+    @logged_stage("download", entry=False)
     def download(self, filename: str | None = None) -> str:
         """Download the dataset or return the cached local file path."""
         target_filename = filename or self.FILENAME

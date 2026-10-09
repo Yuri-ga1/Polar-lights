@@ -13,6 +13,8 @@ from app.base_classes.base_downloader import BaseDownloader
 from app.solar.models import SolarDiskConfig, utc_datetime
 from app.solar.srs_parser import parse_srs
 
+from app.logging_config import logged_stage
+
 logger = logging.getLogger(__name__)
 HELIOVIEWER = "https://api.helioviewer.org/v2/"
 NOAA_SRS = "https://www.ngdc.noaa.gov/stp/space-weather/swpc-products/daily_reports/solar_region_summaries/"
@@ -75,6 +77,7 @@ class SolarDownloader(BaseDownloader):
 
 
 class HelioviewerDownloader(SolarDownloader):
+    @logged_stage("download", entry=False)
     def download(self):
         requested = self.config.requested_time
         name = f"closest_{self.config.source_id}_{requested:%Y%m%dT%H%M%S%fZ}.json"
@@ -154,6 +157,7 @@ class HelioviewerDownloader(SolarDownloader):
 
 
 class SRSDownloader(SolarDownloader):
+    @logged_stage("download", entry=False)
     def download(self, day):
         name = f"{day:%Y%m%d}SRS.txt"
         provenance_name = name + ".json"

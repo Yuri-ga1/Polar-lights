@@ -7,6 +7,8 @@ import requests
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import logged_stage
+
 
 class KyotoDstDownloader(BaseDownloader):
     """Загружает месячный файл индекса Dst из WDC Kyoto."""
@@ -28,6 +30,7 @@ class KyotoDstDownloader(BaseDownloader):
             urls.append(base)
         return urls
 
+    @logged_stage("download", entry=False)
     def download(self, date_str: str, filename: Optional[str] = None,
                  versions: Optional[Iterable[str]] = None) -> str:
         date = datetime.strptime(date_str, "%Y-%m-%d")

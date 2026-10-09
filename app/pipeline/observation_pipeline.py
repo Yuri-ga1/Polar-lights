@@ -1,3 +1,5 @@
+from app.logging_config import get_logger
+
 import os
 from typing import Iterable
 
@@ -15,6 +17,7 @@ def collect_observation_links(date: str, h5_path: str):
 
     try:
         links = finder.get_observation_links(date)
+        get_logger(__name__).debug("Observations found", extra={"event": "observations_found", "context": {"date": date, "records": len(links)}})
         print(f"{date}: найдено {len(links)} наблюдений")
         storage.save_links(date, links)
     finally:

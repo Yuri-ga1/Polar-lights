@@ -13,6 +13,8 @@ from app.visualization.color_utils import get_dominant_color
 from app.visualization.plot_settings import POINT_RADIUS
 from app.visualization.plot_utils import apply_map_extent, resolve_map_projection
 
+from app.logging_config import logged_stage, get_logger
+
 EUROPE_MAP_EXTENT = (-25.0, 45.0, 30.0, 75.0)
 AMERICA_MAP_EXTENT = (-170.0, -30.0, 15.0, 75.0)
 DEFAULT_AURORA_MAP_FOCUS = "europe"
@@ -134,6 +136,7 @@ def find_peak_aurora_time(
     return peak_time.to_pydatetime()
 
 
+@logged_stage("plot", entry=True)
 def plot_aurora_observations_on_ax(
     ax: plt.Axes,
     df: pd.DataFrame,
@@ -294,6 +297,7 @@ class AuroraMapPlotter:
         self.df = pd.read_csv(csv_path)
         self.df["date"] = pd.to_datetime(self.df["date"], errors="coerce")
 
+    @logged_stage("plot", entry=True)
     def plot(
         self,
         time: datetime,
@@ -325,3 +329,4 @@ class AuroraMapPlotter:
             plt.show()
         else:
             plt.savefig(self.save_path)
+            get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": self.save_path}})

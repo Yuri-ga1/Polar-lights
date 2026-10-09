@@ -44,6 +44,10 @@ from app.omni.omni_downloader import OmniDownloader
 from app.omni.omni_processor import OmniProcessor
 from app.storage.data_paths import DataPaths
 
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class ConstructorDataConfig:
@@ -210,7 +214,7 @@ class PlotConstructorDataLoader:
         try:
             return fn()
         except Exception as exc:
-            print(f"Download warning: {exc}")
+            logger.warning(f"Download warning: {exc}", extra={"event": "data_quality_warning"})
             return None
 
     @classmethod
@@ -292,7 +296,7 @@ class PlotConstructorDataLoader:
         if missing_times:
             client = self._simurg_client(params.get("email"))
             if client is None:
-                print("SIMURG email is missing, skip ROTI download")
+                logger.warning("SIMURG email is missing, skip ROTI download", extra={"event": "data_quality_warning"})
                 return processor.load_files(
                     selected_files,
                     times=requested_times or None,
@@ -395,7 +399,7 @@ class PlotConstructorDataLoader:
 
         client = self._simurg_client(params.get("email"))
         if client is None:
-            print("SIMURG email is missing, skip ROTI keogram download")
+            logger.warning("SIMURG email is missing, skip ROTI keogram download", extra={"event": "data_quality_warning"})
             return None
 
         out_dir = str(self.paths.map_dir("roti"))
@@ -480,7 +484,7 @@ class PlotConstructorDataLoader:
 
         client = self._simurg_client(params.get("email"))
         if client is None:
-            print("SIMURG email is missing, skip adjusted TEC download")
+            logger.warning("SIMURG email is missing, skip adjusted TEC download", extra={"event": "data_quality_warning"})
             return None
 
         out_dir = str(self.paths.map_dir("tec_adjusted"))
@@ -503,7 +507,7 @@ class PlotConstructorDataLoader:
             )
 
             if cached_file is not None:
-                print(f"Using cached SIMuRG adjusted TEC file: {cached_file}")
+                logger.info(f"Using cached SIMuRG adjusted TEC file: {cached_file}", extra={"event": "cache_hit"})
             else:
                 self._safe_download(lambda d=date_str: downloader.download(d))
 
@@ -702,10 +706,10 @@ class PlotConstructorDataLoader:
         if os.path.exists(csv_path):
             return normalize_observations_df(pd.read_csv(csv_path))
 
-        print(
+        logger.warning(
             "No aurora observations found for date range: "
             f"{self.download_dates[0]} — {self.download_dates[-1]}"
-        )
+        , extra={"event": "data_quality_warning"})
         return empty_observations_df()
 
     @staticmethod
@@ -726,9 +730,9 @@ class PlotConstructorDataLoader:
                 try:
                     row = processor.process(parser.parse(link), persist=False)
                 except (RuntimeError, ValueError, KeyError) as exc:
-                    print(
+                    logger.warning(
                         f"SpaceWeatherLive: skipping malformed observation at {link}: {exc}"
-                    )
+                    , extra={"event": "data_quality_warning"})
                     continue
                 if row.get("date") == day.isoformat():
                     processor.to_csv(row)
@@ -737,6 +741,7 @@ class PlotConstructorDataLoader:
         finally:
             finder.close()
 
+    @logged_stage("pipeline", entry=True)
     def load_for_requested_plots(
         self, plots: list[str | dict[str, Any]]
     ) -> dict[str, Any]:

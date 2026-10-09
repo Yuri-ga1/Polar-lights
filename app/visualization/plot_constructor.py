@@ -13,6 +13,8 @@ from app.visualization.plot_constructor_pack.registry import PlotRegistry
 from app.visualization.plot_constructor_pack.renderers import PlotRenderer
 from app.visualization.plot_utils import resolve_map_projection
 
+from app.logging_config import logged_stage
+
 try:
     from IPython.display import Markdown, display
 except ImportError:
@@ -157,6 +159,7 @@ class PlotConstructor:
 
         return parsed
 
+    @logged_stage("plot", entry=True)
     def plot(
         self,
         plots: Sequence[str | Mapping[str, Any]],

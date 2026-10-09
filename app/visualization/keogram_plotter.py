@@ -11,6 +11,8 @@ import numpy as np
 
 from app.visualization.plot_utils import add_colorbar_right
 
+from app.logging_config import logged_stage, get_logger
+
 
 Hemisphere = Literal["west", "east", "all"]
 
@@ -198,6 +200,7 @@ def build_keogram_matrix_from_slices(
     return matrix, times, lat_centers
 
 
+@logged_stage("plot", entry=True)
 def plot_keogram_matrix(
     matrix: np.ndarray,
     times: list[datetime],
@@ -217,10 +220,12 @@ def plot_keogram_matrix(
     filename = save_name or f"keogram_{cfg.hemisphere}.png"
     save_path = os.path.join(save_dir, filename)
     fig.savefig(save_path, bbox_inches="tight", pad_inches=0.1)
+    get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": save_path}})
 
     return fig
 
 
+@logged_stage("plot", entry=True)
 def plot_keogram_on_ax(
     ax: plt.Axes,
     matrix: np.ndarray,
@@ -267,6 +272,7 @@ def plot_keogram_on_ax(
     add_colorbar_right(fig=ax.figure, ax=ax, mappable=im, label=cfg.colorbar_label)
 
 
+@logged_stage("plot", entry=True)
 def plot_keogram(
     data: dict[datetime, np.ndarray],
     day_start: date,

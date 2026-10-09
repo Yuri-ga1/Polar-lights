@@ -26,7 +26,6 @@ class SourceAdapters:
         except BackendError:
             raise
         except Exception as exc:
-            logger.exception("acquisition failed source=%s", source)
             raise BackendError(
                 "DOWNLOAD_FAILED", f"Failed to acquire {source}", 502
             ) from exc
@@ -59,9 +58,13 @@ class SourceAdapters:
 
     @staticmethod
     def process(action):
+        pipeline_logger = get_logger("app.pipeline.adapters")
+        pipeline_logger.info("Processing started", extra={"event": "processing_started", "context": {"operation": action.__qualname__}})
         begin = time.perf_counter()
         try:
-            return action()
+            result = action()
+            pipeline_logger.info("Processing completed", extra={"event": "processing_completed", "duration_ms": (time.perf_counter() - begin) * 1000, "context": {"operation": action.__qualname__, "records": len(result) if result is not None else 0}})
+            return result
         except Exception as exc:
             raise BackendError(
                 "PROCESSING_FAILED", "Source response could not be processed", 502

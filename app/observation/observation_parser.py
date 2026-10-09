@@ -9,6 +9,10 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class ObservationParser:
     MIN_REQUEST_DELAY = 10.0
@@ -31,10 +35,10 @@ class ObservationParser:
         last_error = "unknown error"
         for attempt in range(1, self.max_attempts + 1):
             delay = random.uniform(self.MIN_REQUEST_DELAY, self.MAX_REQUEST_DELAY)
-            print(
+            logger.info(
                 f"SpaceWeatherLive request {attempt}/{self.max_attempts}: "
                 f"waiting {delay:.1f}s before {url}"
-            )
+            , extra={"event": "download_retry"})
             time.sleep(delay)
             try:
                 response = self.session.get(url, timeout=(10, 25))
@@ -49,7 +53,7 @@ class ObservationParser:
                 f"{self.max_attempts} attempts ({last_error}). "
                 "The caller will stop downloading further observations."
             )
-            print(message)
+            logger.info(message, extra={"event": "download_status"})
             raise RuntimeError(message)
 
         table = BeautifulSoup(response.text, "html.parser").find("table")

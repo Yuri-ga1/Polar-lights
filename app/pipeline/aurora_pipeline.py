@@ -4,7 +4,10 @@ from datetime import date, datetime, timedelta
 
 from app.pipeline.observation_workflow import ObservationSource, run_observation_workflow
 
+from app.logging_config import logged_stage
 
+
+@logged_stage("pipeline", entry=True)
 def run_aurora_pipeline(
     target_date: date,
     download_dir: str,

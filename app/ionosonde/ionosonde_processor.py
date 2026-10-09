@@ -19,6 +19,8 @@ from app.pipeline.datetime_range import (
     validate_datetime_range,
 )
 
+from app.logging_config import logged_stage
+
 
 @dataclass(frozen=True)
 class IonosondeParseConfig:
@@ -293,6 +295,7 @@ class IonosondeProcessor(BaseProcessor):
     # public
     # -------------------------
 
+    @logged_stage("processing", entry=False)
     def load(
         self,
         target_date: Union[str, date, datetime],
@@ -362,6 +365,7 @@ class IonosondeProcessor(BaseProcessor):
 
         return out
 
+    @logged_stage("processing", entry=False)
     def load_range(
         self,
         start_datetime: Union[str, datetime, pd.Timestamp],

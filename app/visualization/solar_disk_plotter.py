@@ -11,7 +11,10 @@ from matplotlib.transforms import Bbox
 
 from app.solar.models import SolarDiskData, utc_datetime
 
+from app.logging_config import logged_stage
 
+
+@logged_stage("plot", entry=True)
 def plot_solar_disk_on_ax(ax, data: SolarDiskData):
     """Draw on WCSAxes created with ``projection=data.solar_map``; return ax."""
     solar_map, config = data.solar_map, data.config

@@ -11,6 +11,10 @@ import requests
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import logged_stage, get_logger
+
+logger = get_logger(__name__)
+
 
 class TemporaryNetworkError(Exception):
     """Temporary network-related error."""
@@ -106,6 +110,7 @@ class IonosondeDownloader(BaseDownloader):
                 last_exc = exc
                 if attempt == max_attempts:
                     raise TemporaryNetworkError(str(exc)) from exc
+                logger.warning("GIRO request retry", extra={"event": "download_retry", "context": {"attempt": attempt, "delay_seconds": base_delay * attempt}, "error": {"type": type(exc).__name__, "message": str(exc)}})
                 time.sleep(base_delay * attempt)
 
             except requests.exceptions.HTTPError as exc:
@@ -115,6 +120,7 @@ class IonosondeDownloader(BaseDownloader):
                     last_exc = exc
                     if attempt == max_attempts:
                         raise TemporaryNetworkError(f"HTTP {status}: {exc}") from exc
+                    logger.warning("GIRO server retry", extra={"event": "download_retry", "context": {"attempt": attempt, "status": status}})
                     time.sleep(base_delay * attempt)
                     continue
 
@@ -234,6 +240,7 @@ class IonosondeDownloader(BaseDownloader):
     # public API
     # -------------------------
 
+    @logged_stage("download", entry=False)
     def download(
         self,
         target_date: Union[str, date, datetime],
@@ -274,15 +281,15 @@ class IonosondeDownloader(BaseDownloader):
 
                 except TemporaryNetworkError as exc:
                     network_errors += 1
-                    # print(f"Temporary network error for station {st}: {exc}")
+                    logger.warning("Station network failure", extra={"event": "station_unavailable", "context": {"station": st}, "error": {"type": type(exc).__name__, "message": str(exc)}})
                     continue
 
                 except DataFetchError as exc:
-                    # print(f"Data fetch error for station {st}: {exc}")
+                    logger.warning("Station data unavailable", extra={"event": "station_unavailable", "context": {"station": st}})
                     continue
 
                 except Exception as exc:
-                    # print(f"Unexpected error for station {st}: {exc}")
+                    logger.warning("Station acquisition failed", extra={"event": "station_unavailable", "context": {"station": st}, "error": {"type": type(exc).__name__, "message": str(exc)}})
                     continue
 
             if selected_station is None:

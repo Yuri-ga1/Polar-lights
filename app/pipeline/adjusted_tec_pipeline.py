@@ -10,6 +10,8 @@ from app.simurg.simurg_processor import DataProduct, SimurgProcessor
 from app.storage.data_paths import DataPaths
 from app.visualization.roti_plotter import plot_map
 
+from app.logging_config import logged_stage
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +30,7 @@ def _pick_plot_times(data: dict[datetime, object], max_plots: int = 4) -> list[d
     return selected
 
 
+@logged_stage("pipeline", entry=True)
 def run_adjusted_tec_pipeline(
     date_str: str,
     download_dir: str,
@@ -36,7 +39,7 @@ def run_adjusted_tec_pipeline(
     map_projection: str | None = None,
 ) -> None:
     if simurg_client is None:
-        logger.warning("SimurgClient не создан. Поток adjusted TEC пропущен.")
+        logger.warning("SimurgClient is not configured; adjusted TEC pipeline skipped.")
         return
 
     paths = DataPaths.from_root(download_dir)
@@ -51,7 +54,7 @@ def run_adjusted_tec_pipeline(
         product_type=DataProduct.TEC_ADJUSTED,
     )
     if not data:
-        logger.warning("Не удалось загрузить данные adjusted TEC для %s.", date_str)
+        logger.warning("Failed to download adjusted TEC data for %s.", date_str)
         return
 
     plot_map(

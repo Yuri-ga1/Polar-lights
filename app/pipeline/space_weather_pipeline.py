@@ -17,6 +17,8 @@ from app.omni.omni_processor import OmniProcessor
 from app.pipeline.datetime_range import validate_datetime_range
 from app.storage.data_paths import DataPaths
 
+from app.logging_config import logged_stage
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +62,7 @@ def _safe_download(label: str, action: Callable[[], str]) -> str | None:
     try:
         return action()
     except Exception as exc:
-        logger.warning("Не удалось скачать %s: %s", label, exc)
+        logger.warning("Download failed for %s: %s", label, exc)
         return None
 
 
@@ -71,7 +73,7 @@ def _omni_raw_frame(processor: OmniProcessor, raw_path: str) -> pd.DataFrame | N
         frame = processor._parse_table(pre, processor._parse_selected_parameters(pre))
         return None if frame.empty else frame.rename(columns={"DateTime": "datetime"})
     except Exception as exc:
-        logger.warning("Не удалось обработать OMNI raw %s: %s", raw_path, exc)
+        logger.warning("Failed to process OMNI raw file %s: %s", raw_path, exc)
         return None
 
 
@@ -94,7 +96,7 @@ def _retrieve_kp(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestam
     try:
         return GfzProcessor.to_processed_frame(GfzProcessor._load_kp_file(raw_path))
     except Exception as exc:
-        logger.warning("Не удалось обработать GFZ raw %s: %s", raw_path, exc)
+        logger.warning("Failed to process GFZ raw file %s: %s", raw_path, exc)
         return None
 
 
@@ -108,7 +110,7 @@ def _retrieve_dst(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timesta
                 if not frame.empty:
                     frames.append(frame)
             except Exception as exc:
-                logger.warning("Не удалось обработать Kyoto raw %s: %s", raw_path, exc)
+                logger.warning("Failed to process Kyoto raw file %s: %s", raw_path, exc)
     return pd.concat(frames, ignore_index=True) if frames else None
 
 
@@ -133,11 +135,13 @@ def _load_processed_first(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd
     )
 
 
+@logged_stage("processing", entry=True)
 def prepare_space_weather_data(date_str: str, download_dir: str = "files") -> SpaceWeatherData:
     day = pd.Timestamp(date_str)
     return _load_processed_first(SpaceWeatherPaths.from_base(download_dir), day.normalize(), day.normalize() + pd.Timedelta(days=1) - pd.Timedelta(seconds=1))
 
 
+@logged_stage("processing", entry=True)
 def prepare_space_weather_data_range(start_datetime: str, end_datetime: str, download_dir: str = "files") -> SpaceWeatherData:
     start, end = validate_datetime_range(start_datetime, end_datetime)
     return _load_processed_first(SpaceWeatherPaths.from_base(download_dir), pd.Timestamp(start), pd.Timestamp(end))

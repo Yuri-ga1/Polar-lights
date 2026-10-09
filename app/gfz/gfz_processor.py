@@ -10,6 +10,8 @@ from typing import Optional
 import pandas as pd
 from app.base_classes.base_processor import BaseProcessor
 
+from app.logging_config import logged_stage
+
 
 @dataclass(frozen=True)
 class DateRange:
@@ -150,6 +152,7 @@ class GfzProcessor(BaseProcessor):
 
     # ---------- public API ----------
 
+    @logged_stage("processing", entry=False)
     def load(
         self,
         date_str: Optional[str] = None,

@@ -13,6 +13,8 @@ from app.solar.models import SolarDiskConfig
 from app.solar.solar_processor import SolarProcessor
 from app.visualization.solar_disk_plotter import plot_solar_disk_on_ax
 
+from app.logging_config import logged_stage
+
 __all__ = [
     "SolarDiskConfig",
     "build_solar_disk",
@@ -39,9 +41,10 @@ def _save(fig, configs, datasets):
         else {"panels": [data.metadata for data in datasets]}
     )
     config.metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    logging.getLogger(__name__).info("Saved %s", path)
+    logging.getLogger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": path}})
 
 
+@logged_stage("processing", entry=True)
 def build_solar_disks(configs: Sequence[SolarDiskConfig]):
     """Build 1 × N disks. First config sets output file/dpi; figsize is per panel."""
     if not configs:
@@ -63,6 +66,7 @@ def build_solar_disks(configs: Sequence[SolarDiskConfig]):
     return fig, axes
 
 
+@logged_stage("processing", entry=True)
 def build_solar_disk(config: SolarDiskConfig):
     """Return (Figure, WCSAxes), optionally saving PNG and a provenance JSON."""
     fig, axes = build_solar_disks([config])
@@ -84,7 +88,8 @@ def main():
     parser.add_argument("--plots-base-dir", default="results")
     parser.add_argument("--filename")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    from app.logging_config import configure_logging
+    configure_logging()
     config = SolarDiskConfig(
         requested_time=f"{args.date}T{args.time}Z",
         max_time_delta_minutes=args.max_time_delta_minutes,

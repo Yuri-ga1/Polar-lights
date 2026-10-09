@@ -2,6 +2,7 @@
 
 import hmac
 import json
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -13,6 +14,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from filelock import Timeout
 from starlette.exceptions import HTTPException
+
+from app.logging_config import configure_logging
+from .frontend_logs import install_frontend_logs
 
 from .catalog import PRODUCTS
 from .config import Settings
@@ -47,6 +51,7 @@ ERRORS = {
 
 
 def create_app(settings=None, service=None, *, start_jobs=True):
+    configure_logging()
     settings = settings or Settings()
     service = service or DataService(settings)
     jobs = JobStore(settings)
@@ -55,67 +60,103 @@ def create_app(settings=None, service=None, *, start_jobs=True):
     @asynccontextmanager
     async def lifespan(app):
         service.initialize()
+        logger.info("Application started", extra={"event": "application_started"})
         if start_jobs:
             runner.start()
         try:
             yield
         finally:
             runner.close()
+            logger.info("Application stopped", extra={"event": "application_stopped"})
 
     app = FastAPI(
         title="Polar Lights API", version="1.0.0", lifespan=lifespan, responses=ERRORS
     )
     app.state.service, app.state.jobs = service, jobs
+    install_frontend_logs(app, settings)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
             allow_methods=["GET", "POST", "DELETE"],
-            allow_headers=["Content-Type", "X-API-Key", "Prefer"],
+            allow_headers=["Content-Type", "X-API-Key", "Prefer", "X-Request-ID"],
             expose_headers=["X-Request-ID", "Location"],
         )
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
-        request_id = uuid.uuid4().hex
-        request_context_id.set(request_id)
-        began = time.perf_counter()
-        if settings.api_key and not hmac.compare_digest(
-            request.headers.get("X-API-Key", ""), settings.api_key
-        ):
-            return JSONResponse(
-                BackendError("UNAUTHORIZED", "Invalid API key", 401).body(),
-                status_code=401,
-            )
-        if request.method == "POST":
-            # Bound even chunked bodies, before JSON/Pydantic parsing.
-            chunks, size = [], 0
-            async for chunk in request.stream():
-                size += len(chunk)
-                if size > 64 * 1024:
-                    return JSONResponse(
-                        BackendError(
-                            "INVALID_REQUEST", "Request body exceeds 64 KiB", 413
-                        ).body(),
-                        status_code=413,
-                    )
-                chunks.append(chunk)
-            request._body = b"".join(chunks)
-        response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
-        logger.info(
-            "requestId=%s method=%s path=%s status=%s durationSeconds=%.3f responseBytes=%s",
-            request_id,
-            request.method,
-            request.url.path,
-            response.status_code,
-            time.perf_counter() - began,
-            response.headers.get("content-length", "stream"),
+        supplied = request.headers.get("X-Request-ID", "")
+        request_id = (
+            supplied
+            if re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", supplied)
+            else uuid.uuid4().hex
         )
-        return response
+        token = request_context_id.set(request_id)
+        request.state.request_id = request_id
+        began = time.perf_counter()
+        context = {"method": request.method, "path": request.url.path}
+        logger.info(
+            "Request started", extra={"event": "request_started", "context": context}
+        )
+        response = None
+        try:
+            if (
+                request.method != "OPTIONS"
+                and settings.api_key
+                and not hmac.compare_digest(
+                    request.headers.get("X-API-Key", ""), settings.api_key
+                )
+            ):
+                response = JSONResponse(
+                    BackendError("UNAUTHORIZED", "Invalid API key", 401).body(),
+                    status_code=401,
+                )
+            elif request.method == "POST":
+                chunks, size = [], 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > 64 * 1024:
+                        response = JSONResponse(
+                            BackendError(
+                                "INVALID_REQUEST", "Request body exceeds 64 KiB", 413
+                            ).body(),
+                            status_code=413,
+                        )
+                        break
+                    chunks.append(chunk)
+                if response is None:
+                    request._body = b"".join(chunks)
+            if response is None:
+                response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        except Exception:
+            logger.exception(
+                "Request failed", extra={"event": "request_failed", "context": context}
+            )
+            raise
+        finally:
+            logger.info(
+                "Request completed",
+                extra={
+                    "event": "request_completed",
+                    "duration_ms": round((time.perf_counter() - began) * 1000, 3),
+                    "context": {
+                        **context,
+                        "status": response.status_code if response is not None else 500,
+                    },
+                },
+            )
+            request_context_id.reset(token)
 
     @app.exception_handler(BackendError)
     async def backend_error(request, exc):
+        if exc.status >= 500:
+            logger.error(
+                "Backend operation failed",
+                exc_info=exc,
+                extra={"event": "backend_operation_failed"},
+            )
         return JSONResponse(exc.body(), status_code=exc.status)
 
     @app.exception_handler(RequestValidationError)
@@ -156,7 +197,6 @@ def create_app(settings=None, service=None, *, start_jobs=True):
 
     @app.exception_handler(Exception)
     async def unexpected_error(request, exc):
-        logger.error("request failed path=%s", request.url.path, exc_info=exc)
         code = (
             "STORAGE_ERROR"
             if isinstance(exc, (OSError, ValueError))
@@ -165,6 +205,7 @@ def create_app(settings=None, service=None, *, start_jobs=True):
         return JSONResponse(
             BackendError(code, "The request could not be completed", 500).body(),
             status_code=500,
+            headers={"X-Request-ID": getattr(request.state, "request_id", "")},
         )
 
     @app.get("/api/v1/health")

@@ -10,6 +10,8 @@ import matplotlib.dates as mdates
 from app.pipeline.datetime_range import filter_dataframe_by_datetime_range, validate_datetime_range
 from app.visualization.plot_utils import *
 
+from app.logging_config import logged_stage, get_logger
+
 __all__ = {
     'plot_sw_symh_dst_kp'
 }
@@ -97,6 +99,7 @@ def _plot_twin_auto(
     ax.legend(handles=l2 + l1, loc=legend_loc, fontsize=24)
 
 
+@logged_stage("plot", entry=True)
 def plot_sw_symh_dst_kp(
     sw_df: pd.DataFrame,
     dst_df: pd.DataFrame,
@@ -235,6 +238,7 @@ def plot_sw_symh_dst_kp(
 
     save_name = "SW_SYMH_DST_KP.png"
     fig.savefig(os.path.join(save_dir, save_name), bbox_inches="tight", pad_inches=0.15)
+    get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": os.path.join(save_dir, save_name)}})
 
     return fig
     

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextvars import copy_context
 from dataclasses import dataclass
 from datetime import date
 from typing import Callable
@@ -12,6 +13,8 @@ from app.pipeline.observation_workflow import ObservationSource
 from app.pipeline.misc_pipeline import run_misc_pipeline
 from app.pipeline.roti_pipeline import run_roti_pipeline
 from app.simurg.simurg_client import SimurgClient
+
+from app.logging_config import logged_stage
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,7 @@ class ThreadSpec:
 def _build_simurg_client(config: MainPipelineConfig) -> SimurgClient | None:
     email = config.simurg_email or 'Storm_Plotter_Jupyter_Notebook@gmail.com'
     if not email:
-        logger.warning("SIMURG email не задан. Потоки adjusted TEC и ROTI будут пропущены.")
+        logger.warning("SIMuRG email is missing; adjusted TEC and ROTI pipelines skipped.")
         return None
     return SimurgClient(email=email)
 
@@ -97,6 +100,7 @@ def _build_thread_specs(config: MainPipelineConfig, simurg_client: SimurgClient 
     ]
 
 
+@logged_stage("pipeline", entry=True)
 def run_main_pipeline(config: MainPipelineConfig) -> None:
     simurg_client = _build_simurg_client(config)
     specs = _build_thread_specs(config, simurg_client)
@@ -107,13 +111,14 @@ def run_main_pipeline(config: MainPipelineConfig) -> None:
         try:
             spec.target(**spec.kwargs)
         except Exception as exc:  # noqa: BLE001
-            logger.exception("Поток %s завершился с ошибкой", spec.name)
+            logger.warning("Pipeline thread failed: %s", spec.name, extra={"event": "pipeline_thread_failed"})
             with lock:
                 exceptions.append((spec.name, exc))
 
     threads = [
         threading.Thread(
-            target=run_with_capture,
+            target=copy_context().run,
+            args=(run_with_capture,),
             name=spec.name,
             kwargs={"spec": spec},
         )

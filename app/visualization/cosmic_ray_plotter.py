@@ -9,6 +9,8 @@ import matplotlib.dates as mdates
 from app.pipeline.datetime_range import filter_dataframe_by_datetime_range, validate_datetime_range
 from app.visualization.plot_utils import *
 
+from app.logging_config import logged_stage, get_logger
+
 def _format_month_title(start: pd.Timestamp, end: pd.Timestamp) -> str:
     start = pd.to_datetime(start)
     end = pd.to_datetime(end)
@@ -21,6 +23,7 @@ def _format_month_title(start: pd.Timestamp, end: pd.Timestamp) -> str:
 
     return f"{start.strftime('%B %Y')}–{end.strftime('%B %Y')}"
 
+@logged_stage("plot", entry=True)
 def plot_cosmic_ray_variations(
     cr_df: pd.DataFrame,
     kp_df: pd.DataFrame,
@@ -116,4 +119,5 @@ def plot_cosmic_ray_variations(
     save_path = os.path.join(save_dir, "Cosmic_Ray.png")
 
     fig.savefig(save_path)
+    get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": save_path}})
     return fig

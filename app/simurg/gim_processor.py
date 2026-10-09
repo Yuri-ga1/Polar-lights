@@ -9,13 +9,16 @@ import gzip
 import bz2
 import lzma
 import zipfile
-import traceback
 
 import numpy as np
 from numpy.typing import NDArray
 from app.base_classes.base_processor import BaseProcessor
 
 import ionex
+
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
 
 
 MAP_DTYPE = np.dtype([("lat", "float"), ("lon", "float"), ("vals", "float")])
@@ -183,12 +186,13 @@ class GimProcessor(BaseProcessor):
     # Public API
     # -------------------------
 
+    @logged_stage("processing", entry=False)
     def load(self, date_value: Union[str, date, datetime]) -> Optional[Dict[datetime, NDArray]]:
         target_date = self._coerce_date(date_value)
         file_path = self._find_file(target_date)
 
         if not self._is_non_empty_file(file_path):
-            print(f"File does not exist or empty: {file_path}")
+            logger.warning(f"File does not exist or empty: {file_path}", extra={"event": "data_quality_warning"})
             return None
 
         try:
@@ -196,12 +200,12 @@ class GimProcessor(BaseProcessor):
                 text = handle.read()
 
             if "IONEX VERSION / TYPE" not in text[:200]:
-                print(f"Not an IONEX text file: {file_path}")
+                logger.warning(f"Not an IONEX text file: {file_path}", extra={"event": "data_quality_warning"})
                 return None
 
             return self._ionex_maps_to_structured(io.StringIO(text)) or None
 
         except Exception:
-            print(traceback.format_exc())
+            logger.exception("IONEX parsing failed", extra={"event": "ionex_parse_failed"})
             return None
 

@@ -88,7 +88,6 @@ class MapService:
             except BackendError:
                 raise
             except Exception as exc:
-                logger.exception("map acquisition failed product=%s", product)
                 raise BackendError(
                     "DOWNLOAD_FAILED", "Map acquisition failed", 502
                 ) from exc

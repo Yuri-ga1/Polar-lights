@@ -5,6 +5,10 @@ from datetime import datetime
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import get_logger, logged_stage
+
+logger = get_logger(__name__)
+
 
 class GimDownloader(BaseDownloader):
     """Скачивает файлы GIM по прямой ссылке Simurg."""
@@ -29,6 +33,7 @@ class GimDownloader(BaseDownloader):
 
         return f"{gim_type}{doy:03d}{session}.{year_short:02d}i"
 
+    @logged_stage("download", entry=False)
     def download(self, date_str: str) -> str:
         params = urlencode({"d": date_str, "gim_type": self.gim_type})
         url = f"{self.BASE_URL}?{params}"
@@ -43,7 +48,7 @@ class GimDownloader(BaseDownloader):
             or self._get_existing_file(f"{filename}.Z")
         )
         if existing_file:
-            print(f"Using cached file: {existing_file}")
+            logger.info(f"Using cached file: {existing_file}", extra={"event": "cache_hit"})
             return existing_file
 
         return self._download_result(url=url, filename=f"{filename}.Z")

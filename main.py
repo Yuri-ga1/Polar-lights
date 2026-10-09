@@ -1,7 +1,7 @@
 import os
 os.environ["MPLBACKEND"] = "Agg"
 
-import logging
+from app.logging_config import configure_logging
 
 from app.pipeline.main_pipeline import MainPipelineConfig, run_main_pipeline
 from app.visualization.plot_settings import set_plt_def_params
@@ -14,7 +14,7 @@ def main(
     cosmic_station_codes: list[str] | None = None,
     email: str | None = None,
 ) -> None:
-    logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(threadName)s: %(message)s")
+    configure_logging()
     set_plt_def_params()
 
     config = MainPipelineConfig(

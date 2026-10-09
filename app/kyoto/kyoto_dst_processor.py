@@ -7,6 +7,8 @@ from typing import Optional, List, Dict
 import pandas as pd
 from app.base_classes.base_processor import BaseProcessor
 
+from app.logging_config import logged_stage
+
 
 class KyotoProcessor(BaseProcessor):
     """
@@ -101,6 +103,7 @@ class KyotoProcessor(BaseProcessor):
         df = df.sort_values("datetime").reset_index(drop=True)
         return df
 
+    @logged_stage("processing", entry=False)
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
         d = self._parse_date(date_str)
         filename = self._month_file_for_date(d)

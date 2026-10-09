@@ -9,6 +9,8 @@ from app.pipeline.datetime_range import filter_dataframe_by_datetime_range, vali
 from app.visualization.plot_utils import auto_ylim_and_ticks, panel_labels, style_axes, align_ylabels
 from app.visualization.geo_utils import format_geo_coord
 
+from app.logging_config import logged_stage, get_logger
+
 
 def format_ionosonde_title(df: pd.DataFrame, value_label: str | None = None) -> str:
     station_code = df.attrs.get("station_code")
@@ -32,6 +34,7 @@ def format_ionosonde_title(df: pd.DataFrame, value_label: str | None = None) -> 
     return title
 
 
+@logged_stage("plot", entry=True)
 def plot_ionosonde_series_on_ax(
     ax: plt.Axes,
     df: pd.DataFrame,
@@ -120,6 +123,7 @@ def plot_ionosonde_series_on_ax(
         ax.legend(loc='upper right')
 
 
+@logged_stage("plot", entry=True)
 def plot_ionosonde(
     df: pd.DataFrame,
     save_dir: str = os.path.join("files", "graphs"),
@@ -201,5 +205,6 @@ def plot_ionosonde(
     save_path = os.path.join(save_dir, "ionosonde.png")
 
     fig.savefig(save_path, bbox_inches="tight", pad_inches=0.12)
+    get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": save_path}})
 
     return fig

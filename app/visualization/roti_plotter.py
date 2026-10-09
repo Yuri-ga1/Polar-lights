@@ -35,6 +35,8 @@ from app.visualization.plot_utils import (
     resolve_map_projection,
 )
 
+from app.logging_config import logged_stage, get_logger
+
 TIME_FORMAT_TITLE = "%d %B %Y %H:%M:%S.%f"
 FIGSIZE_WIDTH = 18
 
@@ -385,6 +387,7 @@ def _colorbar_ticks(color_limits: tuple[float, float]) -> list[float]:
     return [vmin + step * idx for idx in range(5)]
 
 
+@logged_stage("plot", entry=True)
 def plot_map(
     data: dict[datetime, np.ndarray],
     plot_times: Iterable[datetime | str] | datetime | str | pd.Timestamp | None = None,
@@ -609,9 +612,11 @@ def plot_map(
         save_path,
         pad_inches=0.08,
     )
+    get_logger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": save_path}})
     return fig
 
 
+@logged_stage("plot", entry=True)
 def plot_all_maps(
     data: dict[datetime, np.ndarray] | Iterable[tuple[datetime, np.ndarray]],
     product_type: str = "roti",
@@ -741,6 +746,7 @@ def plot_all_maps(
     return save_dir
 
 
+@logged_stage("plot", entry=True)
 def plot_simurg_map_on_ax(
     ax,
     arr,

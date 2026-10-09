@@ -9,6 +9,8 @@ import requests
 
 from app.base_classes.base_downloader import BaseDownloader
 
+from app.logging_config import logged_stage
+
 
 @dataclass(frozen=True)
 class DateRange:
@@ -55,6 +57,7 @@ class GfzDownloader(BaseDownloader):
             raise RuntimeError("GFZ вернул пустой ответ.")
         return text
 
+    @logged_stage("download", entry=False)
     def download(
         self,
         date_str: Optional[str] = None,
