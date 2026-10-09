@@ -10,3 +10,7 @@ max_days = 31
 job_timeout = 1800
 job_workers = 2
 max_jobs = 32
+# Long map/keogram/render stages; external generation has its own deadline.
+long_job_timeout = 43200
+job_max_attempts = 3
+external_wait_timeout = 259200

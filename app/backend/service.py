@@ -20,6 +20,7 @@ from .catalog import (
     validate_columns,
 )
 from .errors import BackendError
+from .jobs import report_stage
 from .logging import get_logger
 from .maps import MapService
 from .models import AuroraMapRequest, KeogramRequest, MapRequest
@@ -173,6 +174,7 @@ class DataService:
                         needed,
                     )
                     try:
+                        report_stage("downloading")
                         rows = self.adapters.acquire(source, first, last, needed)
                         if rows is None or rows.empty:
                             raise BackendError(
@@ -181,6 +183,7 @@ class DataService:
                                 404,
                                 source=source,
                             )
+                        report_stage("processing")
                         normalized = (
                             TimeSeriesStorage.normalize(rows)
                             .reindex(columns=needed)
@@ -236,6 +239,7 @@ class DataService:
                 "No samples available for the requested columns",
                 404,
             )
+        report_stage("processing")
         version = self.storage.version(frame)
         missing = self.storage.missing(
             frame, p.start, p.end, {c: s.policy for c, s in specs.items()}

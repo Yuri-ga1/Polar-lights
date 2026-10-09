@@ -27,6 +27,10 @@ poetry run uvicorn app.backend.api:create_app --factory --host 127.0.0.1 --port 
 ```
 
 Open `http://127.0.0.1:8000/docs` for the catalog, availability, data and job APIs.
+Run `poetry run python -m app.backend.worker` in a separate terminal/service to
+execute background jobs. API processes only accept and serve jobs by default.
+See [worker lifecycle, recovery and migration](docs/worker.md).
+
 The backend uses `files/processed/data.csv` and preserves the existing notebook
 caches and pipeline interfaces. See [backend setup and API contracts](docs/backend.md)
 for Arrow maps, streaming keograms, render jobs, configuration and tests.

@@ -15,10 +15,12 @@ import pandas as pd
 from filelock import FileLock
 
 from app.configuration import current
+from app.storage.atomic import publish
 from app.storage.timeseries import iso, utc
 
 from .catalog import KEOGRAMS, MAPS
 from .errors import BackendError
+from .jobs import report_stage
 from .logging import get_logger
 from .models import MapParameters
 
@@ -80,6 +82,7 @@ class MapService:
         ):
             if self.has(product, timestamp):
                 return
+            report_stage("downloading")
             start = time.perf_counter()
             try:
                 if product == "gim-map":
@@ -114,6 +117,7 @@ class MapService:
             SimurgClient(self.settings.simurg_email, polling_interval=current()["downloads"]["simurg_map_polling_interval"]), str(raw)
         )
         path = Path(downloader.download(str(utc(timestamp).date())))
+        report_stage("processing")
         with h5py.File(path, "r") as handle:
             if "data" not in handle:
                 raise BackendError(
@@ -130,7 +134,7 @@ class MapService:
                 shutil.copyfileobj(incoming, out, 1024 * 1024)
                 out.flush()
                 os.fsync(out.fileno())
-            os.replace(name, destination)
+            publish(name, destination)
         finally:
             Path(name).unlink(missing_ok=True)
 
@@ -191,6 +195,7 @@ class MapService:
         stride = {"full": 1, "medium": 4, "low": 16}[parameters.resolution]
         begin = time.perf_counter()
         try:
+            report_stage("processing")
             with h5py.File(path, "r") as handle:
                 dataset = handle["data"][key]
                 names = dataset.dtype.names or ()
@@ -353,6 +358,7 @@ class MapService:
                 )
                 yield timestamp.to_pydatetime(), points
 
+        report_stage("processing")
         matrix, sampled, latitudes = build_keogram_matrix_from_slices(
             slices(),
             available,

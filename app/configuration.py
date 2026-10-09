@@ -27,6 +27,9 @@ FIELDS = {
         "max_points": (2_000_000, int, 1, 100_000_000, "new", None),
         "max_response_bytes": (64 * 1024 * 1024, int, 1024, 1024**3, "new", None),
         "max_days": (31, int, 1, 3660, "new", None),
+        "long_job_timeout": (43200, int, 1, 604800, "new", None),
+        "job_max_attempts": (3, int, 1, 20, "new", None),
+        "external_wait_timeout": (259200, int, 60, 2592000, "new", None),
         "job_timeout": (1800, int, 1, 86400, "new", None),
         "job_workers": (2, int, 1, 64, "dynamic", None),
         "max_jobs": (32, int, 1, 100_000, "dynamic", None),
@@ -110,12 +113,14 @@ class ConfigManager:
     def __init__(self, directory: str | Path = "config", *, interval: float = 0.5, environ=None):
         self.directory = Path(directory)
         self.interval = interval
-        self.environ = os.environ if environ is None else environ
+        self.environ = dict(os.environ if environ is None else environ)
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread = None
         self._active = None
         self._revision = None
+        self.reload_failed = False
+        self.restart_required = []
         self._candidate = None
         self._candidate_at = 0.0
         self.reload(force=True)
@@ -174,6 +179,8 @@ class ConfigManager:
                                 restart.append(f"{section}.{key}")
                                 candidate[section][key] = deepcopy(old[section][key])
                 changed = old is None or candidate != old
+                self.reload_failed = False
+                self.restart_required = restart
                 self._active = candidate
                 self._revision = signature
                 self._candidate = None
@@ -187,6 +194,7 @@ class ConfigManager:
                 logger.warning("Configuration requires restart", extra={"event": "configuration_restart_required", "context": {"keys": restart}})
             return changed
         except (OSError, ConfigurationError) as exc:
+            self.reload_failed = True
             logger.error("Configuration rejected: %s", exc, extra={"event": "configuration_rejected"})
             if force and self._active is None:
                 raise

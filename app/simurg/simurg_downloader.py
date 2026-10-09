@@ -7,10 +7,10 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 import requests
-from app.base_classes.base_downloader import BaseDownloader
-from app.simurg.simurg_client import SimurgClient
 
+from app.base_classes.base_downloader import BaseDownloader
 from app.logging_config import get_logger, logged_stage
+from app.simurg.simurg_client import SimurgClient
 
 logger = get_logger(__name__)
 
@@ -170,12 +170,59 @@ class _SimurgDownloader(BaseDownloader):
         if remote_file:
             return remote_file
 
-        query_ids = self.client.create_or_reuse_query_ids(
-            start_time=start_iso,
-            end_time=end_iso,
-            method=self._method,
-            args_params=self._args,
-        )
+        # Backend jobs persist identity before yielding; notebooks keep blocking behavior.
+        from app.backend.logging import job_id as current_job_id
+        durable_id = current_job_id.get()
+        store = None
+        external = {}
+        key = f"{self._method}:{start_iso}:{end_iso}:{self._args}"
+        if durable_id:
+            import json
+
+            from app.backend.config import Settings
+            from app.backend.jobs import JobStore
+            store = JobStore(Settings())
+            external = json.loads(store.get(durable_id)["external"] or "{}")
+        query_ids = external.get(key)
+        if query_ids == "submitting":
+            # A crash may have occurred after the remote POST but before saving IDs.
+            # Reconcile, never blindly submit the ambiguous request again.
+            payload_args = {"begin": start_iso, "end": end_iso, **self._args}
+            query_ids = [str(q["id"]) for q in self.client.checking_by_mail()
+                         if q.get("id") is not None and self.client._payload_match(q, self._method, payload_args)]
+            if not query_ids:
+                from app.backend.errors import BackendError
+                raise BackendError("REMOTE_SUBMISSION_UNCERTAIN",
+                                   "Remote submission could not be reconciled; inspect SIMuRG before retry", 409)
+        if not query_ids:
+            if store:
+                from contextlib import closing
+                external[key] = "submitting"
+                with closing(store.connect()) as db:
+                    db.execute("UPDATE jobs SET external=? WHERE id=?", (json.dumps(external), durable_id))
+            query_ids = self.client.create_or_reuse_query_ids(
+                start_time=start_iso, end_time=end_iso,
+                method=self._method, args_params=self._args,
+            )
+        if store:
+            import json
+            from contextlib import closing
+            external[key] = query_ids
+            with closing(store.connect()) as db:
+                db.execute("UPDATE jobs SET external=? WHERE id=?", (json.dumps(external), durable_id))
+            statuses = self.client.check_statuses(query_ids)
+            if any(self.client.status_has_keyword(q.get("status"), "error") or
+                   self.client.status_has_keyword(q.get("status"), "failed") for q in statuses.values()):
+                from app.backend.errors import BackendError
+                raise BackendError("REMOTE_GENERATION_FAILED", "SIMuRG generation failed; inspect remote request", 409)
+            if len(statuses) != len(query_ids) or not all(self.client.status_has_keyword(q.get("status"), "done") for q in statuses.values()):
+                from app.backend.errors import BackendError
+                from app.backend.jobs import ExternalPending
+                row = store.get(durable_id)
+                if time.time() - row["created"] > store.settings.external_wait_timeout:
+                    raise BackendError("EXTERNAL_TIMEOUT", "SIMuRG generation deadline exceeded", 408)
+                store.defer(durable_id, external=external)
+                raise ExternalPending()
         file_path = self._wait_and_download(query_ids)
         return file_path
 

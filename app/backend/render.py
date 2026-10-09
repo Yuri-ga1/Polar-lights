@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from app.storage.atomic import publish
+
 from .errors import BackendError
 from .models import MapParameters
 
@@ -63,6 +65,11 @@ def render_maps(service, spec, directory, on_processing):
         )
     style = json.loads((assets / "style.json").read_text(encoding="utf-8"))
     files = []
+    # Remote generation yields before a browser is created.
+    for timestamp in spec.timestamps:
+        if not service.maps.has(spec.productId, timestamp):
+            service.maps.acquire(spec.productId, timestamp)
+    on_processing()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=True,
@@ -99,6 +106,17 @@ def render_maps(service, spec, directory, on_processing):
                 {"style": style, "center": spec.center, "zoom": spec.zoom},
             )
             for number, timestamp in enumerate(spec.timestamps):
+                filename = f"map-{number:04d}.png"
+                metadata_name = f"map-{number:04d}.json"
+                try:
+                    from PIL import Image
+                    with Image.open(directory / filename) as existing:
+                        existing.verify()
+                    json.loads((directory / metadata_name).read_text())
+                    files.extend([filename, metadata_name])
+                    continue
+                except (OSError, ValueError):
+                    pass
                 arrays, metadata = service.maps.read(
                     spec.productId,
                     MapParameters(timestamp=timestamp, resolution=spec.resolution),
@@ -133,16 +151,18 @@ def render_maps(service, spec, directory, on_processing):
                 )
                 filename = f"map-{number:04d}.png"
                 page.screenshot(
-                    path=str(directory / filename), animations="disabled", timeout=60000
+                    path=str(directory / (filename + ".tmp")), type="png", animations="disabled", timeout=60000
                 )
+                publish(directory / (filename + ".tmp"), directory / filename)
                 files.append(filename)
-                (directory / f"map-{number:04d}.json").write_text(
+                (directory / (metadata_name + ".tmp")).write_text(
                     json.dumps(metadata, sort_keys=True), encoding="utf-8"
                 )
-                files.append(f"map-{number:04d}.json")
+                publish(directory / (metadata_name + ".tmp"), directory / metadata_name)
+                files.append(metadata_name)
         finally:
             browser.close()
-    (directory / "spec.json").write_text(
+    (directory / "spec.tmp").write_text(
         json.dumps(
             {
                 "spec": spec.model_dump(mode="json"),
@@ -153,4 +173,5 @@ def render_maps(service, spec, directory, on_processing):
         ),
         encoding="utf-8",
     )
+    publish(directory / "spec.tmp", directory / "spec.json")
     return [*files, "spec.json"]

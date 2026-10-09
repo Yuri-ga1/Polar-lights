@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.configuration import current
+from app.configuration import FIELDS, current
 
 
 @dataclass(frozen=True, init=False)
@@ -27,6 +27,10 @@ class Settings:
         default_factory=lambda: Path(current()["backend"]["render_assets"])
     )
 
+    long_job_timeout: int = field(default_factory=lambda: current()["backend"]["long_job_timeout"])
+    job_max_attempts: int = field(default_factory=lambda: current()["backend"]["job_max_attempts"])
+    external_wait_timeout: int = field(default_factory=lambda: current()["backend"]["external_wait_timeout"])
+
     def __init__(self, *args, _snapshot=None, **kwargs):
         names = tuple(self.__dataclass_fields__)
         if len(args) > len(names):
@@ -35,7 +39,8 @@ class Settings:
             raise TypeError(f"Unknown Settings arguments: {sorted(set(kwargs) - set(names))}")
         if any(name in kwargs for name in names[:len(args)]):
             raise TypeError("Settings argument supplied twice")
-        values = (_snapshot or current())["backend"]
+        values = {key: spec[0] for key, spec in FIELDS["backend"].items()}
+        values.update((_snapshot or current())["backend"])
         defaults = {
             **values,
             "root": Path(values["root"]),

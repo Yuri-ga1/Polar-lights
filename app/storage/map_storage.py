@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 import shutil
 from datetime import datetime
+from pathlib import Path
 
 import h5py
+
+from app.storage.atomic import publish
 
 
 class HDF5MapStorage:
@@ -43,13 +44,15 @@ class HDF5MapStorage:
                 with h5py.File(source, "r") as input_handle, h5py.File(temporary, "r+") as output:
                     target = output.require_group("data")
                     added = self._copy_missing(target, input_handle["data"])
-                os.replace(temporary, self.path)
+                publish(temporary, self.path)
                 return added
             except Exception:
                 temporary.unlink(missing_ok=True)
                 raise
-        with h5py.File(source, "r") as input_handle, h5py.File(self.path, "w") as output:
-            return self._copy_missing(output.create_group("data"), input_handle["data"])
+        with h5py.File(source, "r") as input_handle, h5py.File(temporary, "w") as output:
+            added = self._copy_missing(output.create_group("data"), input_handle["data"])
+        publish(temporary, self.path)
+        return added
 
     def ingest_slices(self, slices: dict[datetime, object]) -> int:
         """Append parsed non-HDF5 map slices (for example IONEX/GIM) by UTC timestamp."""
@@ -57,10 +60,11 @@ class HDF5MapStorage:
             return 0
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.unlink(missing_ok=True)
         if self.path.exists():
             shutil.copy2(self.path, temporary)
         try:
-            with h5py.File(temporary if temporary.exists() else self.path, "a") as output:
+            with h5py.File(temporary, "a") as output:
                 target = output.require_group("data")
                 added = 0
                 for timestamp, values in slices.items():
@@ -69,7 +73,7 @@ class HDF5MapStorage:
                         target.create_dataset(key, data=values, compression="gzip")
                         added += 1
             if temporary.exists():
-                os.replace(temporary, self.path)
+                publish(temporary, self.path)
             return added
         except Exception:
             temporary.unlink(missing_ok=True)

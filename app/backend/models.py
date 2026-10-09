@@ -175,8 +175,14 @@ class AvailabilityResponse(BaseModel):
 class JobStatus(BaseModel):
     jobId: str
     status: Literal[
-        "queued", "downloading", "processing", "completed", "failed", "cancelled"
+        "queued", "downloading", "processing", "waiting_external", "retrying", "completed", "failed", "cancelled"
     ]
+    stage: str | None = None
+    attempts: int = 0
+    heartbeatAt: float | None = None
+    nextRunAt: float | None = None
+    startedAt: float | None = None
+    finishedAt: float | None = None
     createdAt: float
     updatedAt: float
     resultUrl: str

@@ -51,7 +51,7 @@ ERRORS = {
 }
 
 
-def create_app(settings=None, service=None, *, start_jobs=True):
+def create_app(settings=None, service=None, *, start_jobs=False):
     config_manager = manager() if settings is None else None
     configure_logging()
     settings = settings or LiveSettings(config_manager)
@@ -229,6 +229,27 @@ def create_app(settings=None, service=None, *, start_jobs=True):
     async def public_config() -> dict:
         return {"revision": config_manager.revision if config_manager else None,
                 "frontendLogLevel": current()["logging"]["frontend_level"]}
+
+    @app.get("/api/v1/config/status")
+    def config_status(request: Request):
+        if not settings.api_key or not hmac.compare_digest(request.headers.get("X-API-Key", ""), settings.api_key):
+            raise BackendError("UNAUTHORIZED", "Configured API key required", 401)
+        try:
+            worker = json.loads((jobs.root / "worker-status.json").read_text())
+            worker["recentHeartbeat"] = time.time() - worker["heartbeatAt"] < 15
+        except (OSError, ValueError, KeyError):
+            worker = None
+        return {"worker": worker, "revision": config_manager.revision if config_manager else None,
+                "reloadFailed": config_manager.reload_failed if config_manager else False,
+                "restartRequired": config_manager.restart_required if config_manager else []}
+
+    @app.post("/api/v1/jobs/{jobId}/retry", status_code=202)
+    def retry_job(jobId: str):
+        return jobs.public(jobs.retry(jobId, "data"))
+
+    @app.post("/api/v1/map-render-jobs/{jobId}/retry", status_code=202)
+    def retry_render(jobId: str):
+        return jobs.public(jobs.retry(jobId, "render"))
 
     @app.post(
         "/api/v1/aurora-map/geomagnetic-lines",
