@@ -189,3 +189,8 @@ files/*
 *.pyc
 *.pyo
 results/
+
+# Structured runtime logs and rotated archives
+logs/
+*.jsonl
+*.jsonl.gz

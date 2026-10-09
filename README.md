@@ -150,3 +150,9 @@ For `PlotConstructor`, use `time="all"` or `plot_all_times=True` in map params.
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/main/notebooks/00_examples_and_run.ipynb)
 
 > После открытия в Colab: **File → Save a copy in Drive**, чтобы получить свою копию и спокойно редактировать.
+
+## Логирование
+
+Backend, frontend и научный pipeline сохраняют отдельные JSONL-журналы в `logs/`.
+Настройки, корреляция событий, ротация, примеры и тесты описаны в
+[docs/logging.md](docs/logging.md).
