@@ -1,0 +1,8 @@
+directory = "logs"
+frontend_level = "INFO"
+backend_level = "INFO"
+pipeline_level = "INFO"
+max_bytes = 20971520
+retention_days = 30
+console = true
+files = true

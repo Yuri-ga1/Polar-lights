@@ -1,0 +1,2 @@
+plots_base_dir = "results"
+observation_source = "aurorasaurus"

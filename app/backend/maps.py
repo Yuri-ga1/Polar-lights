@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from filelock import FileLock
 
+from app.configuration import current
 from app.storage.timeseries import iso, utc
 
 from .catalog import KEOGRAMS, MAPS
@@ -110,7 +111,7 @@ class MapService:
             RotiDownloader if product == "roti-map" else AdjustedTecDownloader
         )
         downloader = downloader_type(
-            SimurgClient(self.settings.simurg_email, polling_interval=5), str(raw)
+            SimurgClient(self.settings.simurg_email, polling_interval=current()["downloads"]["simurg_map_polling_interval"]), str(raw)
         )
         path = Path(downloader.download(str(utc(timestamp).date())))
         with h5py.File(path, "r") as handle:

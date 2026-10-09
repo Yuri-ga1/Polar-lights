@@ -111,6 +111,18 @@ class LoggingConfig:
     )
 
 
+def logging_from_snapshot(snapshot):
+    values = snapshot["logging"]
+    return LoggingConfig(
+        directory=Path(values["directory"]),
+        levels={name: values[f"{name}_level"] for name in ("frontend", "backend", "pipeline")},
+        max_bytes=values["max_bytes"],
+        retention_days=values["retention_days"],
+        console=values["console"],
+        files=values["files"],
+    )
+
+
 @contextmanager
 def file_lock(path, timeout=2):
     """Lock a permanent sidecar, never the inode replaced during rotation."""
@@ -268,7 +280,10 @@ def configure_logging(config=None, *, force=False):
     with _config_lock:
         if _configured and config is None and not force:
             return
-        config = config or LoggingConfig()
+        if config is None:
+            from app.configuration import current
+
+            config = logging_from_snapshot(current())
         parent = logging.getLogger("app")
         for handler in list(parent.handlers):
             if isinstance(handler, ComponentHandler):

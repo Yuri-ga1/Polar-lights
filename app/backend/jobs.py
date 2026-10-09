@@ -20,8 +20,9 @@ from pathlib import Path
 from filelock import FileLock, Timeout
 from pydantic import TypeAdapter
 
-from app.logging_config import configure_logging, get_logging_config
+from app.logging_config import configure_logging, get_logging_config, logging_from_snapshot
 from app.logging_config import request_id as current_request_id
+from app.configuration import ConfigurationError, effective_snapshot, manager, pin
 
 from .errors import BackendError
 from .logging import get_logger
@@ -47,6 +48,7 @@ class JobStore:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS job_context (id TEXT PRIMARY KEY, request_id TEXT)"
             )
+            db.execute("CREATE TABLE IF NOT EXISTS job_config (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL)")
 
     def connect(self):
         db = sqlite3.connect(self.db, timeout=30, isolation_level=None)
@@ -54,10 +56,16 @@ class JobStore:
         return db
 
     def submit(self, kind, payload):
+        snapshot = effective_snapshot()
+        if not hasattr(self.settings, "config_manager"):
+            for key in snapshot["backend"]:
+                value = getattr(self.settings, key)
+                snapshot["backend"][key] = str(value) if isinstance(value, Path) else list(value) if isinstance(value, tuple) else value
+        config_json = json.dumps(snapshot, sort_keys=True, allow_nan=False)
         canonical = json.dumps(
             payload, sort_keys=True, separators=(",", ":"), allow_nan=False
         )
-        digest = hashlib.sha256((kind + canonical).encode()).hexdigest()
+        digest = hashlib.sha256((kind + canonical + config_json).encode()).hexdigest()
         with closing(self.connect()) as db:
             db.execute("BEGIN IMMEDIATE")
             existing = db.execute(
@@ -83,6 +91,7 @@ class JobStore:
                 "INSERT OR REPLACE INTO job_context VALUES (?,?)",
                 (job_id, current_request_id.get()),
             )
+            db.execute("INSERT INTO job_config VALUES (?,?)", (job_id, config_json))
             db.commit()
             logger.info(
                 "Job created",
@@ -166,7 +175,14 @@ class JobStore:
 
 def execute_job(settings, job_id, logging_config=None):
     """Spawn-safe worker entrypoint. A worker never mutates notebook caches."""
-    configure_logging(logging_config)
+    try:
+        config_manager = manager()
+        config_manager.start()
+    except (ConfigurationError, OSError):
+        config_manager = None
+    configure_logging(
+        logging_from_snapshot(config_manager.snapshot()) if config_manager else logging_config
+    )
     job_token = current_job_id.set(job_id)
     began = time.perf_counter()
     store = JobStore(settings)
@@ -175,34 +191,16 @@ def execute_job(settings, job_id, logging_config=None):
         context = db.execute(
             "SELECT request_id FROM job_context WHERE id=?", (job_id,)
         ).fetchone()
+        config_row = db.execute("SELECT snapshot FROM job_config WHERE id=?", (job_id,)).fetchone()
+    snapshot = json.loads(config_row[0]) if config_row else effective_snapshot()
+    from .config import Settings
+
+    settings = Settings.from_snapshot(snapshot)
     request_token = current_request_id.set(context[0] if context else None)
     logger.info("Job started", extra={"event": "job_started"})
     try:
-        from .service import DataService
-
-        service = DataService(settings)
-        directory = store.root / job_id
-        directory.mkdir(exist_ok=True)
-        store.update(job_id, "downloading")
-        if row["kind"] == "render":
-            from .render import render_maps
-
-            spec = MapRenderSpec.model_validate_json(row["payload"])
-            files = render_maps(
-                service, spec, directory, lambda: store.update(job_id, "processing")
-            )
-            store.update(job_id, "completed", files=files, media="image/png")
-        else:
-            request = TypeAdapter(DataRequest).validate_json(row["payload"])
-            payload, media = service.response(request)
-            store.update(job_id, "processing")
-            temporary = directory / "result.tmp"
-            with temporary.open("wb") as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-            temporary.replace(directory / "result.bin")
-            store.update(job_id, "completed", files=["result.bin"], media=media)
+        with pin(snapshot):
+            _run_job(store, row, settings, job_id)
     except BackendError as exc:
         logger.error("Job failed", exc_info=exc, extra={"event": "job_failure"})
         store.update(job_id, "failed", error=exc.body())
@@ -211,21 +209,46 @@ def execute_job(settings, job_id, logging_config=None):
         store.update(
             job_id,
             "failed",
-            error=BackendError(
-                "PROCESSING_FAILED", "Job processing failed", 500
-            ).body(),
+            error=BackendError("PROCESSING_FAILED", "Job processing failed", 500).body(),
         )
-
     finally:
-        logger.info(
-            "Job execution finished",
-            extra={
-                "event": "job_finished",
-                "duration_ms": round((time.perf_counter() - began) * 1000, 3),
-            },
-        )
+        logger.info("Job execution finished", extra={"event": "job_finished", "duration_ms": round((time.perf_counter() - began) * 1000, 3)})
         current_request_id.reset(request_token)
         current_job_id.reset(job_token)
+        if config_manager:
+            config_manager.close()
+
+
+def _run_job(store, row, settings, job_id):
+    snapshot = effective_snapshot()
+    from .service import DataService
+
+    service = DataService(settings)
+    directory = store.root / job_id
+    directory.mkdir(exist_ok=True)
+    temporary_config = directory / "effective-config.tmp"
+    temporary_config.write_text(json.dumps(snapshot, indent=2, sort_keys=True), encoding="utf-8")
+    temporary_config.replace(directory / "effective-config.json")
+    store.update(job_id, "downloading")
+    if row["kind"] == "render":
+        from .render import render_maps
+
+        spec = MapRenderSpec.model_validate_json(row["payload"])
+        files = render_maps(
+            service, spec, directory, lambda: store.update(job_id, "processing")
+        )
+        store.update(job_id, "completed", files=files, media="image/png")
+    else:
+        request = TypeAdapter(DataRequest).validate_json(row["payload"])
+        payload, media = service.response(request)
+        store.update(job_id, "processing")
+        temporary = directory / "result.tmp"
+        with temporary.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(directory / "result.bin")
+        store.update(job_id, "completed", files=["result.bin"], media=media)
 
 
 class JobRunner:
@@ -272,9 +295,9 @@ class JobRunner:
         context = multiprocessing.get_context("spawn")
         try:
             while not self.stop_event.is_set():
-                for job_id, (process, began) in list(self.active.items()):
+                for job_id, (process, began, limit) in list(self.active.items()):
                     row = self.store.get(job_id)
-                    timeout = time.monotonic() - began > self.store.settings.job_timeout
+                    timeout = time.monotonic() - began > limit
                     if row["status"] == "cancelled" or timeout:
                         self._terminate(process)
                         if timeout:
@@ -307,17 +330,28 @@ class JobRunner:
                         ).fetchall()
                     for row in queued:
                         job_id = row["id"]
+                        with closing(self.store.connect()) as db:
+                            config_row = db.execute(
+                                "SELECT snapshot FROM job_config WHERE id=?", (job_id,)
+                            ).fetchone()
+                        if config_row:
+                            from .config import Settings
+
+                            job_settings = Settings.from_snapshot(json.loads(config_row[0]))
+                        else:
+                            job_settings = self.store.settings.snapshot() if hasattr(self.store.settings, "snapshot") else self.store.settings
+                        limit = job_settings.job_timeout
                         self.store.update(job_id, "downloading")
                         process = context.Process(
                             target=execute_job,
-                            args=(self.store.settings, job_id, get_logging_config()),
+                            args=(job_settings, job_id, get_logging_config()),
                             daemon=True,
                         )
                         process.start()
-                        self.active[job_id] = (process, time.monotonic())
+                        self.active[job_id] = (process, time.monotonic(), limit)
                 self.stop_event.wait(0.2)
         finally:
-            for job_id, (process, _) in self.active.items():
+            for job_id, (process, _, _) in self.active.items():
                 self._terminate(process)
                 self.store.update(
                     job_id,

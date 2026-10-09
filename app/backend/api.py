@@ -16,10 +16,11 @@ from filelock import Timeout
 from starlette.exceptions import HTTPException
 
 from app.logging_config import configure_logging
+from app.configuration import current, manager, pin
 from .frontend_logs import install_frontend_logs
 
 from .catalog import PRODUCTS
-from .config import Settings
+from .config import LiveSettings
 from .errors import BackendError
 from .jobs import JobRunner, JobStore
 from .logging import get_logger
@@ -51,8 +52,9 @@ ERRORS = {
 
 
 def create_app(settings=None, service=None, *, start_jobs=True):
+    config_manager = manager() if settings is None else None
     configure_logging()
-    settings = settings or Settings()
+    settings = settings or LiveSettings(config_manager)
     service = service or DataService(settings)
     jobs = JobStore(settings)
     runner = JobRunner(jobs)
@@ -60,6 +62,8 @@ def create_app(settings=None, service=None, *, start_jobs=True):
     @asynccontextmanager
     async def lifespan(app):
         service.initialize()
+        if config_manager:
+            config_manager.start()
         logger.info("Application started", extra={"event": "application_started"})
         if start_jobs:
             runner.start()
@@ -67,6 +71,8 @@ def create_app(settings=None, service=None, *, start_jobs=True):
             yield
         finally:
             runner.close()
+            if config_manager:
+                config_manager.close()
             logger.info("Application stopped", extra={"event": "application_stopped"})
 
     app = FastAPI(
@@ -85,6 +91,13 @@ def create_app(settings=None, service=None, *, start_jobs=True):
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
+        if config_manager:
+            # Every request resolves one complete generation, even while a reload occurs.
+            with pin(config_manager.snapshot()):
+                return await _request_context(request, call_next)
+        return await _request_context(request, call_next)
+
+    async def _request_context(request: Request, call_next):
         supplied = request.headers.get("X-Request-ID", "")
         request_id = (
             supplied
@@ -211,6 +224,11 @@ def create_app(settings=None, service=None, *, start_jobs=True):
     @app.get("/api/v1/health")
     def health() -> dict:
         return {"status": "ok", "apiVersion": "1.0.0"}
+
+    @app.get("/api/v1/config/public")
+    async def public_config() -> dict:
+        return {"revision": config_manager.revision if config_manager else None,
+                "frontendLogLevel": current()["logging"]["frontend_level"]}
 
     @app.post(
         "/api/v1/aurora-map/geomagnetic-lines",
