@@ -7,7 +7,12 @@ import {
   type RenderSpec,
 } from "../api/renderJobs";
 import { useWorkspace, type ChartSpec } from "../store";
-import { cancelRender, startRender, useRenderTasks } from "../renderTasks";
+import {
+  cancelRender,
+  resumeRender,
+  startRender,
+  useRenderTasks,
+} from "../renderTasks";
 import { Numeric, Field } from "./Controls";
 function PinnedPreview({
   chart,
@@ -60,6 +65,9 @@ function PinnedPreview({
   );
 }
 export function BatchRender({ chart }: { chart: ChartSpec }) {
+  useEffect(() => {
+    resumeRender(chart.id);
+  }, [chart.id]);
   const assets = useQuery({
     queryKey: ["render-assets"],
     queryFn: ({ signal }) => renderApi.assets(signal),
@@ -76,7 +84,14 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
     [preview, setPreview] = useState<RenderSpec | null>(null);
   const task = useRenderTasks((s) => s.tasks[chart.id]);
   const busy =
-    task && ["queued", "downloading", "processing"].includes(task.status);
+    task &&
+    [
+      "queued",
+      "downloading",
+      "processing",
+      "waiting_external",
+      "retrying",
+    ].includes(task.status);
   const spec = () =>
     renderSpecSchema.parse({
       productId: chart.productId,
@@ -152,7 +167,9 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
               }
             }}
           >
-            Render series
+            {task?.status === "failed" || task?.status === "cancelled"
+              ? "Retry render"
+              : "Render series"}
           </button>
           <button
             disabled={!assets.data}
@@ -184,7 +201,9 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       )}
       {task && (
         <div role="status" aria-label="Render status">
-          {task.status}
+          {task.status === "waiting_external"
+            ? "Waiting for SIMuRG generation"
+            : task.status}
           {task.error && <p role="alert">{task.error}</p>}
           {task.requestId && <code>Request ID: {task.requestId}</code>}
           {task.files && (

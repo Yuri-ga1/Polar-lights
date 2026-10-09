@@ -91,9 +91,14 @@ export const acceptedSchema = z.object({
   resultUrl: z.string(),
 });
 export const jobSchema = z.object({
+  stage: z.string().nullish(),
+  attempts: z.number().optional(),
+  nextRunAt: z.number().nullish(),
   jobId: z.string(),
   status: z.enum([
     "queued",
+    "waiting_external",
+    "retrying",
     "downloading",
     "processing",
     "completed",

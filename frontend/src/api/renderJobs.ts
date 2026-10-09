@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { ApiError, fetchApi, pause } from "./client";
+import {
+  ApiError,
+  fetchApi,
+  pause,
+  rememberedJob,
+  pollJob,
+  pageIsLeaving,
+} from "./client";
 import { jobSchema } from "./contracts";
 export const assetSchema = z.object({
   assetVersion: z.string().regex(/^[a-f0-9]{64}$/),
@@ -59,18 +66,25 @@ export const renderApi = {
     pollMs = 900,
   ): Promise<RenderFiles> {
     const immutable = renderSpecSchema.parse(structuredClone(spec));
-    const initial = jobSchema.parse(
-      await (
-        await fetchApi("/api/v1/map-render-jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(immutable),
-          signal,
-        })
-      ).json(),
-    );
+    const key = `render:${JSON.stringify(immutable)}`;
+    const saved = rememberedJob(key);
+    const initial = saved
+      ? jobSchema.parse(JSON.parse(saved))
+      : jobSchema.parse(
+          await (
+            await fetchApi("/api/v1/map-render-jobs", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(immutable),
+              signal,
+            })
+          ).json(),
+        );
+    rememberedJob(key, JSON.stringify(initial));
     const path = `/api/v1/map-render-jobs/${encodeURIComponent(initial.jobId)}`;
     const cancel = () => {
+      if (pageIsLeaving()) return;
+      rememberedJob(key, null);
       void fetchApi(path, { method: "DELETE" }).catch(() => {});
     };
     signal.addEventListener("abort", cancel, { once: true });
@@ -83,10 +97,15 @@ export const renderApi = {
       for (;;) {
         signal.throwIfAborted();
         onStatus(state);
-        if (state.status === "completed")
-          return renderFilesSchema.parse(
-            await (await fetchApi(path + "/files", { signal })).json(),
+        if (["failed", "cancelled"].includes(state.status))
+          rememberedJob(key, null);
+        if (state.status === "completed") {
+          const files = renderFilesSchema.parse(
+            await (await pollJob(path + "/files", signal)).json(),
           );
+          rememberedJob(key, null);
+          return files;
+        }
         if (state.status === "failed")
           throw new ApiError(
             state.error?.code ?? "RENDER_FAILED",
@@ -95,16 +114,13 @@ export const renderApi = {
         if (state.status === "cancelled")
           throw new ApiError("JOB_CANCELLED", "Render job cancelled");
         await pause(signal, pollMs);
-        const response = await fetchApi(path, { signal });
+        const response = await pollJob(path, signal);
         state = jobSchema.parse(await response.json());
-        if (state.status === "failed")
-          throw new ApiError(
-            state.error?.code ?? "RENDER_FAILED",
-            state.error?.message ?? "Rendering failed",
-            {},
-            response.headers.get("X-Request-ID") ?? undefined,
-          );
       }
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "JOB_NOT_FOUND")
+        rememberedJob(key, null);
+      throw error;
     } finally {
       signal.removeEventListener("abort", cancel);
     }

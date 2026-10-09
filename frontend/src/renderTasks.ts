@@ -1,5 +1,6 @@
 import { logger } from "./logging";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { ApiError } from "./api/client";
 import { renderApi, type RenderSpec, type RenderFiles } from "./api/renderJobs";
 import { useWorkspace } from "./store";
@@ -10,10 +11,28 @@ type Task = {
   error?: string;
   requestId?: string;
 };
-export const useRenderTasks = create<{ tasks: Record<string, Task> }>(() => ({
-  tasks: {},
-}));
+export const useRenderTasks = create<{ tasks: Record<string, Task> }>()(
+  persist(() => ({ tasks: {} }), {
+    name: `polar-render-tasks:${import.meta.env.VITE_API_BASE_URL || ""}`,
+    version: 1,
+  }),
+);
 const controllers = new Map<string, AbortController>();
+export function resumeRender(id: string) {
+  const task = useRenderTasks.getState().tasks[id];
+  if (
+    task &&
+    !controllers.has(id) &&
+    [
+      "queued",
+      "downloading",
+      "processing",
+      "waiting_external",
+      "retrying",
+    ].includes(task.status)
+  )
+    void startRender(id, task.spec);
+}
 export function cancelRender(id: string) {
   if (controllers.has(id))
     logger.info("render_cancelled", "Render operation cancelled");
