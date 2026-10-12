@@ -162,3 +162,10 @@ For `PlotConstructor`, use `time="all"` or `plot_all_times=True` in map params.
 Backend, frontend и научный pipeline сохраняют отдельные JSONL-журналы в `logs/`.
 Настройки, корреляция событий, ротация, примеры и тесты описаны в
 [docs/logging.md](docs/logging.md).
+
+## Docker deployment
+
+Production Docker Compose runs the static frontend, API and durable worker as
+separate services with shared host data directories. See the
+[deployment guide](docs/deployment.md) for first start, permissions, live TOML
+configuration, per-service upgrades, backups, cleanup and smoke tests.
