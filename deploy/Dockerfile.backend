@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.12.12-slim-bookworm AS dependencies
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 POETRY_NO_INTERACTION=1 POETRY_VIRTUALENVS_CREATE=false
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git libhdf5-dev libgeos-dev libproj-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir poetry==2.2.1 && python -m venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv PATH="/opt/venv/bin:$PATH"
+WORKDIR /build
+COPY pyproject.toml poetry.lock ./
+RUN --mount=type=cache,target=/root/.cache/pypoetry poetry install --only main --extras backend --no-root
+
+FROM python:3.12.12-slim-bookworm AS runtime
+ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/browsers POLAR_RENDER_ASSETS=/opt/render-assets \
+    MPLCONFIGDIR=/tmp/matplotlib HOME=/tmp OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+COPY --from=dependencies /opt/venv /opt/venv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libhdf5-103-1 libgeos-c1v5 libproj25 libopenjp2-7 ca-certificates \
+    && python -m playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod -R a+rX /opt/browsers
+WORKDIR /app
+COPY app ./app
+COPY config ./config
+COPY deploy ./deploy
+RUN python -m app.backend.setup_render \
+    && useradd --uid 1000 --create-home polar \
+    && mkdir -p files/raw files/processed files/maps files/jobs results logs \
+    && chown -R polar:polar files results logs
+USER 1000:1000
+CMD ["python", "-m", "uvicorn", "app.backend.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--timeout-graceful-shutdown", "30"]

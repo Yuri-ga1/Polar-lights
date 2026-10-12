@@ -3,9 +3,10 @@
 import hmac
 import json
 import re
+import sqlite3
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import datetime
 
 from fastapi import FastAPI, Header, Query, Request
@@ -224,6 +225,20 @@ def create_app(settings=None, service=None, *, start_jobs=False):
     @app.get("/api/v1/health")
     def health() -> dict:
         return {"status": "ok", "apiVersion": "1.0.0"}
+
+    @app.get("/api/v1/ready")
+    def ready():
+        # Liveness stays independent of worker availability. Readiness checks
+        # the durable queue and elected coordinator without exposing paths.
+        try:
+            with closing(jobs.connect()) as db:
+                db.execute("SELECT id FROM jobs LIMIT 1").fetchone()
+            status = json.loads((jobs.root / "worker-status.json").read_text())
+            if not 0 <= time.time() - status["heartbeatAt"] < 20:
+                raise ValueError("stale heartbeat")
+        except (OSError, ValueError, KeyError, TypeError, sqlite3.Error):
+            return JSONResponse({"status": "not_ready"}, status_code=503)
+        return {"status": "ready"}
 
     @app.get("/api/v1/config/public")
     async def public_config() -> dict:

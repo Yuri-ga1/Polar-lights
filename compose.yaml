@@ -1,0 +1,78 @@
+name: polar-lights
+x-backend: &backend
+  image: polar-lights-backend:local
+  build:
+    context: .
+    dockerfile: deploy/Dockerfile.backend
+  user: "${POLAR_UID:-1000}:${POLAR_GID:-1000}"
+  init: true
+  restart: unless-stopped
+  environment:
+    POLAR_CONFIG_DIR: /app/config
+    POLAR_DATA_ROOT: /app/files
+    POLAR_RENDER_ASSETS: /opt/render-assets
+    POLAR_LOG_DIR: /app/logs
+    POLAR_API_KEY: ${POLAR_API_KEY:-}
+    SIMURG_EMAIL: ${SIMURG_EMAIL:-}
+    JOB_RETENTION_DAYS: ${JOB_RETENTION_DAYS:-30}
+  volumes:
+    - ./config:/app/config:ro
+    - ./files/raw:/app/files/raw
+    - ./files/processed:/app/files/processed
+    - ./files/maps:/app/files/maps
+    - ./files/jobs:/app/files/jobs
+    - ./results:/app/results
+    - ./logs:/app/logs
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "3"
+services:
+  api:
+    <<: *backend
+    cpus: ${API_CPUS:-1.0}
+    mem_limit: ${API_MEMORY:-2g}
+    stop_grace_period: 45s
+    healthcheck:
+      test: [CMD, python, -m, deploy.healthcheck, api]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+  worker:
+    <<: *backend
+    command: [python, -m, app.backend.worker]
+    cpus: ${WORKER_CPUS:-2.0}
+    mem_limit: ${WORKER_MEMORY:-4g}
+    shm_size: ${WORKER_SHM:-1g}
+    stop_grace_period: ${WORKER_STOP_GRACE:-420s}
+    healthcheck:
+      test: [CMD, python, -m, deploy.healthcheck, worker]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    image: polar-lights-frontend:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    cpus: ${FRONTEND_CPUS:-0.5}
+    mem_limit: ${FRONTEND_MEMORY:-256m}
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
