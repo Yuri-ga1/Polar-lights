@@ -1,0 +1,23 @@
+name: Docker deployment
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate and build locked images
+        run: |
+          docker compose config --quiet
+          docker compose build
+      - name: Offline regressions and scientific/browser smoke (non-root)
+        run: |
+          docker run --rm --init --network none --shm-size=1g -v "$PWD/tests:/tests:ro" polar-lights-backend:local python -m unittest discover -s /tests -v
+          docker run --rm --init --network none --shm-size=1g polar-lights-backend:local python -m deploy.smoke
+      - name: Isolated Compose lifecycle, proxy and persistence smoke
+        run: python3 deploy/integration.py
