@@ -6,23 +6,24 @@ import re
 import sqlite3
 import time
 import uuid
+import zipfile
 from contextlib import asynccontextmanager, closing
 from datetime import datetime
 
 from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from filelock import Timeout
 from starlette.exceptions import HTTPException
 
-from app.logging_config import configure_logging
 from app.configuration import current, manager, pin
-from .frontend_logs import install_frontend_logs
+from app.logging_config import configure_logging
 
 from .catalog import PRODUCTS
 from .config import LiveSettings
 from .errors import BackendError
+from .frontend_logs import install_frontend_logs
 from .jobs import JobRunner, JobStore
 from .logging import get_logger
 from .logging import request_id as request_context_id
@@ -42,7 +43,7 @@ from .models import (
     RenderFiles,
     SeriesResponse,
 )
-from .render import asset_manifest
+from .render import asset_manifest, asset_path, png_archive_chunks
 from .service import DataService
 
 logger = get_logger(__name__)
@@ -376,7 +377,7 @@ def create_app(settings=None, service=None, *, start_jobs=False):
         manifest = asset_manifest(settings.render_assets)
         if filename not in manifest["files"]:
             raise BackendError("FILE_NOT_FOUND", "Unknown render asset", 404)
-        return FileResponse(settings.render_assets / filename)
+        return FileResponse(asset_path(settings.render_assets, filename))
 
     @app.post(
         "/api/v1/map-render-jobs",
@@ -413,18 +414,27 @@ def create_app(settings=None, service=None, *, start_jobs=False):
                     "url": f"/api/v1/map-render-jobs/{jobId}/files/{filename}",
                 }
                 for filename in json.loads(row["files"] or "[]")
-                if row["status"] == "completed"
+                if row["status"] == "completed" and filename.endswith((".png", ".zip"))
             ],
         }
 
     @app.get("/api/v1/map-render-jobs/{jobId}/files/{filename}")
     def render_file(jobId: str, filename: str):
+        if not filename.endswith((".png", ".zip")):
+            raise BackendError("FILE_NOT_FOUND", "Unknown render download", 404)
         path, _ = jobs.artifact(jobId, filename, kind="render")
+        if path.suffix == ".zip":
+            with zipfile.ZipFile(path) as archive:
+                legacy = any(not name.endswith(".png") for name in archive.namelist())
+            if legacy:
+                return StreamingResponse(
+                    png_archive_chunks(path), media_type="application/zip",
+                    headers={"Content-Disposition": 'attachment; filename="maps.zip"'},
+                )
         return FileResponse(
             path,
-            media_type="application/json"
-            if filename.endswith(".json")
-            else "image/png",
+            media_type="application/zip" if path.suffix == ".zip" else "image/png",
+            filename=filename,
         )
 
     @app.delete(

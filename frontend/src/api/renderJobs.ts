@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { colorbarSchema, styleSchema } from "../workspace/schema";
 import {
   ApiError,
   fetchApi,
@@ -17,6 +18,43 @@ export const assetSchema = z.object({
 });
 export const renderSpecSchema = z
   .object({
+    appearance: z
+      .object({
+        ...styleSchema.pick({
+          background: true,
+          font: true,
+          fontSize: true,
+          labelSize: true,
+          subtitle: true,
+          axes: true,
+        }).shape,
+        colors: z
+          .array(z.tuple([z.number().min(0).max(1), z.string()]))
+          .min(2)
+          .max(128),
+        autoRange: z.boolean(),
+        coastline: z.boolean(),
+        graticule: z.boolean(),
+        labels: z.boolean(),
+        pointSize: z.number().min(1).max(30),
+        opacity: z.number().min(0).max(1),
+        showNoData: z.boolean(),
+        noData: z.string(),
+        colorbar: colorbarSchema.pick({
+          visible: true,
+          orientation: true,
+          x: true,
+          y: true,
+          length: true,
+          thickness: true,
+          title: true,
+          units: true,
+          ticks: true,
+          font: true,
+          fontSize: true,
+        }),
+      })
+      .optional(),
     productId: z.enum(["roti-map", "tec-adjusted-map", "gim-map"]),
     timestamps: z.array(z.string().datetime()).min(1).max(48),
     width: z.number().int().min(256).max(2400),

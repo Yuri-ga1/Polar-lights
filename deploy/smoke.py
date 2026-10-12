@@ -86,13 +86,13 @@ def main():
             render_maps(service, spec, output, lambda: None)
             from PIL import Image
 
-            with Image.open(output / "map-0000.png") as png:
+            with Image.open(next(output.glob("*.png"))) as png:
                 assert png.size == (256, 256)
                 assert len(png.convert("RGB").getcolors(65536)) > 1
         print(
             "PASS: native imports, HDF5/Arrow, time series, keogram"
             + (
-                ", offline Chromium/MapLibre PNG via SwiftShader"
+                ", offline Chromium/Canvas world-map PNG"
                 if not args.skip_browser
                 else " (browser skipped)"
             )

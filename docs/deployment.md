@@ -40,7 +40,8 @@ Poetry 2.2.1 installs only locked main dependencies plus the backend extra; the
 stage. Runtime includes geospatial/HDF5/OpenJPEG and Playwright Linux libraries.
 Playwright **1.55.0** installs its matching Chromium at build time. MapLibre
 **5.6.1** JS/CSS are checked against committed SHA-256 hashes, and the rendering
-style has no remote tiles/fonts. There are no browser downloads at startup.
+series renderer uses bundled Canvas code and Natural Earth land geometry with
+no remote tiles/fonts. There are no browser downloads at startup.
 Tags and Debian package repositories are not immutable snapshots; for exact binary
 reproducibility in a release, record image digests, mirror images/packages and
 promote the tested built images. Rebuild deliberately for security updates.
@@ -211,7 +212,7 @@ serving and retained result URLs, not a full interactive browser UI test.
 External SIMuRG generation and other live scientific sources require network,
 credentials and operator validation. Cartopy basemap datasets or source data not
 already cached may still require external downloads during a scientific operation;
-container startup and the default MapLibre render smoke do not.
+container startup and the offline world-map render smoke do not.
 
 Local validation on 2026-10-12:
 

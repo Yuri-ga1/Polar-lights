@@ -17,7 +17,7 @@ jobs:
           docker compose build
       - name: Offline regressions and scientific/browser smoke (non-root)
         run: |
-          docker run --rm --init --network none --shm-size=1g -v "$PWD/tests:/tests:ro" polar-lights-backend:local python -m unittest discover -s /tests -v
+          docker run --rm --init --network none --shm-size=1g -e RUN_RENDER_BROWSER_TESTS=1 -v "$PWD/tests:/tests:ro" polar-lights-backend:local python -m unittest discover -s /tests -v
           docker run --rm --init --network none --shm-size=1g polar-lights-backend:local python -m deploy.smoke
       - name: Isolated Compose lifecycle, proxy and persistence smoke
         run: python3 deploy/integration.py

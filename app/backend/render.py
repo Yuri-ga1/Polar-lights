@@ -1,7 +1,10 @@
-"""Deterministic MapLibre render specification and offline Chromium renderer."""
+"""Deterministic full-world map specification and offline Chromium renderer."""
 
 import hashlib
 import json
+import shutil
+import tempfile
+import zipfile
 from importlib.metadata import version
 from pathlib import Path
 
@@ -26,14 +29,30 @@ def spec_hash(spec):
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def asset_path(directory: Path, name: str):
+    if name in ("world.js", "land.geojson"):
+        return Path(__file__).parent / "render_assets" / name
+    return directory / name
+
+
+def frame_name(timestamp, product):
+    return f"{timestamp.strftime('%Y-%m-%dT%H-%M-%SZ')}_{product}"
+
+
 def asset_manifest(directory: Path):
-    names = ("maplibre-gl.js", "maplibre-gl.css", "style.json")
-    if not all((directory / name).is_file() for name in names):
+    names = (
+        "maplibre-gl.js",
+        "maplibre-gl.css",
+        "style.json",
+        "world.js",
+        "land.geojson",
+    )
+    if not all(asset_path(directory, name).is_file() for name in names):
         raise BackendError(
             "RENDER_NOT_CONFIGURED", "Install the pinned renderer assets first", 503
         )
     files = {
-        name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        name: hashlib.sha256(asset_path(directory, name).read_bytes()).hexdigest()
         for name in names
     }
     canonical = json.dumps(files, sort_keys=True, separators=(",", ":"))
@@ -50,6 +69,25 @@ def asset_manifest(directory: Path):
     }
 
 
+def png_archive_chunks(path):
+    """Filter legacy archives too, without changing stored job artifacts."""
+    with tempfile.TemporaryFile() as output:
+        with (
+            zipfile.ZipFile(path) as source,
+            zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as target,
+        ):
+            for entry in source.infolist():
+                if not entry.is_dir() and entry.filename.endswith(".png"):
+                    with (
+                        source.open(entry) as reader,
+                        target.open(entry.filename, "w") as writer,
+                    ):
+                        shutil.copyfileobj(reader, writer)
+        output.seek(0)
+        while chunk := output.read(1024 * 1024):
+            yield chunk
+
+
 def render_maps(service, spec, directory, on_processing):
     from playwright.sync_api import sync_playwright
 
@@ -63,7 +101,7 @@ def render_maps(service, spec, directory, on_processing):
         raise BackendError(
             "RENDER_NOT_CONFIGURED", "Pinned Playwright version is required", 503
         )
-    style = json.loads((assets / "style.json").read_text(encoding="utf-8"))
+    land = json.loads(asset_path(assets, "land.geojson").read_text(encoding="utf-8"))
     files = []
     # Remote generation yields before a browser is created.
     for timestamp in spec.timestamps:
@@ -71,10 +109,7 @@ def render_maps(service, spec, directory, on_processing):
             service.maps.acquire(spec.productId, timestamp)
     on_processing()
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=True,
-            args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
-        )
+        browser = playwright.chromium.launch(headless=True)
         try:
             page = browser.new_page(
                 viewport={"width": spec.width, "height": spec.height},
@@ -83,33 +118,18 @@ def render_maps(service, spec, directory, on_processing):
                 timezone_id="UTC",
                 reduced_motion="reduce",
             )
-            # The pinned default style has no remote assets. Never fetch a
-            # URL provided through render input or allow browser network I/O.
             page.route("**/*", lambda route: route.abort())
             page.set_content(
-                '<html><head></head><body style="margin:0"><div id="map" style="width:100vw;height:100vh"></div></body></html>'
+                '<html><body style="margin:0"><canvas id="map"></canvas></body></html>'
             )
-            page.add_style_tag(path=str(assets / "maplibre-gl.css"))
-            page.add_script_tag(path=str(assets / "maplibre-gl.js"))
-            if page.evaluate("maplibregl.getVersion()") != MAPLIBRE_VERSION:
-                raise BackendError(
-                    "RENDER_NOT_CONFIGURED", "MapLibre asset version mismatch", 503
-                )
-            page.evaluate(
-                """async ({style, center, zoom}) => {
-                window.map = new maplibregl.Map({container:'map', style, center, zoom,
-                    interactive:false, attributionControl:false, fadeDuration:0, preserveDrawingBuffer:true});
-                await new Promise((resolve, reject) => {
-                    map.once('load', resolve); map.once('error', e => reject(e.error));
-                });
-            }""",
-                {"style": style, "center": spec.center, "zoom": spec.zoom},
-            )
-            for number, timestamp in enumerate(spec.timestamps):
-                filename = f"map-{number:04d}.png"
-                metadata_name = f"map-{number:04d}.json"
+            page.add_script_tag(path=str(asset_path(assets, "world.js")))
+            for timestamp in spec.timestamps:
+                on_processing()
+                name = frame_name(timestamp, spec.productId)
+                filename, metadata_name = name + ".png", name + ".json"
                 try:
                     from PIL import Image
+
                     with Image.open(directory / filename) as existing:
                         existing.verify()
                     json.loads((directory / metadata_name).read_text())
@@ -122,36 +142,29 @@ def render_maps(service, spec, directory, on_processing):
                     MapParameters(timestamp=timestamp, resolution=spec.resolution),
                 )
                 on_processing()
-                valid = np.isfinite(arrays["value"])
                 points = [
-                    [float(lon), float(lat), float(value)]
+                    [
+                        float(lon),
+                        float(lat),
+                        float(value) if np.isfinite(value) else None,
+                    ]
                     for lon, lat, value in zip(
-                        arrays["lon"][valid],
-                        arrays["lat"][valid],
-                        arrays["value"][valid],
+                        arrays["lon"], arrays["lat"], arrays["value"]
                     )
+                    if np.isfinite(lon) and np.isfinite(lat)
                 ]
                 page.evaluate(
-                    """async ({points, minimum, maximum}) => {
-                    const data = {type:'FeatureCollection', features:points.map(p => ({type:'Feature',
-                        geometry:{type:'Point',coordinates:p.slice(0,2)},properties:{value:p[2]}}))};
-                    if (map.getLayer('samples')) map.removeLayer('samples');
-                    if (map.getSource('samples')) map.removeSource('samples');
-                    map.addSource('samples', {type:'geojson',data});
-                    map.addLayer({id:'samples',type:'circle',source:'samples',paint:{
-                        'circle-radius':2,'circle-opacity':1,
-                        'circle-color':['interpolate',['linear'],['get','value'],minimum,'#2468db',maximum,'#ef3024']}});
-                    await new Promise(resolve => {map.once('idle',resolve); map.triggerRepaint();});
-                }""",
+                    "input => window.drawWorld(document.getElementById('map'), input)",
                     {
+                        "spec": spec.model_dump(mode="json"),
                         "points": points,
-                        "minimum": spec.minimum,
-                        "maximum": spec.maximum,
+                        "land": land,
+                        "title": name,
+                        "units": metadata.get("units", ""),
                     },
                 )
-                filename = f"map-{number:04d}.png"
-                page.screenshot(
-                    path=str(directory / (filename + ".tmp")), type="png", animations="disabled", timeout=60000
+                page.locator("canvas").screenshot(
+                    path=str(directory / (filename + ".tmp")), type="png", timeout=60000
                 )
                 publish(directory / (filename + ".tmp"), directory / filename)
                 files.append(filename)
@@ -174,4 +187,16 @@ def render_maps(service, spec, directory, on_processing):
         encoding="utf-8",
     )
     publish(directory / "spec.tmp", directory / "spec.json")
-    return [*files, "spec.json"]
+    files.append("spec.json")
+    if len(spec.timestamps) > 1:
+        on_processing()
+        archive = "maps.zip"
+        with zipfile.ZipFile(
+            directory / (archive + ".tmp"), "w", compression=zipfile.ZIP_DEFLATED
+        ) as bundle:
+            for filename in files:
+                if filename.endswith(".png"):
+                    bundle.write(directory / filename, arcname=filename)
+        publish(directory / (archive + ".tmp"), directory / archive)
+        files.append(archive)
+    return files

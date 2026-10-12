@@ -175,7 +175,14 @@ class AvailabilityResponse(BaseModel):
 class JobStatus(BaseModel):
     jobId: str
     status: Literal[
-        "queued", "downloading", "processing", "waiting_external", "retrying", "completed", "failed", "cancelled"
+        "queued",
+        "downloading",
+        "processing",
+        "waiting_external",
+        "retrying",
+        "completed",
+        "failed",
+        "cancelled",
     ]
     stage: str | None = None
     attempts: int = 0
@@ -238,6 +245,62 @@ class AuroraMapResponse(BaseModel):
     metadata: dict
 
 
+class RenderColorbar(StrictModel):
+    visible: bool = True
+    orientation: Literal["horizontal", "vertical"] = "horizontal"
+    x: float = Field(default=3, ge=0, le=90)
+    y: float = Field(default=3, ge=0, le=90)
+    length: float = Field(default=140, ge=40, le=600)
+    thickness: float = Field(default=10, ge=4, le=60)
+    title: str = Field(default="", max_length=500)
+    units: str = Field(default="", max_length=500)
+    ticks: list[float] = Field(default_factory=list, max_length=32)
+    font: str = Field(default="system-ui", max_length=500)
+    fontSize: float = Field(default=10, ge=8, le=32)
+
+
+class RenderAppearance(StrictModel):
+    background: str = Field(default="#ffffff", pattern=r"^#[0-9a-fA-F]{6}$")
+    colors: list[
+        tuple[
+            Annotated[float, Field(ge=0, le=1)],
+            Annotated[str, Field(pattern=r"^rgb\(\d{1,3},\d{1,3},\d{1,3}\)$")],
+        ]
+    ] = Field(
+        default_factory=lambda: [(0, "rgb(68,1,84)"), (1, "rgb(253,231,37)")],
+        min_length=2,
+        max_length=128,
+    )
+    autoRange: bool = False
+    coastline: bool = True
+    graticule: bool = False
+    labels: bool = True
+    axes: bool = True
+    pointSize: float = Field(default=3, ge=1, le=30)
+    opacity: float = Field(default=0.85, ge=0, le=1)
+    showNoData: bool = False
+    noData: str = Field(default="#999999", pattern=r"^#[0-9a-fA-F]{6}$")
+    font: Literal["system-ui", "serif", "monospace"] = "system-ui"
+    fontSize: float = Field(default=12, ge=8, le=40)
+    labelSize: float = Field(default=11, ge=8, le=40)
+    subtitle: str = Field(default="", max_length=500)
+    colorbar: RenderColorbar = Field(default_factory=RenderColorbar)
+
+    @model_validator(mode="after")
+    def ordered_colors(self):
+        if (
+            self.colors[0][0] != 0
+            or self.colors[-1][0] != 1
+            or any(a[0] > b[0] for a, b in zip(self.colors, self.colors[1:]))
+        ):
+            raise ValueError("Color scale must be ordered and span 0 to 1")
+        import math
+
+        if not all(math.isfinite(t) for t in self.colorbar.ticks):
+            raise ValueError("Colorbar ticks must be finite")
+        return self
+
+
 class MapRenderSpec(StrictModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     productId: Literal["roti-map", "tec-adjusted-map", "gim-map"]
@@ -253,11 +316,12 @@ class MapRenderSpec(StrictModel):
     playwrightVersion: Literal["1.55.0"] = "1.55.0"
     dpr: Literal[1] = 1
     assetVersion: str = Field(pattern=r"^[a-f0-9]{64}$")
+    appearance: RenderAppearance = Field(default_factory=RenderAppearance)
 
     @field_validator("timestamps")
     @classmethod
     def timestamps_utc(cls, values):
-        return tuple(SeriesParameters.require_zone(v) for v in values)
+        return tuple(sorted({SeriesParameters.require_zone(v) for v in values}))
 
     @model_validator(mode="after")
     def validate_bounds(self):

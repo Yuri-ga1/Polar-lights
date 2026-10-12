@@ -146,27 +146,11 @@ export function styledScale(style: StyleSpec): [number, string][] {
       .join(",")})`,
   ]);
 }
-// Extend only the display scale, never the dataset, to represent under/over colors.
+// Match map saturation: values outside the range use the palette endpoints.
 export function heatmapScale(
   values: Iterable<number | null>,
   style: StyleSpec,
 ) {
-  const range = bounds(values, style),
-    actual = bounds(values, {
-      ...style,
-      colorbar: { ...style.colorbar, range: "auto" },
-    });
-  const low = Math.min(actual[0], range[0]),
-    high = Math.max(actual[1], range[1]),
-    span = high - low;
-  const start = (range[0] - low) / span,
-    end = (range[1] - low) / span;
-  const scale: [number, string][] = styledScale(style).map(([t, c]) => [
-    start + t * (end - start),
-    c,
-  ]);
-  if (start > 0)
-    scale.unshift([0, style.colorbar.under], [start, style.colorbar.under]);
-  if (end < 1) scale.push([end, style.colorbar.over], [1, style.colorbar.over]);
-  return { scale, low, high, range };
+  const range = bounds(values, style);
+  return { scale: styledScale(style), low: range[0], high: range[1], range };
 }

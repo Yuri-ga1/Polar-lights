@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchApi, url } from "../api/client";
+import { fetchApi } from "../api/client";
 import {
   renderApi,
   renderSpecSchema,
@@ -13,7 +13,14 @@ import {
   startRender,
   useRenderTasks,
 } from "../renderTasks";
+import { bounds, styledScale } from "../visualizations/colors";
+import {
+  rangeTimestamps,
+  renderSteps,
+  type RenderRange,
+} from "../renderRanges";
 import { Numeric, Field } from "./Controls";
+
 function PinnedPreview({
   chart,
   spec,
@@ -29,38 +36,51 @@ function PinnedPreview({
     if (result?.dataType !== "map") return;
     void (async () => {
       try {
-        const style = await (
-          await fetchApi("/api/v1/render-assets/style.json", {
+        const [script, land] = await Promise.all([
+          fetchApi("/api/v1/render-assets/world.js", {
             signal: controller.signal,
-          })
-        ).json();
-        const points = result.lat.flatMap((lat, i) =>
-          result.value[i] == null
-            ? []
-            : [[result.lon[i], lat, result.value[i]]],
-        );
-        const data = JSON.stringify({ style, spec, points }).replaceAll(
-          "<",
-          "\\u003c",
-        );
+          }).then((r) => r.text()),
+          fetchApi("/api/v1/render-assets/land.geojson", {
+            signal: controller.signal,
+          }).then((r) => r.json()),
+        ]);
+        const points = result.lat.map((lat, i) => [
+          result.lon[i],
+          lat,
+          result.value[i],
+        ]);
+        const data = JSON.stringify({
+          spec,
+          points,
+          land,
+          title: `${result.metadata.timestamp}_${chart.productId}`,
+          units: result.metadata.units,
+        }).replaceAll("<", "\\u003c");
         setDocument(
-          `<!doctype html><html><head><link rel="stylesheet" href="${url("/api/v1/render-assets/maplibre-gl.css")}"></head><body style="margin:0"><div id="map" style="width:100vw;height:100vh"></div><script src="${url("/api/v1/render-assets/maplibre-gl.js")}"></script><script>const input=${data};if(maplibregl.getVersion()!==input.spec.maplibreVersion)throw Error('MapLibre version mismatch');const map=new maplibregl.Map({container:'map',style:input.style,center:input.spec.center,zoom:input.spec.zoom,interactive:false,attributionControl:false});map.on('load',()=>{map.addSource('samples',{type:'geojson',data:{type:'FeatureCollection',features:input.points.map(p=>({type:'Feature',geometry:{type:'Point',coordinates:p.slice(0,2)},properties:{value:p[2]}}))}});map.addLayer({id:'samples',type:'circle',source:'samples',paint:{'circle-radius':2,'circle-opacity':1,'circle-color':['interpolate',['linear'],['get','value'],input.spec.minimum,'#2468db',input.spec.maximum,'#ef3024']}})});</script></body></html>`,
+          `<!doctype html><html><body style="margin:0"><canvas style="width:100%;height:auto" id="map"></canvas><script>${script}</script><script>drawWorld(document.getElementById('map'),${data});</script></body></html>`,
         );
+        setError("");
       } catch {
         if (!controller.signal.aborted)
-          setError("Pinned render preview is unavailable.");
+          setError("Render preview is unavailable.");
       }
     })();
     return () => controller.abort();
-  }, [result, spec]);
+  }, [result, spec, chart.productId]);
+  if (result?.dataType !== "map")
+    return <p>Load a map to preview its appearance.</p>;
   return error ? (
     <p role="alert">{error}</p>
   ) : (
     <iframe
-      title="Pinned server renderer preview"
-      sandbox="allow-scripts allow-same-origin"
+      title="Server renderer preview"
+      sandbox="allow-scripts"
       srcDoc={document}
-      style={{ width: "100%", height: 210, border: 0 }}
+      style={{
+        width: "100%",
+        aspectRatio: `${spec.width}/${spec.height}`,
+        border: 0,
+      }}
     />
   );
 }
@@ -73,15 +93,18 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
     queryFn: ({ signal }) => renderApi.assets(signal),
     retry: false,
   });
-  const [timestamps, setTimestamps] = useState(
-      String(chart.dataSpec.timestamp ?? ""),
-    ),
+  const initial = String(chart.dataSpec.timestamp ?? "")
+    .replace(/Z$/, "")
+    .slice(0, 19);
+  const [ranges, setRanges] = useState<RenderRange[]>([
+    { start: initial, end: initial },
+  ]);
+  const [step, setStep] = useState(30),
     [width, setWidth] = useState(1200),
-    [height, setHeight] = useState(700),
-    [minimum, setMinimum] = useState(0),
-    [maximum, setMaximum] = useState(1),
-    [error, setError] = useState(""),
+    [height, setHeight] = useState(700);
+  const [error, setError] = useState(""),
     [preview, setPreview] = useState<RenderSpec | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const task = useRenderTasks((s) => s.tasks[chart.id]);
   const busy =
     task &&
@@ -92,14 +115,25 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       "waiting_external",
       "retrying",
     ].includes(task.status);
-  const spec = () =>
-    renderSpecSchema.parse({
+  let timestamps: string[] = [],
+    rangeError = "";
+  try {
+    timestamps = rangeTimestamps(ranges, step);
+  } catch (e) {
+    rangeError = (e as Error).message;
+  }
+  const spec = () => {
+    if (rangeError) throw Error(rangeError);
+    const s = chart.styleSpec,
+      m = s.map;
+    const [minimum, maximum] = bounds([], s);
+    return renderSpecSchema.parse({
       productId: chart.productId,
-      timestamps: timestamps.split(/[\s,]+/).filter(Boolean),
+      timestamps,
       width,
       height,
-      center: [chart.styleSpec.map.longitude, chart.styleSpec.map.latitude],
-      zoom: chart.styleSpec.map.zoom,
+      center: [0, 0],
+      zoom: 0,
       minimum,
       maximum,
       resolution: chart.dataSpec.resolution ?? "full",
@@ -107,85 +141,145 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       maplibreVersion: assets.data?.maplibreVersion,
       playwrightVersion: assets.data?.playwrightVersion,
       dpr: 1,
+      appearance: {
+        background: s.background,
+        font: s.font,
+        fontSize: s.fontSize,
+        labelSize: s.labelSize,
+        subtitle: s.subtitle,
+        axes: s.axes,
+        colors: styledScale(s),
+        autoRange: s.colorbar.range === "auto",
+        coastline: m.coastline,
+        graticule: m.graticule,
+        labels: m.labels,
+        pointSize: m.pointSize,
+        opacity: m.opacity,
+        showNoData: m.showNoData,
+        noData: s.colorbar.noData,
+        colorbar: s.colorbar,
+      },
     });
+  };
+  const download = async (file: { name: string; url: string }) => {
+    setDownloading(true);
+    setError("");
+    try {
+      const response = await fetchApi(file.url);
+      const href = URL.createObjectURL(await response.blob());
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = file.name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(href), 60000);
+    } catch {
+      setError("Download failed. Try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+  const files = task?.files?.files ?? [];
+  const archive = files.find((f) => f.name.endsWith(".zip"));
+  const images = files.filter((f) => f.name.endsWith(".png"));
   return (
     <details className="batch-render">
       <summary>Server map series</summary>
       <p className="hint">
-        Server series uses its fixed blue/red palette and geographic camera. Use
-        card export to retain custom appearance. Maximum 48 frames across three
-        calendar dates.
+        Uses the appearance settings above. Full world: −180…180° longitude,
+        −90…90° latitude. All times are UTC; both range endpoints are included
+        when aligned with the step. Maximum 48 frames within three calendar
+        dates.
       </p>
-      {assets.error ? (
-        <p role="alert">
-          Render assets are not configured or do not match the supported pinned
-          versions. See the setup guide.
-        </p>
-      ) : (
-        <>
-          <Field label="Render timestamps (UTC, one per line)">
-            <textarea
-              value={timestamps}
-              onChange={(e) => setTimestamps(e.target.value)}
-            />
-          </Field>
-          <Numeric
-            label="Render width"
-            value={width}
-            min={256}
-            max={2400}
-            onChange={(v) => v && setWidth(v)}
-          />
-          <Numeric
-            label="Render height"
-            value={height}
-            min={256}
-            max={1600}
-            onChange={(v) => v && setHeight(v)}
-          />
-          <Numeric
-            label="Render minimum"
-            value={minimum}
-            onChange={(v) => v !== undefined && setMinimum(v)}
-          />
-          <Numeric
-            label="Render maximum"
-            value={maximum}
-            onChange={(v) => v !== undefined && setMaximum(v)}
-          />
+      {ranges.map((range, i) => (
+        <fieldset key={i} className="render-range">
+          <legend>Range {i + 1}</legend>
+          {(["start", "end"] as const).map((key) => (
+            <Field key={key} label={`${key === "start" ? "From" : "To"} (UTC)`}>
+              <input
+                type="datetime-local"
+                step={30}
+                value={range[key]}
+                onChange={(e) =>
+                  setRanges(
+                    ranges.map((r, j) =>
+                      j === i ? { ...r, [key]: e.target.value } : r,
+                    ),
+                  )
+                }
+              />
+            </Field>
+          ))}
           <button
-            disabled={!assets.data || Boolean(busy)}
-            onClick={() => {
-              try {
-                const s = spec();
-                setError("");
-                void startRender(chart.id, s);
-              } catch {
-                setError(
-                  "Check timestamps, dimensions and color bounds before submitting.",
-                );
-              }
-            }}
+            disabled={ranges.length === 1}
+            onClick={() => setRanges(ranges.filter((_, j) => j !== i))}
           >
-            {task?.status === "failed" || task?.status === "cancelled"
-              ? "Retry render"
-              : "Render series"}
+            Remove range
           </button>
-          <button
-            disabled={!assets.data}
-            onClick={() => {
-              try {
-                setPreview(spec());
-                setError("");
-              } catch {
-                setError("Complete the render specification first.");
-              }
-            }}
-          >
-            Preview pinned renderer
-          </button>
-        </>
+        </fieldset>
+      ))}
+      <button
+        disabled={ranges.length >= 48}
+        onClick={() => setRanges([...ranges, { ...ranges[ranges.length - 1] }])}
+      >
+        Add range
+      </button>
+      <Field label="Time step">
+        <select value={step} onChange={(e) => setStep(Number(e.target.value))}>
+          {renderSteps.map((s) => (
+            <option key={s} value={s}>
+              {s < 60 ? `${s} seconds` : `${s / 60} minutes`}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p aria-live="polite">
+        {rangeError ||
+          `${timestamps.length} unique frame(s) · overlapping ranges are merged`}
+      </p>
+      <Numeric
+        label="Render width"
+        value={width}
+        min={256}
+        max={2400}
+        onChange={(v) => v && setWidth(v)}
+      />
+      <Numeric
+        label="Render height"
+        value={height}
+        min={256}
+        max={1600}
+        onChange={(v) => v && setHeight(v)}
+      />
+      {assets.error && (
+        <p role="alert">Render assets are unavailable. See the setup guide.</p>
       )}
+      <button
+        disabled={!assets.data || Boolean(busy) || Boolean(rangeError)}
+        onClick={() => {
+          try {
+            const value = spec();
+            setError("");
+            void startRender(chart.id, value);
+          } catch {
+            setError("Check the render settings before submitting.");
+          }
+        }}
+      >
+        Render series
+      </button>
+      <button
+        disabled={!assets.data || Boolean(rangeError)}
+        onClick={() => {
+          try {
+            setPreview(spec());
+            setError("");
+          } catch {
+            setError("Check the render settings.");
+          }
+        }}
+      >
+        Preview appearance
+      </button>
       {error && <p role="alert">{error}</p>}
       {busy && (
         <button onClick={() => cancelRender(chart.id)}>Cancel render</button>
@@ -193,8 +287,7 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       {preview && (
         <>
           <small>
-            Preview uses the currently loaded frame and the backend’s exact
-            MapLibre assets.
+            Preview uses the currently loaded frame with the server renderer.
           </small>
           <PinnedPreview chart={chart} spec={preview} />
         </>
@@ -206,26 +299,39 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
             : task.status}
           {task.error && <p role="alert">{task.error}</p>}
           {task.requestId && <code>Request ID: {task.requestId}</code>}
-          {task.files && (
-            <ul>
-              {task.files.files.map((f) => (
-                <li key={f.name}>
-                  <a
-                    href={url(f.url)}
-                    download={f.name}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {f.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
+          {archive && (
+            <button
+              disabled={downloading}
+              onClick={() => void download(archive)}
+            >
+              Download ZIP ({images.length} maps)
+            </button>
           )}
-          <details>
-            <summary>Submitted specification</summary>
-            <pre>{JSON.stringify(task.spec, null, 2)}</pre>
-          </details>
+          {images.length === 1 && (
+            <button
+              disabled={downloading}
+              onClick={() => void download(images[0])}
+            >
+              Download {images[0].name}
+            </button>
+          )}
+          {images.length > 1 && (
+            <details>
+              <summary>Individual PNG files</summary>
+              <ul>
+                {images.map((f) => (
+                  <li key={f.name}>
+                    <button
+                      disabled={downloading}
+                      onClick={() => void download(f)}
+                    >
+                      {f.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
     </details>
