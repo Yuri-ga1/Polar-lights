@@ -543,6 +543,32 @@ footer pre {
   height: 100%;
   position: relative;
 }
+.map-view,
+.map-shell,
+.plot-view {
+  isolation: isolate;
+}
+.map-host,
+.map-shell .map-canvas,
+.plot-host {
+  z-index: 0;
+}
+.map-hud,
+.map-legend,
+.map-meta,
+.map-view-label,
+.partial-label,
+.colorbar {
+  z-index: 3;
+  pointer-events: none;
+  box-shadow: 0 2px 8px #0d233833;
+}
+.map-error {
+  z-index: 4;
+}
+.plot-host .hoverlayer {
+  pointer-events: none;
+}
 .map-hud {
   position: absolute;
   bottom: 12px;

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Product } from "../api/contracts";
 import { useWorkspace, type ChartSpec, type StyleSpec } from "../store";
 import { colorbarSchema } from "../workspace/schema";
+import { kpStormLines } from "../visualizations/kp";
 import { Check, Choice, Numeric, Text, Field } from "./Controls";
 export function projectionOptions(product: Product) {
   return product.graphType === "map" && product.capabilities.projection
@@ -18,6 +19,12 @@ export function StyleEditor({
   const s = chart.styleSpec,
     c = s.colorbar,
     m = s.map;
+  const showsKp =
+    product.productId === "kp" ||
+    (product.productId === "timeseries" &&
+      Array.isArray(chart.dataSpec.columns) &&
+      chart.dataSpec.columns.includes("kp"));
+  const stormLines = kpStormLines(s);
   const update = (patch: Partial<StyleSpec>) =>
     useWorkspace.getState().update(chart.id, { styleSpec: { ...s, ...patch } });
   const cb = (patch: Partial<typeof c>) =>
@@ -25,6 +32,7 @@ export function StyleEditor({
   const map = (patch: Partial<typeof m>) => update({ map: { ...m, ...patch } });
   const [stops, setStops] = useState(JSON.stringify(c.stops));
   const [stopError, setStopError] = useState("");
+  const [tickError, setTickError] = useState("");
   const [latitudeDrafts, setLatitudeDrafts] = useState(() =>
     m.auroraGeomagneticLatitudes.map(String),
   );
@@ -47,6 +55,10 @@ export function StyleEditor({
       )
     ) {
       setLatitudeError("Enter each latitude between -90 and 90.");
+      return;
+    }
+    if (new Set(values).size !== values.length) {
+      setLatitudeError("Remove duplicate geomagnetic latitudes.");
       return;
     }
     setLatitudeError("");
@@ -324,16 +336,30 @@ export function StyleEditor({
             <input
               defaultValue={c.ticks.join(",")}
               key={c.ticks.join(",")}
+              aria-invalid={Boolean(tickError)}
               onBlur={(e) => {
-                const ticks = e.target.value.trim()
-                  ? e.target.value.split(",").map(Number)
+                const parts = e.target.value.trim()
+                  ? e.target.value.split(",").map((part) => part.trim())
                   : [];
-                if (ticks.every(Number.isFinite) && ticks.length <= 32)
+                const ticks = parts.length ? parts.map(Number) : [];
+                if (
+                  parts.every((part) => part !== "") &&
+                  ticks.every(Number.isFinite) &&
+                  ticks.length <= 32 &&
+                  ticks.every(
+                    (value, index) => index === 0 || value > ticks[index - 1],
+                  )
+                ) {
                   cb({ ticks });
-                else setStopError("Ticks must be a list of numbers.");
+                  setTickError("");
+                } else
+                  setTickError(
+                    "Colorbar ticks must be an ascending list of at most 32 finite numbers.",
+                  );
               }}
             />
           </Field>
+          {tickError && <p role="alert">{tickError}</p>}
           <Field label="Custom stops JSON">
             <textarea
               value={stops}
@@ -450,6 +476,10 @@ export function StyleEditor({
               <button type="button" onClick={applyLatitudes}>
                 Apply lines
               </button>
+              <p className="hint">
+                Apply an empty list to hide all lines without contacting the
+                server. You can also use the visibility checkbox.
+              </p>
               {latitudeError && <p role="alert">{latitudeError}</p>}
               <Check
                 label="Solar terminator"
@@ -521,11 +551,11 @@ export function StyleEditor({
           </p>
         </details>
       )}
-      {product.productId === "kp" && (
+      {showsKp && (
         <details open>
           <summary>Geomagnetic storm levels</summary>
           <p className="hint">G1–G5 are horizontal Kp reference lines.</p>
-          {s.stormLines.map((line, index) => (
+          {stormLines.map((line, index) => (
             <fieldset key={line.level}>
               <legend>
                 {line.level} · Kp {line.value}
@@ -535,7 +565,7 @@ export function StyleEditor({
                 value={line.visible}
                 onChange={(visible) =>
                   update({
-                    stormLines: s.stormLines.map((item, itemIndex) =>
+                    stormLines: stormLines.map((item, itemIndex) =>
                       itemIndex === index ? { ...item, visible } : item,
                     ),
                   })
@@ -547,7 +577,7 @@ export function StyleEditor({
                 value={line.color}
                 onChange={(color) =>
                   update({
-                    stormLines: s.stormLines.map((item, itemIndex) =>
+                    stormLines: stormLines.map((item, itemIndex) =>
                       itemIndex === index ? { ...item, color } : item,
                     ),
                   })
@@ -562,7 +592,7 @@ export function StyleEditor({
                 onChange={(width) =>
                   width !== undefined &&
                   update({
-                    stormLines: s.stormLines.map((item, itemIndex) =>
+                    stormLines: stormLines.map((item, itemIndex) =>
                       itemIndex === index ? { ...item, width } : item,
                     ),
                   })
@@ -574,7 +604,7 @@ export function StyleEditor({
                 options={["solid", "dot", "dash", "dashdot"]}
                 onChange={(dash) =>
                   update({
-                    stormLines: s.stormLines.map((item, itemIndex) =>
+                    stormLines: stormLines.map((item, itemIndex) =>
                       itemIndex === index ? { ...item, dash } : item,
                     ),
                   })

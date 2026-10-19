@@ -7,12 +7,11 @@ import type { StyleSpec } from "../store";
 import { seriesPoints } from "./series";
 import { heatmapScale } from "./colors";
 import { registerSvg } from "../exports";
-import { KP_BAR_WIDTH_MS, kpColor, kpNotation } from "./kp";
+import { kpBarTrace, kpStormLines } from "./kp";
 export default function PlotView({
   result,
   style,
   chartId,
-  productId,
 }: {
   result: Exclude<Result, { dataType: "map" | "aurora" }>;
   style: StyleSpec;
@@ -58,25 +57,9 @@ export default function PlotView({
         },
       ];
     }
-    if (productId === "kp") {
-      const points = seriesPoints(result, "kp");
-      const values = points.y.map((value) => value ?? 0);
-      return [
-        {
-          type: "bar",
-          x: points.x,
-          y: values,
-          width: points.x.map(() => KP_BAR_WIDTH_MS),
-          marker: { color: values.map(kpColor) },
-          text: values.map(kpNotation),
-          textposition: "auto",
-          name: "Kp",
-          hovertemplate: "%{x}<br>Kp %{text}<br>%{customdata}<extra></extra>",
-          customdata: points.customdata,
-        } as Data,
-      ];
-    }
     return Object.keys(result.columns).map((column, i) => {
+      const yaxis = i ? `y${i + 1}` : "y";
+      if (column === "kp") return kpBarTrace(result, yaxis);
       const station = result.metadata.columnMetadata?.[column] as
         { latitude?: number; longitude?: number } | undefined;
       const locationText =
@@ -97,12 +80,12 @@ export default function PlotView({
         marker: { size: style.markerSize, symbol: style.markerSymbol },
         ...seriesPoints(result, column),
         name: `${column}${location}${units ? ` (${units})` : ""}`,
-        yaxis: i ? `y${i + 1}` : "y",
+        yaxis,
         connectgaps: false,
         hovertemplate: `%{x}<br>%{y} ${units}<br>%{customdata}${locationText ? `<br>Station position: ${locationText}` : ""}<extra>${column}</extra>`,
       } as Data;
     });
-  }, [result, style, productId]);
+  }, [result, style]);
   useEffect(() => {
     const node = host.current!;
     const layout: Partial<Layout> = {
@@ -132,6 +115,7 @@ export default function PlotView({
       const columns = Object.keys(result.columns),
         count = columns.length;
       columns.forEach((column, i) => {
+        const isKp = column === "kp";
         const unit =
           result.metadata.columnMetadata?.[column]?.units ??
           (typeof result.metadata.units === "object"
@@ -141,7 +125,7 @@ export default function PlotView({
         Object.assign(layout, {
           [i ? `yaxis${i + 1}` : "yaxis"]: {
             title: {
-              text: style.yLabel || `${column} ${unit}`,
+              text: style.yLabel || (isKp ? "Kp" : `${column} ${unit}`),
               font: { size: style.labelSize },
             },
             showgrid: style.grid,
@@ -149,8 +133,11 @@ export default function PlotView({
             range:
               style.yMin != null && style.yMax != null
                 ? [style.yMin, style.yMax]
-                : undefined,
-            autorange: !(style.yMin != null && style.yMax != null),
+                : isKp
+                  ? [0, 9]
+                  : undefined,
+            autorange: !isKp && !(style.yMin != null && style.yMax != null),
+            ...(isKp ? { tickvals: [0, 3, 6, 9], fixedrange: false } : {}),
             domain: [
               1 - (i + 1) / count + (count > 1 ? 0.04 : 0),
               1 - i / count,
@@ -159,39 +146,33 @@ export default function PlotView({
           },
         });
       });
-      if (productId === "kp") {
-        layout.yaxis = {
-          title: { text: "Kp", font: { size: style.labelSize } },
-          range: [0, 9],
-          tickvals: [0, 3, 6, 9],
-          showgrid: style.grid,
-          visible: style.axes,
-          fixedrange: false,
-        };
-        layout.shapes = style.stormLines
-          .filter((line) => line.visible)
-          .map((line) => ({
-            type: "line",
-            xref: "paper",
-            x0: 0,
-            x1: 1,
-            yref: "y",
-            y0: line.value,
-            y1: line.value,
-            line: { color: line.color, width: line.width, dash: line.dash },
-            name: line.level,
-          }));
-        layout.annotations = style.stormLines
-          .filter((line) => line.visible)
-          .map((line) => ({
-            xref: "paper",
-            x: 1,
-            y: line.value,
-            text: line.level,
-            showarrow: false,
-            xanchor: "left",
-            font: { color: line.color, size: style.labelSize },
-          }));
+      const kpIndex = columns.indexOf("kp");
+      if (kpIndex !== -1) {
+        const yref = (kpIndex ? `y${kpIndex + 1}` : "y") as NonNullable<
+          Layout["shapes"]
+        >[number]["yref"];
+        const stormLines = kpStormLines(style).filter((line) => line.visible);
+        layout.shapes = stormLines.map((line) => ({
+          type: "line",
+          xref: "paper",
+          x0: 0,
+          x1: 1,
+          yref,
+          y0: line.value,
+          y1: line.value,
+          line: { color: line.color, width: line.width, dash: line.dash },
+          name: line.level,
+        }));
+        layout.annotations = stormLines.map((line) => ({
+          xref: "paper",
+          x: 1,
+          yref,
+          y: line.value,
+          text: line.level,
+          showarrow: false,
+          xanchor: "left",
+          font: { color: line.color, size: style.labelSize },
+        }));
       }
     } else
       layout.yaxis = {
@@ -216,7 +197,7 @@ export default function PlotView({
       setError(String(e));
       logger.warning("plot_render_failed", "Plot rendering failed");
     });
-  }, [data, result, style, productId]);
+  }, [data, result, style]);
   useEffect(
     () =>
       registerSvg(chartId, () =>

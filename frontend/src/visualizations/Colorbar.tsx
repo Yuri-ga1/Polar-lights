@@ -25,6 +25,7 @@ export function Colorbar({
       style={{
         left: `${c.x}%`,
         top: `${c.y}%`,
+        maxWidth: `calc(100% - ${c.x}% - 8px)`,
         fontFamily: c.font,
         fontSize: c.fontSize,
       }}
@@ -41,6 +42,7 @@ export function Colorbar({
           marginRight: vertical ? 50 : 0,
           width: vertical ? c.thickness : c.length,
           height: vertical ? c.length : c.thickness,
+          maxWidth: "100%",
           background: `linear-gradient(${vertical ? "to top" : "to right"},${stops})`,
         }}
       >
@@ -61,7 +63,12 @@ export function Colorbar({
                   : {
                       left: `${((t - range[0]) / (range[1] - range[0])) * 100}%`,
                       top: c.thickness + 3,
-                      transform: "translateX(-50%)",
+                      transform:
+                        t === range[0]
+                          ? "none"
+                          : t === range[1]
+                            ? "translateX(-100%)"
+                            : "translateX(-50%)",
                     }),
               }}
             >
