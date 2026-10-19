@@ -1,4 +1,5 @@
 import { logger, authHeaders } from "../logging";
+import { jobProgress } from "../jobFeedback";
 import { QueryClient } from "@tanstack/react-query";
 import {
   acceptedSchema,
@@ -188,7 +189,18 @@ export const apiClient = {
         const statusResponse = await pollJob(job.statusUrl, signal);
         const status = jobSchema.parse(await statusResponse.json());
         progress(
-          `${status.stage ?? status.status}${status.attempts ? ` · attempt ${status.attempts}` : ""}`,
+          `${jobProgress(
+            [
+              "waiting_external",
+              "retrying",
+              "queued",
+              "cancelled",
+              "failed",
+            ].includes(status.status)
+              ? status.status
+              : (status.stage ?? status.status),
+            status.attempts,
+          )} · Job ID: ${status.jobId}`,
         );
         if (["failed", "cancelled"].includes(status.status))
           rememberedJob(key, null);

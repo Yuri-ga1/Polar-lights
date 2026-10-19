@@ -1,4 +1,5 @@
 import { logger } from "./logging";
+import { actionableError } from "./jobFeedback";
 import { apiClient, ApiError, queryClient } from "./api/client";
 import { sliceCache } from "./api/sliceCache";
 import { requestParameters, validation, type Product } from "./api/contracts";
@@ -101,15 +102,7 @@ export async function requestChart(id: string, product: Product) {
       useWorkspace.getState().setRuntime(id, {
         status: "error",
         result: previous,
-        error:
-          error instanceof ApiError &&
-          product.graphType === "map" &&
-          error.code === "INVALID_REQUEST" &&
-          /point limit|byte limit/i.test(error.message)
-            ? `${error.message}. Choose medium or low resolution in the chart parameters, then build again.`
-            : error instanceof Error
-              ? error.message
-              : "Request failed",
+        error: actionableError(error),
         errorCode: error instanceof ApiError ? error.code : "CLIENT_ERROR",
         requestId: error instanceof ApiError ? error.requestId : undefined,
       });

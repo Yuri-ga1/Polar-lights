@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 export function Field({
   label,
   children,
@@ -48,6 +48,27 @@ export function Numeric({
   max?: number;
   step?: number;
 }) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  useEffect(() => setDraft(value == null ? "" : String(value)), [value]);
+  const parsed = Number(draft);
+  const invalid =
+    draft.trim() !== "" &&
+    (!Number.isFinite(parsed) ||
+      (min !== undefined && parsed < min) ||
+      (max !== undefined && parsed > max));
+  const commit = () => {
+    if (draft.trim() === "") {
+      onChange(undefined);
+      return;
+    }
+    const number = Number(draft);
+    if (
+      Number.isFinite(number) &&
+      (min === undefined || number >= min) &&
+      (max === undefined || number <= max)
+    )
+      onChange(number);
+  };
   return (
     <Field label={label}>
       <input
@@ -55,22 +76,21 @@ export function Numeric({
         step={step}
         min={min}
         max={max}
-        value={value ?? ""}
+        value={draft}
+        aria-invalid={invalid}
         placeholder="Auto"
-        onChange={(e) => {
-          if (e.target.value === "") {
-            onChange(undefined);
-            return;
-          }
-          const n = Number(e.target.value);
-          if (
-            Number.isFinite(n) &&
-            (min === undefined || n >= min) &&
-            (max === undefined || n <= max)
-          )
-            onChange(n);
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
         }}
       />
+      {invalid && (
+        <small role="alert">
+          {label}: enter a number{min !== undefined ? ` ≥ ${min}` : ""}
+          {max !== undefined ? ` ≤ ${max}` : ""}.
+        </small>
+      )}
     </Field>
   );
 }

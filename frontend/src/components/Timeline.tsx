@@ -4,6 +4,7 @@ import { apiClient } from "../api/client";
 import type { Product } from "../api/contracts";
 import { useWorkspace, type ChartSpec } from "../store";
 import { cancelRequest, requestChart } from "../requests";
+import { isFutureUtcDate } from "../dateLimits";
 export function Timeline({
   chart,
   product,
@@ -20,7 +21,9 @@ export function Timeline({
   });
   const timestamps = [
     ...new Set(pages.data?.pages.flatMap((p) => p.timestamps) ?? []),
-  ].sort();
+  ]
+    .filter((timestamp) => !isFutureUtcDate(timestamp))
+    .sort();
   const [pending, setPending] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const epoch = useWorkspace((s) => s.epoch);
@@ -29,6 +32,7 @@ export function Timeline({
     [chart.id, epoch, chart.dataSpec],
   );
   const seek = (timestamp: string) => {
+    if (isFutureUtcDate(timestamp)) return;
     setPending(timestamp);
     cancelRequest(chart.id);
     clearTimeout(timer.current);

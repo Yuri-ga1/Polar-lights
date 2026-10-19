@@ -1,4 +1,5 @@
 import { logger } from "./logging";
+import { actionableError } from "./jobFeedback";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { ApiError } from "./api/client";
@@ -10,6 +11,9 @@ type Task = {
   files?: RenderFiles;
   error?: string;
   requestId?: string;
+  jobId?: string;
+  stage?: string;
+  attempts?: number;
 };
 export const useRenderTasks = create<{ tasks: Record<string, Task> }>()(
   persist(() => ({ tasks: {} }), {
@@ -65,7 +69,13 @@ export async function startRender(id: string, spec: RenderSpec) {
     const files = await renderApi.submit(
       immutable,
       controller.signal,
-      (status) => update({ status: status.status }),
+      (status) =>
+        update({
+          status: status.status,
+          stage: status.stage ?? undefined,
+          attempts: status.attempts,
+          jobId: status.jobId,
+        }),
     );
     update({ status: "completed", files });
     logger.info("render_completed", "Render operation completed", {
@@ -78,10 +88,7 @@ export async function startRender(id: string, spec: RenderSpec) {
       });
     update({
       status: "failed",
-      error:
-        error instanceof ApiError
-          ? `${error.code}: ${error.message}`
-          : "Render job could not be completed.",
+      error: actionableError(error),
       requestId: error instanceof ApiError ? error.requestId : undefined,
     });
   } finally {
