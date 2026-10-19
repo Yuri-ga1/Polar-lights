@@ -86,14 +86,51 @@
   right: 8px;
   bottom: 5px;
   font-size: 10px;
-  z-index: 3;
+  z-index: 10;
   background: #fff;
 }
 .chart-export[open] {
   padding: 8px;
   border: 1px solid #aac3c8;
   border-radius: 5px;
-  max-width: 260px;
+  width: min(360px, 95%);
+  max-width: none;
+  max-height: calc(100% - 60px);
+  overflow: auto;
+}
+.export-options {
+  display: grid;
+  gap: 7px;
+  padding: 6px;
+  background: #fff;
+  color: #24394b;
+}
+.export-size-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.export-size-fields label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.export-size-fields input,
+.export-size-fields select {
+  width: 100%;
+  min-width: 0;
+}
+.export-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.workspace-export {
+  padding: 8px 20px;
+  border-bottom: 1px solid #dfe7ec;
+}
+.workspace-export .export-options {
+  max-width: 600px;
 }
 .chart-export small {
   display: block;
@@ -103,7 +140,7 @@
 }
 .colorbar {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   background: #ffffffdd;
   padding: 6px 12px;
   border-radius: 4px;

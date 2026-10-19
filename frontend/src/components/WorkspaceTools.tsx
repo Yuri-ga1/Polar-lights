@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useWorkspace, type ChartSpec } from "../store";
-import { exportPreset, exportVisual } from "../exports";
+import { exportPreset } from "../exports";
+import { ExportOptions } from "./ExportOptions";
 import { Numeric } from "./Controls";
 export function LayoutActions({ chart }: { chart?: ChartSpec }) {
   const selected = useWorkspace((s) => s.selectedIds);
@@ -131,19 +132,7 @@ export function useShortcuts() {
 export function WorkspaceTools() {
   const s = useWorkspace();
   const file = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const exportImage = async (format: "png" | "pdf") => {
-    setBusy(true);
-    setError("");
-    try {
-      await exportVisual(format);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Export failed");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const [error, setError] = useState("");
   return (
     <>
       <div
@@ -203,19 +192,11 @@ export function WorkspaceTools() {
         <button disabled={!s.clipboard.length} onClick={s.paste}>
           Paste
         </button>
-        <button onClick={() => exportPreset()}>Export preset</button>
-        <button onClick={() => file.current?.click()}>Import preset</button>
-        <button
-          disabled={busy || !s.charts.length}
-          onClick={() => void exportImage("png")}
-        >
-          Current workspace PNG
+        <button onClick={() => exportPreset()}>
+          Save workspace settings JSON
         </button>
-        <button
-          disabled={busy || !s.charts.length}
-          onClick={() => void exportImage("pdf")}
-        >
-          Current workspace PDF
+        <button onClick={() => file.current?.click()}>
+          Import workspace settings JSON
         </button>
         <input
           ref={file}
@@ -238,7 +219,10 @@ export function WorkspaceTools() {
           }}
         />
       </div>
-      {busy && <p role="status">Preparing export…</p>}
+      <details className="workspace-export">
+        <summary>Save current workspace image</summary>
+        <ExportOptions disabled={!s.charts.length} />
+      </details>
       {error && <p role="alert">{error}</p>}
     </>
   );
@@ -252,35 +236,13 @@ export function ChartExport({
   isPlot: boolean;
   loaded: boolean;
 }) {
-  const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
   return (
     <details data-export-ignore className="chart-export">
-      <summary>Export chart</summary>
-      {(["png", "pdf", ...(isPlot ? (["svg"] as const) : [])] as const).map(
-        (format) => (
-          <button
-            key={format}
-            disabled={!loaded || busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await exportVisual(format, chart.id);
-                setError("");
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "Export failed");
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {format.toUpperCase()}
-          </button>
-        ),
-      )}
-      <button onClick={() => exportPreset(chart)}>JSON preset</button>
-      {!isPlot && <small>Exports the current map view as PNG or PDF.</small>}
-      {error && <p role="alert">{error}</p>}
+      <summary>Save chart</summary>
+      <ExportOptions chartId={chart.id} disabled={!loaded} svg={isPlot} />
+      <button onClick={() => exportPreset(chart)}>
+        Save chart settings JSON
+      </button>
     </details>
   );
 }

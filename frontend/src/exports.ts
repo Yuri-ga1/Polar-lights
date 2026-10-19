@@ -1,5 +1,11 @@
 import { snapshot, useWorkspace, type ChartSpec } from "./store";
 import { serializePreset } from "./workspace/schema";
+import {
+  physicalSizeInches,
+  validateExportSize,
+  withPngDpi,
+  type ExportSize,
+} from "./exportSizing";
 export function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob),
     link = document.createElement("a");
@@ -118,7 +124,11 @@ export function registerSvg(id: string, exporter: () => Promise<string>) {
     exporters.delete(id);
   };
 }
-export async function exportVisual(format: "png" | "pdf" | "svg", id?: string) {
+export async function exportVisual(
+  format: "png" | "pdf" | "svg",
+  id?: string,
+  size?: ExportSize,
+) {
   const node = id
     ? document.querySelector<HTMLElement>(`[data-chart-id="${CSS.escape(id)}"]`)
     : document.getElementById("workspace-canvas");
@@ -178,8 +188,11 @@ export async function exportVisual(format: "png" | "pdf" | "svg", id?: string) {
     height = node.offsetHeight;
   if (width * height > 32_000_000)
     throw new Error(
-      "This canvas exceeds the 32 megapixel export limit. Export individual cards or reduce the workspace size.",
+      "Current view exceeds 32 megapixels. Reduce workspace layout or export individual charts.",
     );
+  const output = size ?? { width, height, dpi: 150 as const };
+  const sizeError = validateExportSize(output);
+  if (sizeError) throw new Error(sizeError);
   const { toPng } = await import("html-to-image");
   document.documentElement.classList.add("exporting");
   let restoreCanvases: (() => void) | undefined;
@@ -195,6 +208,8 @@ export async function exportVisual(format: "png" | "pdf" | "svg", id?: string) {
     const data = await toPng(node, {
       width,
       height,
+      canvasWidth: output.width,
+      canvasHeight: output.height,
       pixelRatio: 1,
       backgroundColor: "#ffffff",
       ...(id
@@ -212,25 +227,25 @@ export async function exportVisual(format: "png" | "pdf" | "svg", id?: string) {
           n instanceof HTMLElement &&
           (n.hasAttribute("data-export-ignore") ||
             n.tagName === "BUTTON" ||
-            n.classList.contains("maplibregl-ctrl-attrib") ||
-            n.classList.contains("map-hud"))
+            n.classList.contains("maplibregl-ctrl-attrib"))
         ),
     });
-    if (format === "png")
+    if (format === "png") {
+      const png = new Uint8Array(await (await fetch(data)).arrayBuffer());
       saveBlob(
-        await (await fetch(data)).blob(),
-        id ? "chart.png" : "workspace.png",
+        new Blob([withPngDpi(png, output.dpi)], { type: "image/png" }),
+        id ? `chart-${id}.png` : "workspace.png",
       );
-    else {
+    } else {
       const { jsPDF } = await import("jspdf");
+      const [pageWidth, pageHeight] = physicalSizeInches(output);
       const pdf = new jsPDF({
-        orientation: width > height ? "landscape" : "portrait",
-        unit: "px",
-        format: [width, height],
-        hotfixes: ["px_scaling"],
+        orientation: output.width > output.height ? "landscape" : "portrait",
+        unit: "in",
+        format: [pageWidth, pageHeight],
       });
-      pdf.addImage(data, "PNG", 0, 0, width, height);
-      pdf.save(id ? "chart.pdf" : "workspace.pdf");
+      pdf.addImage(data, "PNG", 0, 0, pageWidth, pageHeight);
+      pdf.save(id ? `chart-${id}.pdf` : "workspace.pdf");
     }
   } finally {
     restoreCanvases?.();
