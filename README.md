@@ -165,7 +165,65 @@ Backend, frontend и научный pipeline сохраняют отдельны
 
 ## Docker deployment
 
-Production Docker Compose runs the static frontend, API and durable worker as
-separate services with shared host data directories. See the
-[deployment guide](docs/deployment.md) for first start, permissions, live TOML
-configuration, per-service upgrades, backups, cleanup and smoke tests.
+The production stack runs the frontend, API and background worker with Docker
+Compose. The supported host is Ubuntu 24.04 on Linux amd64 with Docker Compose
+v2.39 or newer. Install Docker Engine and the Compose plugin from Docker’s
+[official Ubuntu repository](https://docs.docker.com/engine/install/ubuntu/):
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+sudo docker run hello-world
+sudo docker compose version
+```
+
+Run the following from the repository root for the first setup. Set `POLAR_UID`
+and `POLAR_GID` in `.env` to the numbers printed by `id -u` and `id -g`; these
+let the containers write data as your account rather than root.
+
+```bash
+cp .env.example .env
+chmod 600 .env
+id -u
+id -g
+# Enter those values as POLAR_UID and POLAR_GID in the file.
+nano .env
+mkdir -p files/raw files/processed files/maps files/jobs results logs
+sudo chown "$(id -u):$(id -g)" files files/raw files/processed files/maps files/jobs results logs
+sudo docker compose config --quiet
+sudo docker compose build
+sudo docker compose up -d --wait --wait-timeout 180
+sudo docker compose ps
+```
+
+Open <http://127.0.0.1:8080>. Follow startup with `sudo docker compose logs -f api worker`
+to watch the services; press Ctrl+C to stop following logs. To stop the stack while
+keeping its containers and data, run `sudo docker compose stop`. Start the stopped
+containers again with:
+
+```bash
+sudo docker compose start
+```
+
+To bring the stack up after a machine reboot, or to apply source changes, use:
+
+```bash
+sudo docker compose up -d --build --wait
+```
+
+The deployment guide covers permissions for existing data, configuration, upgrades,
+backups, cleanup and health checks.
