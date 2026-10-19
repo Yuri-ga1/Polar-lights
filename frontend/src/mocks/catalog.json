@@ -434,6 +434,13 @@
           "values": ["full", "medium", "low"]
         },
         {
+          "name": "samplingStride",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 1024
+        },
+        {
           "name": "format",
           "type": "select",
           "required": false,
@@ -472,6 +479,13 @@
           "values": ["full", "medium", "low"]
         },
         {
+          "name": "samplingStride",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 1024
+        },
+        {
           "name": "format",
           "type": "select",
           "required": false,
@@ -508,6 +522,13 @@
           "required": false,
           "default": "full",
           "values": ["full", "medium", "low"]
+        },
+        {
+          "name": "samplingStride",
+          "type": "integer",
+          "required": false,
+          "minimum": 1,
+          "maximum": 1024
         },
         {
           "name": "format",

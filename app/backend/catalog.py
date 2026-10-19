@@ -198,6 +198,14 @@ def catalog(known=(), remote_maps=False, station_metadata=None, aurora_default=N
                     "values": ["full", "medium", "low"],
                 },
                 {
+                    "name": "samplingStride",
+                    "type": "integer",
+                    "required": False,
+                    "default": None,
+                    "minimum": 1,
+                    "maximum": 1024,
+                },
+                {
                     "name": "format",
                     "type": "select",
                     "required": False,

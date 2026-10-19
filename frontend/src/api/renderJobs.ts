@@ -2,6 +2,7 @@ import { z } from "zod";
 import { colorbarSchema, styleSchema } from "../workspace/schema";
 import { ApiError, fetchApi, pause, rememberedJob, pollJob } from "./client";
 import { jobSchema } from "./contracts";
+import { isFutureUtcDate } from "../dateLimits";
 export const assetSchema = z.object({
   assetVersion: z.string().regex(/^[a-f0-9]{64}$/),
   maplibreVersion: z.literal("5.6.1"),
@@ -60,6 +61,7 @@ export const renderSpecSchema = z
     minimum: z.number().finite(),
     maximum: z.number().finite(),
     resolution: z.enum(["full", "medium", "low"]),
+    samplingStride: z.number().int().min(1).max(1024).nullish(),
     maplibreVersion: z.literal("5.6.1"),
     playwrightVersion: z.literal("1.55.0"),
     dpr: z.literal(1),
@@ -72,7 +74,14 @@ export const renderSpecSchema = z
       Date.parse(`${value.slice(0, 10)}T00:00:00Z`),
     );
     return Math.max(...days) - Math.min(...days) <= 2 * 24 * 60 * 60 * 1000;
-  }, "Map render range cannot exceed three calendar dates");
+  }, "Map render range cannot exceed three calendar dates")
+  .refine(
+    (s) => s.timestamps.every((timestamp) => !isFutureUtcDate(timestamp)),
+    {
+      message: "Render dates cannot be later than today (UTC)",
+      path: ["timestamps"],
+    },
+  );
 export type RenderSpec = z.infer<typeof renderSpecSchema>;
 export const renderFilesSchema = z.object({
   jobId: z.string(),
@@ -140,6 +149,7 @@ export const renderApi = {
           throw new ApiError(
             state.error?.code ?? "RENDER_FAILED",
             state.error?.message ?? "Rendering failed",
+            state.error?.details,
           );
         if (state.status === "cancelled")
           throw new ApiError("JOB_CANCELLED", "Render job cancelled");

@@ -34,6 +34,7 @@ class SeriesParameters(StrictModel):
 class MapParameters(StrictModel):
     timestamp: datetime
     resolution: Literal["full", "medium", "low"] = "full"
+    samplingStride: int | None = Field(default=None, ge=1, le=1024, strict=True)
     format: Literal["arrow", "json"] = "arrow"
 
     _zone = field_validator("timestamp")(
@@ -128,10 +129,12 @@ class ErrorResponse(BaseModel):
 
 class ParameterSchema(BaseModel):
     name: str
-    type: Literal["datetime", "select", "multiselect"]
+    type: Literal["datetime", "select", "multiselect", "integer"]
     required: bool
     default: str | float | list[str] | None = None
     values: list[str | float] | None = None
+    minimum: int | None = None
+    maximum: int | None = None
 
 
 class CatalogProduct(BaseModel):
@@ -312,6 +315,7 @@ class MapRenderSpec(StrictModel):
     minimum: float = 0
     maximum: float = 1
     resolution: Literal["full", "medium", "low"] = "medium"
+    samplingStride: int | None = Field(default=None, ge=1, le=1024, strict=True)
     maplibreVersion: Literal["5.6.1"] = "5.6.1"
     playwrightVersion: Literal["1.55.0"] = "1.55.0"
     dpr: Literal[1] = 1

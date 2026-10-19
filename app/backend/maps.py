@@ -192,7 +192,7 @@ class MapService:
                 nearestTimestamps=[iso(t) for t in sorted(nearest)],
             )
         path, key, version = entries[timestamp]
-        stride = {"full": 1, "medium": 4, "low": 16}[parameters.resolution]
+        stride = parameters.samplingStride or {"full": 1, "medium": 4, "low": 16}[parameters.resolution]
         begin = time.perf_counter()
         try:
             report_stage("processing")
@@ -212,7 +212,7 @@ class MapService:
                 if count > self.settings.max_points:
                     raise BackendError(
                         "INVALID_REQUEST",
-                        "Map exceeds point limit; request lower resolution",
+                        "Map exceeds point limit; increase data sampling stride",
                         413,
                         pointCount=count,
                         maxPoints=self.settings.max_points,
@@ -239,6 +239,7 @@ class MapService:
             "units": MAPS[product][1],
             "datasetVersion": version,
             "resolution": parameters.resolution,
+            "samplingStride": stride,
             "pointCount": len(arrays["lat"]),
             "missingData": int((~np.isfinite(arrays["value"])).sum()),
             "generatedAt": iso(pd.Timestamp.now(tz="UTC")),

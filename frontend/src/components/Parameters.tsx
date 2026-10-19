@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { StyleEditor } from "./StyleEditor";
 import { Timeline } from "./Timeline";
 import { LayoutActions } from "./WorkspaceTools";
@@ -8,23 +8,38 @@ const BatchRender = lazy(() =>
 import { validation, type Product, type Parameter } from "../api/contracts";
 import { appliedChanged, useWorkspace, type ChartSpec } from "../store";
 import { cancelRequest, requestChart } from "../requests";
+import { isFutureUtcDate, latestUtcDateTime } from "../dateLimits";
 function Field({
   parameter: p,
   chart,
+  error,
 }: {
   parameter: Parameter;
   chart: ChartSpec;
+  error?: string;
 }) {
   const value = chart.dataSpec[p.name];
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  const [dateInputError, setDateInputError] = useState("");
+  useEffect(() => {
+    setDraft(value == null ? "" : String(value));
+    setDateInputError("");
+  }, [value]);
   const update = (value: string | number | string[]) =>
     useWorkspace
       .getState()
       .update(chart.id, { dataSpec: { ...chart.dataSpec, [p.name]: value } });
   const id = `param-${chart.id}-${p.name}`;
+  const displayedError =
+    p.type === "datetime" ? dateInputError || error : error;
   return (
     <label className="field" htmlFor={id}>
       <span>
-        {p.name}
+        {p.name === "resolution"
+          ? "Data sampling preset"
+          : p.name === "samplingStride"
+            ? "Custom data sampling stride"
+            : p.name}
         {p.required && <b aria-label="required"> *</b>}
         {p.type === "datetime" && <small> UTC</small>}
       </span>
@@ -33,20 +48,56 @@ function Field({
           id={id}
           type="datetime-local"
           step="1"
+          max={latestUtcDateTime()}
           required={p.required}
+          aria-invalid={Boolean(displayedError)}
+          aria-describedby={displayedError ? `${id}-error` : undefined}
           value={typeof value === "string" ? value.replace(/Z$/, "") : ""}
-          onChange={(e) =>
+          onChange={(e) => {
+            const entered = e.target.value;
+            if (isFutureUtcDate(entered)) {
+              setDateInputError("Date cannot be later than today (UTC).");
+              return;
+            }
+            setDateInputError("");
             update(
-              e.target.value
-                ? `${e.target.value.length === 16 ? e.target.value + ":00" : e.target.value}Z`
+              entered
+                ? `${entered.length === 16 ? entered + ":00" : entered}Z`
                 : "",
-            )
+            );
+          }}
+        />
+      ) : p.type === "integer" ? (
+        <input
+          id={id}
+          type="text"
+          inputMode="numeric"
+          aria-label="Custom data sampling stride"
+          aria-invalid={
+            Boolean(error) ||
+            (draft !== "" &&
+              (!/^\d+$/.test(draft) ||
+                Number(draft) < (p.minimum ?? 1) ||
+                Number(draft) > (p.maximum ?? 1024)))
           }
+          aria-describedby={error ? `${id}-error` : undefined}
+          value={draft}
+          placeholder="Preset"
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft.trim() === "") {
+              const next = { ...chart.dataSpec };
+              delete next[p.name];
+              useWorkspace.getState().update(chart.id, { dataSpec: next });
+            } else update(/^\d+$/.test(draft) ? Number(draft) : draft);
+          }}
         />
       ) : (
         <select
           id={id}
           required={p.required}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
           multiple={p.type === "multiselect"}
           value={value ?? (p.type === "multiselect" ? [] : "")}
           onChange={(e) => {
@@ -66,6 +117,11 @@ function Field({
             </option>
           ))}
         </select>
+      )}
+      {displayedError && (
+        <small id={`${id}-error`} role="alert">
+          {displayedError}
+        </small>
       )}
     </label>
   );
@@ -95,13 +151,43 @@ export function Parameters({
         <fieldset>
           <legend>Data</legend>
           {product.parameterSchema.map((p) => (
-            <Field key={p.name} parameter={p} chart={chart} />
+            <Field
+              key={p.name}
+              parameter={p}
+              chart={chart}
+              error={errors.find((message) => message.startsWith(`${p.name} `))}
+            />
           ))}
+          {product.graphType === "map" &&
+            product.productId !== "aurora-map" && (
+              <p className="hint">
+                Data sampling: custom stride overrides the preset; N selects
+                every Nth stored sample (1–1024). This is not geographic grid
+                spacing or export image resolution. The server applies a point
+                limit (2,000,000 by default).
+              </p>
+            )}
         </fieldset>
         {product.productId !== "aurora-map" && (
           <Timeline key={chart.id} chart={chart} product={product} />
         )}
-        {errors.length > 0 && <p className="hint">{errors.join(" · ")}</p>}
+        {errors.some(
+          (message) =>
+            !product.parameterSchema.some((p) =>
+              message.startsWith(`${p.name} `),
+            ),
+        ) && (
+          <p className="hint" role="alert">
+            {errors
+              .filter(
+                (message) =>
+                  !product.parameterSchema.some((p) =>
+                    message.startsWith(`${p.name} `),
+                  ),
+              )
+              .join(" · ")}
+          </p>
+        )}
         {appliedChanged(chart) && (
           <p className="hint">
             Draft changed. The chart shows the last successful request.

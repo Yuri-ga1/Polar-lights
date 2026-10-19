@@ -59,16 +59,28 @@ export function mockResult({ productId, parameters: p }: Request): Result {
       },
     };
   if (product.graphType === "map") {
-    const lat = Array.from(
+    const fullLat = Array.from(
       { length: 180 },
       (_, i) => 40 + Math.floor(i / 30) * 6,
     );
-    const lon = lat.map((_, i) => -175 + (i % 30) * 12);
+    const fullLon = fullLat.map((_, i) => -175 + (i % 30) * 12);
+    const stride = Number(
+      p.samplingStride ||
+        ({ full: 1, medium: 4, low: 16 } as Record<string, number>)[
+          String(p.resolution || "full")
+        ],
+    );
+    const indices = Array.from(
+      { length: Math.ceil(fullLat.length / stride) },
+      (_, i) => i * stride,
+    );
+    const lat = indices.map((i) => fullLat[i]);
+    const lon = indices.map((i) => fullLon[i]);
     return {
       dataType: "map",
       lat,
       lon,
-      value: lat.map((_, i) =>
+      value: indices.map((i) =>
         i % 37 === 0
           ? null
           : 0.1 +
@@ -82,8 +94,9 @@ export function mockResult({ productId, parameters: p }: Request): Result {
         timestamp: String(p.timestamp),
         units: String(product.units),
         resolution: String(p.resolution || "full"),
+        samplingStride: stride,
         pointCount: lat.length,
-        missingData: 5,
+        missingData: indices.filter((i) => i % 37 === 0).length,
         datasetVersion: "mock-v1",
         source: "SIMuRG",
         generatedAt: new Date().toISOString(),

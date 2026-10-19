@@ -279,6 +279,9 @@ export const ChartCard = memo(function ChartCard({
               <span>
                 {result.metadata.resolution}
                 {result.dataType === "map" &&
+                  result.metadata.samplingStride &&
+                  ` · stride ${result.metadata.samplingStride}`}
+                {result.dataType === "map" &&
                   ` · ${result.metadata.pointCount ?? result.lat.length} points`}
               </span>
               <span>
@@ -296,6 +299,7 @@ export const ChartCard = memo(function ChartCard({
                           "timestamp",
                           "units",
                           "resolution",
+                          "samplingStride",
                           "pointCount",
                           "missingData",
                           "datasetVersion",

@@ -139,7 +139,11 @@ def render_maps(service, spec, directory, on_processing):
                     pass
                 arrays, metadata = service.maps.read(
                     spec.productId,
-                    MapParameters(timestamp=timestamp, resolution=spec.resolution),
+                    MapParameters(
+                        timestamp=timestamp,
+                        resolution=spec.resolution,
+                        samplingStride=spec.samplingStride,
+                    ),
                 )
                 on_processing()
                 points = [

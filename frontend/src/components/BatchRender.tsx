@@ -19,7 +19,20 @@ import {
   renderSteps,
   type RenderRange,
 } from "../renderRanges";
-import { Numeric, Field } from "./Controls";
+import { Field } from "./Controls";
+import { actionableError, jobProgress } from "../jobFeedback";
+import { z } from "zod";
+import { isFutureUtcDate, latestUtcDateTime } from "../dateLimits";
+function renderValidationError(cause: unknown): string {
+  if (cause instanceof z.ZodError)
+    return cause.issues
+      .map(
+        (issue) =>
+          `${issue.path.join(".") || "Render settings"}: ${issue.message}`,
+      )
+      .join(" · ");
+  return cause instanceof Error ? cause.message : "Check the render settings.";
+}
 
 function PinnedPreview({
   chart,
@@ -111,9 +124,10 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
     { start: initial, end: initial },
   ]);
   const [step, setStep] = useState(30),
-    [width, setWidth] = useState(1200),
-    [height, setHeight] = useState(700);
+    [width, setWidth] = useState("1200"),
+    [height, setHeight] = useState("700");
   const [error, setError] = useState(""),
+    [dateAttemptError, setDateAttemptError] = useState(""),
     [preview, setPreview] = useState<RenderSpec | null>(null);
   const [downloading, setDownloading] = useState(false);
   const task = useRenderTasks((s) => s.tasks[chart.id]);
@@ -141,13 +155,14 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
     return renderSpecSchema.parse({
       productId: chart.productId,
       timestamps,
-      width,
-      height,
+      width: Number(width),
+      height: Number(height),
       center: [0, 0],
       zoom: 0,
       minimum,
       maximum,
       resolution: chart.dataSpec.resolution ?? "full",
+      samplingStride: chart.dataSpec.samplingStride ?? null,
       assetVersion: assets.data?.assetVersion,
       maplibreVersion: assets.data?.maplibreVersion,
       playwrightVersion: assets.data?.playwrightVersion,
@@ -183,8 +198,8 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       a.download = file.name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(href), 60000);
-    } catch {
-      setError("Download failed. Try again.");
+    } catch (cause) {
+      setError(`Download failed. ${actionableError(cause)}`);
     } finally {
       setDownloading(false);
     }
@@ -209,14 +224,22 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
               <input
                 type="datetime-local"
                 step={30}
+                max={latestUtcDateTime()}
                 value={range[key]}
-                onChange={(e) =>
+                onChange={(e) => {
+                  if (isFutureUtcDate(e.target.value)) {
+                    setDateAttemptError(
+                      "Render dates cannot be later than today (UTC).",
+                    );
+                    return;
+                  }
+                  setDateAttemptError("");
                   setRanges(
                     ranges.map((r, j) =>
                       j === i ? { ...r, [key]: e.target.value } : r,
                     ),
-                  )
-                }
+                  );
+                }}
               />
             </Field>
           ))}
@@ -247,20 +270,27 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
         {rangeError ||
           `${timestamps.length} unique frame(s) · overlapping ranges are merged`}
       </p>
-      <Numeric
-        label="Render width"
-        value={width}
-        min={256}
-        max={2400}
-        onChange={(v) => v && setWidth(v)}
-      />
-      <Numeric
-        label="Render height"
-        value={height}
-        min={256}
-        max={1600}
-        onChange={(v) => v && setHeight(v)}
-      />
+      {dateAttemptError && <p role="alert">{dateAttemptError}</p>}
+      <Field label="Server render width (px, 256–2400)">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={width}
+          onChange={(e) => setWidth(e.target.value)}
+        />
+      </Field>
+      <Field label="Server render height (px, 256–1600)">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={height}
+          onChange={(e) => setHeight(e.target.value)}
+        />
+      </Field>
+      <p className="hint">
+        Server map series uses full-world projection. Dimensions control saved
+        PNG pixels; data sampling uses the chart's preset or custom stride.
+      </p>
       {assets.error && (
         <p role="alert">Render assets are unavailable. See the setup guide.</p>
       )}
@@ -271,8 +301,8 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
             const value = spec();
             setError("");
             void startRender(chart.id, value);
-          } catch {
-            setError("Check the render settings before submitting.");
+          } catch (cause) {
+            setError(renderValidationError(cause));
           }
         }}
       >
@@ -284,8 +314,8 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
           try {
             setPreview(spec());
             setError("");
-          } catch {
-            setError("Check the render settings.");
+          } catch (cause) {
+            setError(renderValidationError(cause));
           }
         }}
       >
@@ -306,10 +336,20 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       )}
       {task && (
         <div role="status" aria-label="Render status">
-          {task.status === "waiting_external"
-            ? "Waiting for SIMuRG generation"
-            : task.status}
+          {jobProgress(
+            [
+              "waiting_external",
+              "retrying",
+              "queued",
+              "cancelled",
+              "failed",
+            ].includes(task.status)
+              ? task.status
+              : (task.stage ?? task.status),
+            task.attempts,
+          )}
           {task.error && <p role="alert">{task.error}</p>}
+          {task.jobId && <code>Job ID: {task.jobId}</code>}
           {task.requestId && <code>Request ID: {task.requestId}</code>}
           {archive && (
             <button

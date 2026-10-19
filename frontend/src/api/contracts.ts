@@ -1,10 +1,13 @@
 import { z } from "zod";
+import { isFutureUtcDate } from "../dateLimits";
 export const parameterSchema = z.object({
   name: z.string(),
-  type: z.enum(["datetime", "select", "multiselect"]),
+  type: z.enum(["datetime", "select", "multiselect", "integer"]),
   required: z.boolean(),
   default: z.union([z.string(), z.number(), z.array(z.string())]).nullish(),
   values: z.array(z.union([z.string(), z.number()])).nullish(),
+  minimum: z.number().int().optional(),
+  maximum: z.number().int().optional(),
 });
 export const productSchema = z.object({
   productId: z.string(),
@@ -35,6 +38,7 @@ export const metadataSchema = z
     timestamp: z.string().optional(),
     units: z.union([z.string(), z.record(z.string())]).optional(),
     resolution: z.string().optional(),
+    samplingStride: z.number().optional(),
     datasetVersion: z.string().optional(),
     pointCount: z.number().optional(),
     missingData: z.number().optional(),
@@ -146,6 +150,18 @@ export const geomagneticLineSchema = z.object({
   ),
 });
 export type DataSpec = Record<string, string | number | string[]>;
+export function validUtcSecond(value: unknown): value is string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value)
+  )
+    return false;
+  const instant = Date.parse(value);
+  return (
+    Number.isFinite(instant) &&
+    new Date(instant).toISOString().replace(".000Z", "Z") === value
+  );
+}
 export function defaults(product: Product): DataSpec {
   return Object.fromEntries(
     product.parameterSchema
@@ -170,13 +186,22 @@ export function validation(product: Product, data: DataSpec): string[] {
       if (p.required) errors.push(`${p.name} is required`);
       continue;
     }
+    if (p.type === "datetime") {
+      if (!validUtcSecond(value))
+        errors.push(`${p.name} must be a UTC date and time`);
+      else if (isFutureUtcDate(value))
+        errors.push(`${p.name} cannot be later than today (UTC)`);
+    }
     if (
-      p.type === "datetime" &&
-      (typeof value !== "string" ||
-        !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value) ||
-        !Number.isFinite(Date.parse(value)))
+      p.type === "integer" &&
+      (typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        (p.minimum !== undefined && value < p.minimum) ||
+        (p.maximum !== undefined && value > p.maximum))
     )
-      errors.push(`${p.name} must be a UTC date and time`);
+      errors.push(
+        `${p.name} must be a whole number from ${p.minimum ?? 1} to ${p.maximum ?? "the maximum"}`,
+      );
     if (
       p.type === "select" &&
       p.values &&
