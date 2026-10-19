@@ -1,5 +1,6 @@
 """Offline deployment regression coverage; no external scientific services."""
 
+import asyncio
 import hashlib
 import json
 import tempfile
@@ -73,6 +74,63 @@ class DeploymentTests(unittest.TestCase):
         ):
             _run_job(self.store, self.store.get(job_id), self.settings, job_id)
         self.assertEqual(JobStore(self.settings).get(job_id)["status"], "completed")
+
+    def test_interrupted_processing_replaces_partial_result_and_commits_manifest(self):
+        from app.backend.errors import BackendError
+
+        request = {
+            "productId": "kp",
+            "parameters": {
+                "start": "2026-01-01T00:00:00Z",
+                "end": "2026-01-01T03:00:00Z",
+                "columns": ["kp"],
+            },
+        }
+        job_id = self.store.submit("data", request)
+        directory = self.store.root / job_id
+        directory.mkdir()
+        (directory / "result.tmp").write_bytes(b"partial data")
+        self.store.update(job_id, "processing")
+        self.store.defer(
+            job_id,
+            error=BackendError("WORKER_RESTARTED", "Worker interrupted", 503).body(),
+        )
+        self.assertEqual(JobStore(self.settings).get(job_id)["status"], "retrying")
+        with patch("app.backend.service.DataService.response", return_value=(b"complete data", "text/plain")):
+            _run_job(self.store, self.store.get(job_id), self.settings, job_id)
+        self.assertEqual(self.store.get(job_id)["status"], "completed")
+        path, _ = self.store.artifact(job_id)
+        self.assertEqual(path.read_bytes(), b"complete data")
+        self.assertFalse((directory / "result.tmp").exists())
+
+    def test_unkeyed_local_api_and_configured_key(self):
+        import httpx
+
+        from app.backend.api import create_app
+
+        async def requests():
+            local = create_app(self.settings)
+            keyed = create_app(Settings(root=self.root, api_key="fixture-secret"))
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=local), base_url="http://localhost") as client:
+                self.assertEqual((await client.get("/api/v1/config/public")).status_code, 200)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=keyed), base_url="http://localhost") as client:
+                self.assertEqual((await client.get("/api/v1/config/public")).status_code, 401)
+                self.assertEqual((await client.get("/api/v1/config/public", headers={"X-API-Key": "fixture-secret"})).status_code, 200)
+
+        asyncio.run(requests())
+
+    def test_queue_limit_and_retry_exhaustion_are_bounded(self):
+        from app.backend.errors import BackendError
+
+        limited = JobStore(Settings(root=self.root, max_jobs=1))
+        job_id = limited.submit("data", {"fixture": "one"})
+        with self.assertRaises(BackendError) as raised:
+            limited.submit("data", {"fixture": "two"})
+        self.assertEqual(raised.exception.code, "QUEUE_FULL")
+        failure = BackendError("SOURCE_UNAVAILABLE", "Temporary source failure", 503).body()
+        for _ in range(self.settings.job_max_attempts):
+            limited.defer(job_id, error=failure)
+        self.assertEqual(limited.get(job_id)["status"], "failed")
 
     def test_cancel_is_terminal_and_cleanup_only_removes_old_terminal_jobs(self):
         cancelled = self.store.submit("data", {"fixture": "cancel"})
