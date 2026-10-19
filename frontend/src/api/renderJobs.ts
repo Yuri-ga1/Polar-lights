@@ -1,13 +1,6 @@
 import { z } from "zod";
 import { colorbarSchema, styleSchema } from "../workspace/schema";
-import {
-  ApiError,
-  fetchApi,
-  pause,
-  rememberedJob,
-  pollJob,
-  pageIsLeaving,
-} from "./client";
+import { ApiError, fetchApi, pause, rememberedJob, pollJob } from "./client";
 import { jobSchema } from "./contracts";
 export const assetSchema = z.object({
   assetVersion: z.string().regex(/^[a-f0-9]{64}$/),
@@ -106,30 +99,29 @@ export const renderApi = {
     const immutable = renderSpecSchema.parse(structuredClone(spec));
     const key = `render:${JSON.stringify(immutable)}`;
     const saved = rememberedJob(key);
-    const initial = saved
-      ? jobSchema.parse(JSON.parse(saved))
-      : jobSchema.parse(
-          await (
-            await fetchApi("/api/v1/map-render-jobs", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(immutable),
-              signal,
-            })
-          ).json(),
-        );
+    let initial: z.infer<typeof jobSchema> | undefined;
+    if (saved) {
+      try {
+        initial = jobSchema.parse(JSON.parse(saved));
+      } catch {
+        rememberedJob(key, null);
+      }
+    }
+    initial ??= jobSchema.parse(
+      await (
+        await fetchApi("/api/v1/map-render-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(immutable),
+          signal,
+        })
+      ).json(),
+    );
     rememberedJob(key, JSON.stringify(initial));
     const path = `/api/v1/map-render-jobs/${encodeURIComponent(initial.jobId)}`;
-    const cancel = () => {
-      if (pageIsLeaving()) return;
-      rememberedJob(key, null);
-      void fetchApi(path, { method: "DELETE" }).catch(() => {});
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    if (signal.aborted) {
-      cancel();
-      signal.throwIfAborted();
-    }
+    // Server-side render jobs are deduplicated; local cancellation only stops
+    // this chart's polling. Other clients may still need the same artifact.
+    signal.throwIfAborted();
     try {
       let state = initial;
       for (;;) {
@@ -159,8 +151,6 @@ export const renderApi = {
       if (error instanceof ApiError && error.code === "JOB_NOT_FOUND")
         rememberedJob(key, null);
       throw error;
-    } finally {
-      signal.removeEventListener("abort", cancel);
     }
   },
 };

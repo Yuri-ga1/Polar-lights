@@ -116,7 +116,7 @@ export function Parameters({
         </button>
         {runtime?.status === "loading" && (
           <button type="button" onClick={() => cancelRequest(chart.id)}>
-            Cancel request
+            Stop waiting
           </button>
         )}
       </form>

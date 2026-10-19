@@ -30,7 +30,7 @@ For a separate API origin, set `VITE_API_BASE_URL` to the origin (without `/api/
 npm run dev:mock
 ```
 
-MSW intercepts the same API routes. The header identifies synthetic data. Use `2026-01-19T00:00:00Z` and `2026-01-19T01:00:00Z` for maps, and a range on January 19, 2026 for time series/keograms. Dates in the year 2000 demonstrate errors. Mock requests pass through `202 → processing → completed → result`, including Arrow map payloads. Cancel stops polling and sends DELETE to the existing job endpoint.
+MSW intercepts the same API routes. The header identifies synthetic data. Use `2026-01-19T00:00:00Z` and `2026-01-19T01:00:00Z` for maps, and a range on January 19, 2026 for time series/keograms. Dates in the year 2000 demonstrate errors. Mock requests pass through `202 → processing → completed → result`, including Arrow map payloads. **Stop waiting** stops only that card's polling. Jobs may be shared with other cards or browser clients, so the frontend does not send DELETE on local cancellation; the existing DELETE endpoint remains available to operators who intend to cancel the shared job globally.
 
 `src/mocks/catalog.json` is a snapshot of `CatalogResponse.model_validate(catalog()).model_dump(exclude_none=True)` from the backend. The Python contract test checks for drift. This snapshot is only imported by MSW and tests; the production library always comes from the API.
 
@@ -42,6 +42,8 @@ MSW intercepts the same API routes. The header identifies synthetic data. Use `2
 - Drag the header to move, pull an edge/corner to resize, and use the header buttons to duplicate or delete. Click empty canvas space to deselect.
 - Title, legend, palette, and color limits are local styling. Map hover uses deck.gl picking on local arrays; no hover request is sent.
 - Workspace specifications save to localStorage. Reload restores cards, drafts, last-applied parameters, style, layout, and selection. Datasets and request statuses are never persisted. Press **Build chart** to fetch restored cards. Duplicates copy the spec, receive a new ID, and likewise wait for an explicit build.
+- Card PNG/PDF exports capture the current interactive map viewport, projection and visible layers. Workspace PNG/PDF exports capture all displayed cards. The **Full-world batch render** uses a separate Plate Carrée renderer over the entire globe for every selected timestamp; its legacy `center` and `zoom` spec fields do not affect that full-world output. Its preview uses the same renderer with the currently loaded frame only when that frame is among the selected timestamps.
+- The supplied Compose stack binds the web port to `127.0.0.1` and limits the job queue and response size. If you deliberately expose it through a public gateway, set a nonempty `POLAR_API_KEY` and have the gateway inject it server-side over TLS. Do not put the key in browser JavaScript or expose the API container directly.
 
 ## Validation
 

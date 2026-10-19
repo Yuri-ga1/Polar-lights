@@ -137,17 +137,6 @@ export async function pollJob(path: string, signal: AbortSignal) {
     }
   }
 }
-let leavingPage = false;
-window.addEventListener("pagehide", () => {
-  leavingPage = true;
-});
-window.addEventListener("pageshow", () => {
-  leavingPage = false;
-});
-export function pageIsLeaving() {
-  return leavingPage;
-}
-
 export const apiClient = {
   catalog: async (signal?: AbortSignal) =>
     catalogSchema.parse(
@@ -173,8 +162,13 @@ export const apiClient = {
     const saved = rememberedJob(key);
     let job;
     if (saved) {
-      job = acceptedSchema.parse(JSON.parse(saved));
-    } else {
+      try {
+        job = acceptedSchema.parse(JSON.parse(saved));
+      } catch {
+        rememberedJob(key, null);
+      }
+    }
+    if (!job) {
       const response = await fetchApi("/api/v1/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -185,16 +179,9 @@ export const apiClient = {
       job = acceptedSchema.parse(await response.json());
       rememberedJob(key, JSON.stringify(job));
     }
-    const cancel = () => {
-      if (pageIsLeaving()) return;
-      rememberedJob(key, null);
-      void fetchApi(job.statusUrl, { method: "DELETE" }).catch(() => {});
-    };
-    signal.addEventListener("abort", cancel, { once: true });
-    if (signal.aborted) {
-      cancel();
-      signal.throwIfAborted();
-    }
+    // A job ID can be shared across cards, tabs and browser clients. Aborting
+    // this consumer must not cancel the server job used by another consumer.
+    signal.throwIfAborted();
     try {
       for (;;) {
         signal.throwIfAborted();
@@ -227,8 +214,6 @@ export const apiClient = {
       if (error instanceof ApiError && error.code === "JOB_NOT_FOUND")
         rememberedJob(key, null);
       throw error;
-    } finally {
-      signal.removeEventListener("abort", cancel);
     }
   },
   async auroraGeomagneticLines(

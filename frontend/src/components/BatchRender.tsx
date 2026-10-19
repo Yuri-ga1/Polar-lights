@@ -29,11 +29,18 @@ function PinnedPreview({
   spec: RenderSpec;
 }) {
   const result = useWorkspace((s) => s.runtime[chart.id]?.result);
+  const timestamp = result?.metadata.timestamp;
+  const matchingFrame =
+    result?.dataType === "map" &&
+    typeof timestamp === "string" &&
+    spec.timestamps.some(
+      (selected) => Date.parse(selected) === Date.parse(timestamp),
+    );
   const [document, setDocument] = useState(""),
     [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    if (result?.dataType !== "map") return;
+    if (result?.dataType !== "map" || !matchingFrame) return;
     void (async () => {
       try {
         const [script, land] = await Promise.all([
@@ -53,7 +60,7 @@ function PinnedPreview({
           spec,
           points,
           land,
-          title: `${result.metadata.timestamp}_${chart.productId}`,
+          title: `${new Date(timestamp!).toISOString().slice(0, 19).replaceAll(":", "-")}Z_${chart.productId}`,
           units: result.metadata.units,
         }).replaceAll("<", "\\u003c");
         setDocument(
@@ -66,9 +73,13 @@ function PinnedPreview({
       }
     })();
     return () => controller.abort();
-  }, [result, spec, chart.productId]);
+  }, [result, spec, chart.productId, matchingFrame, timestamp]);
   if (result?.dataType !== "map")
     return <p>Load a map to preview its appearance.</p>;
+  if (!matchingFrame)
+    return (
+      <p>Load one of the selected UTC frames to preview the batch renderer.</p>
+    );
   return error ? (
     <p role="alert">{error}</p>
   ) : (
@@ -183,7 +194,7 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
   const images = files.filter((f) => f.name.endsWith(".png"));
   return (
     <details className="batch-render">
-      <summary>Server map series</summary>
+      <summary>Full-world batch render</summary>
       <p className="hint">
         Uses the appearance settings above. Full world: −180…180° longitude,
         −90…90° latitude. All times are UTC; both range endpoints are included
@@ -278,16 +289,17 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
           }
         }}
       >
-        Preview appearance
+        Preview full-world frame
       </button>
       {error && <p role="alert">{error}</p>}
       {busy && (
-        <button onClick={() => cancelRender(chart.id)}>Cancel render</button>
+        <button onClick={() => cancelRender(chart.id)}>Stop waiting</button>
       )}
       {preview && (
         <>
           <small>
-            Preview uses the currently loaded frame with the server renderer.
+            Preview uses the loaded frame and the same full-world renderer as
+            the server. A later download may use newer source data.
           </small>
           <PinnedPreview chart={chart} spec={preview} />
         </>

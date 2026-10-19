@@ -251,7 +251,9 @@ export const ChartCard = memo(function ChartCard({
           {state === "loading" && (
             <div className="status-overlay" role="status">
               <span className="spinner" /> {runtime?.progress || "Loading"}
-              <button onClick={() => cancelRequest(chart.id)}>Cancel</button>
+              <button onClick={() => cancelRequest(chart.id)}>
+                Stop waiting
+              </button>
             </div>
           )}
           {state === "error" && (
