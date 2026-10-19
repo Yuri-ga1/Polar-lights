@@ -10,6 +10,8 @@ import type { StyleSpec } from "../store";
 import { bounds, drawOrder, mapColor } from "./colors";
 import { Colorbar } from "./Colorbar";
 import { useWorkspace } from "../store";
+import { pickedOriginalIndex } from "./picking";
+import { registerMapExport, waitForMapIdle } from "../exports";
 import "maplibre-gl/dist/maplibre-gl.css";
 // Vite emits MapLibre 6's bundled ESM worker for development and production.
 maplibregl.setWorkerUrl(workerUrl);
@@ -50,6 +52,18 @@ function GeographicMap({ result, style, chartId }: Props) {
   const indexes = useMemo(
     () => drawOrder(result.value, style.map.showNoData),
     [result.value, style.map.showNoData],
+  );
+  useEffect(
+    () =>
+      registerMapExport(chartId, async () => {
+        const map = mapRef.current;
+        if (!ready || !map)
+          throw new Error(
+            "Map is still loading. Wait for it to finish before export.",
+          );
+        await waitForMapIdle(map);
+      }),
+    [chartId, ready],
   );
   useEffect(() => {
     if (!host.current) return;
@@ -108,7 +122,11 @@ function GeographicMap({ result, style, chartId }: Props) {
         new maplibregl.NavigationControl({ showCompass: false }),
         "top-right",
       );
-      const deck = new MapboxOverlay({ interleaved: false, layers: [] });
+      const deck = new MapboxOverlay({
+        interleaved: false,
+        layers: [],
+        deviceProps: { webgl: { preserveDrawingBuffer: true } },
+      });
       overlay.current = deck;
       map.addControl(deck);
       map.on("load", () => setReady(true));
@@ -196,16 +214,18 @@ function GeographicMap({ result, style, chartId }: Props) {
             getFillColor: [result, style, ...range],
             getPosition: [result],
           },
-          onHover: (info: PickingInfo<number>) =>
+          onHover: (info: PickingInfo<number>) => {
+            const i = pickedOriginalIndex(info, indexes);
             setHover(
-              info.index >= 0
+              i !== null
                 ? {
-                    lat: result.lat[info.index],
-                    lon: result.lon[info.index],
-                    value: result.value[info.index],
+                    lat: result.lat[i],
+                    lon: result.lon[i],
+                    value: result.value[i],
                   }
                 : null,
-            ),
+            );
+          },
         }),
       ],
     });

@@ -62,10 +62,13 @@ export function bounds(
 export function drawOrder(
   values: readonly (number | null)[],
   showNoData: boolean,
-): number[] {
-  return values
-    .map((_, index) => index)
-    .filter((index) => showNoData || values[index] != null)
+): Uint32Array {
+  const indexes = new Uint32Array(values.length);
+  let count = 0;
+  for (let i = 0; i < values.length; i++)
+    if (showNoData || values[i] != null) indexes[count++] = i;
+  return indexes
+    .subarray(0, count)
     .sort((a, b) => (values[a] ?? -Infinity) - (values[b] ?? -Infinity));
 }
 export function colorScale(palette: StyleSpec["palette"]): [number, string][] {

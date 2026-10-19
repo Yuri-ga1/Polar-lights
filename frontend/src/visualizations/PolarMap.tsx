@@ -11,6 +11,8 @@ import type { StyleSpec } from "../store";
 import { bounds, drawOrder, mapColor } from "./colors";
 import { Colorbar } from "./Colorbar";
 import { useWorkspace } from "../store";
+import { pickedOriginalIndex } from "./picking";
+import { registerMapExport } from "../exports";
 export function projectPolar(
   lon: number,
   lat: number,
@@ -55,6 +57,15 @@ export default function PolarMap({
   );
   const range = useMemo(() => bounds(result.value, style), [result, style]);
   const initial = useRef(style.map);
+  useEffect(
+    () =>
+      registerMapExport(chartId, async () => {
+        if (!ready || !deck.current)
+          throw new Error("Polar map is still loading. Wait before export.");
+        deck.current.redraw("export");
+      }),
+    [chartId, ready],
+  );
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/land.geojson", { signal: controller.signal })
@@ -196,8 +207,8 @@ export default function PolarMap({
           opacity: style.map.opacity,
           getFillColor: (i) => mapColor(result.value[i], ...range, style),
           pickable: true,
-          onHover: (info: PickingInfo) =>
-            setHover(info.index >= 0 ? indices[info.index] : null),
+          onHover: (info: PickingInfo<number>) =>
+            setHover(pickedOriginalIndex(info, indices)),
           updateTriggers: {
             getPosition: [result, north, style.map.longitude],
             getFillColor: [result, style],

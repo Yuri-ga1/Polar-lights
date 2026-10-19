@@ -6,6 +6,7 @@ import { PathLayer, PolygonLayer } from "@deck.gl/layers";
 import type { AuroraResult } from "../api/contracts";
 import { apiClient } from "../api/client";
 import { useWorkspace, type StyleSpec } from "../store";
+import { registerMapExport, waitForMapIdle } from "../exports";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -70,6 +71,15 @@ export default function AuroraMapView({
   const [error, setError] = useState("");
   const [geomagneticLine, setGeomagneticLine] = useState<GeoPath[]>([]);
   const [currentZoom, setCurrentZoom] = useState(style.map.zoom);
+  useEffect(
+    () =>
+      registerMapExport(chartId, async () => {
+        if (!ready || !map.current)
+          throw new Error("Aurora map is still loading. Wait before export.");
+        await waitForMapIdle(map.current);
+      }),
+    [chartId, ready],
+  );
   const observations = useMemo(
     () => sectors(result, currentZoom, style.map.pointSize),
     [result, currentZoom, style.map.pointSize],
@@ -176,7 +186,11 @@ export default function AuroraMapView({
           },
         });
       });
-      const deck = new MapboxOverlay({ interleaved: false, layers: [] });
+      const deck = new MapboxOverlay({
+        interleaved: false,
+        layers: [],
+        deviceProps: { webgl: { preserveDrawingBuffer: true } },
+      });
       overlay.current = deck;
       instance.addControl(deck);
       instance.addControl(
@@ -287,7 +301,7 @@ export default function AuroraMapView({
     style.map.showAuroraTerminator,
   ]);
   return (
-    <div className="map-shell">
+    <div className="map-shell" data-ready={ready}>
       <div
         ref={host}
         className="map-canvas"

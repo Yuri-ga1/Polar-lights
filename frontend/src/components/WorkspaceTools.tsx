@@ -209,13 +209,13 @@ export function WorkspaceTools() {
           disabled={busy || !s.charts.length}
           onClick={() => void exportImage("png")}
         >
-          Workspace PNG
+          Current workspace PNG
         </button>
         <button
           disabled={busy || !s.charts.length}
           onClick={() => void exportImage("pdf")}
         >
-          Workspace PDF
+          Current workspace PDF
         </button>
         <input
           ref={file}
@@ -279,7 +279,7 @@ export function ChartExport({
         ),
       )}
       <button onClick={() => exportPreset(chart)}>JSON preset</button>
-      {!isPlot && <small>WebGL maps export as PNG or PDF.</small>}
+      {!isPlot && <small>Exports the current map view as PNG or PDF.</small>}
       {error && <p role="alert">{error}</p>}
     </details>
   );
