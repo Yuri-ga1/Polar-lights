@@ -18,18 +18,42 @@ BASE_URL = "https://solarmonitor.org/data/"
 
 
 class CoronalHoleDownloader:
-    """Sequential, resumable downloads; only 404/410 mean missing data.
+    """Reverse-sequential, resumable downloads; only 404/410 mean missing data.
 
     Use one instance at a time per output directory. By default the date range
     spans the earliest year advertised by the archive through today (UTC).
+    A random long cooldown is inserted after 5-15 requests and lasts 5-30
+    minutes by default.
     """
 
-    def __init__(self, out_dir="files/solarmonitor/data", delay_seconds=3.0):
+    def __init__(
+        self,
+        out_dir="files/solarmonitor/data",
+        delay_seconds=3.0,
+        long_pause_requests=(5, 15),
+        long_pause_seconds=(5 * 60, 30 * 60),
+    ):
         if delay_seconds < 3:
             raise ValueError("Use a delay of at least 3 seconds")
+        if (
+            len(long_pause_requests) != 2
+            or long_pause_requests[0] < 1
+            or long_pause_requests[0] > long_pause_requests[1]
+        ):
+            raise ValueError("long_pause_requests must be an increasing pair of positive integers")
+        if (
+            len(long_pause_seconds) != 2
+            or long_pause_seconds[0] <= 0
+            or long_pause_seconds[0] > long_pause_seconds[1]
+        ):
+            raise ValueError("long_pause_seconds must be an increasing pair of positive numbers")
         self.out_dir = Path(out_dir).resolve()
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.delay = delay_seconds
+        self.long_pause_requests = tuple(long_pause_requests)
+        self.long_pause_seconds = tuple(long_pause_seconds)
+        self._requests_since_long_pause = 0
+        self._next_long_pause_after = self._random_long_pause_request_count()
         self.session = requests.Session()
         self.session.headers["User-Agent"] = (
             "Polar-lights/1.0 (scientific archive download)"
@@ -62,13 +86,31 @@ class CoronalHoleDownloader:
         time.sleep(max(0.0, seconds))
         self._last_request = time.monotonic()
 
+    def _random_long_pause_request_count(self):
+        return random.randint(*self.long_pause_requests)
+
+    def _maybe_long_pause(self):
+        if self._requests_since_long_pause < self._next_long_pause_after:
+            return
+        seconds = random.uniform(*self.long_pause_seconds)
+        logger.info(
+            "Long server cooldown after %d requests: %.1f minutes",
+            self._requests_since_long_pause,
+            seconds / 60,
+        )
+        self._pause(seconds)
+        self._requests_since_long_pause = 0
+        self._next_long_pause_after = self._random_long_pause_request_count()
+
     def _get(self, url):
         """Retry transient failures; honor throttling before trying again."""
         backoff = 30.0
         for attempt in range(3):
+            self._maybe_long_pause()
             if self._last_request is not None:
                 wait = self.delay + random.uniform(0, self.delay / 2)
                 self._pause(max(0.0, wait - (time.monotonic() - self._last_request)))
+            self._requests_since_long_pause += 1
             try:
                 response = self.session.get(url, timeout=(15, 90))
             except requests.RequestException:
@@ -160,10 +202,13 @@ class CoronalHoleDownloader:
         if start > end:
             raise ValueError("start must be <= end")
         logger.info(
-            "SolarMonitor download: %s through %s -> %s", start, end, self.out_dir
+            "SolarMonitor download: %s through %s (latest first) -> %s",
+            start,
+            end,
+            self.out_dir,
         )
-        day = start
-        while day <= end:
+        day = end
+        while day >= start:
             relative = f"{day:%Y/%m/%d}/meta/arm_ch_location_{day:%Y%m%d}.txt"
             url = BASE_URL + relative
             target = self.out_dir / relative
@@ -202,7 +247,7 @@ class CoronalHoleDownloader:
             except Exception as exc:  # noqa: BLE001 -- keep the archive run alive on any per-request failure
                 stats["errors"] += 1
                 self._log_error(key, url, exc)
-            day += timedelta(days=1)
+            day -= timedelta(days=1)
 
         return {
             **stats,
