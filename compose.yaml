@@ -64,7 +64,7 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+      - "0.0.0.0:${WEB_PORT:-8080}:8080"
     cpus: ${FRONTEND_CPUS:-0.5}
     mem_limit: ${FRONTEND_MEMORY:-256m}
     stop_grace_period: 15s
