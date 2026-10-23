@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
+import { SimurgAccess } from "./components/SimurgAccess";
 import { queryClient } from "./api/client";
 import "./styles.css";
 import "./advanced.css";
@@ -16,6 +17,7 @@ async function start() {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <App />
+        <SimurgAccess />
       </QueryClientProvider>
     </StrictMode>,
   );

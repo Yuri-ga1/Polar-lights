@@ -74,7 +74,7 @@ class DataService:
                     signature,
                     catalog(
                         self.storage.read().columns,
-                        bool(self.settings.simurg_email),
+                        True,
                         self.adapters.nmdb_station_metadata()
                         if hasattr(self.adapters, "nmdb_station_metadata")
                         else {},

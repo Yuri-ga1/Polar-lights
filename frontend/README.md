@@ -93,3 +93,15 @@ The temporary server seeds only its own temporary directory, uses the existing s
 - The API's render jobs, projection choices, and Stage 2 layout tools are outside Stage 1. No backend source files were changed.
 
 Basemap: Natural Earth 1:110m land, public domain, from [natural-earth-vector](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson). Renderer integration follows [deck.gl MapboxOverlay](https://deck.gl/docs/api-reference/mapbox/mapbox-overlay); browser mocking follows [MSW browser integration](https://mswjs.io/docs/integrations/browser/).
+
+
+## SIMuRG access
+
+ROTI and Adjusted TEC check cached maps and shared acquisitions before requesting
+email. A modal opens only when remote account access is needed. It keeps chart
+settings intact and sends the normalized email in `X-Simurg-Email` to the existing
+retry route. A limit warning includes the encoded manual query-management link
+and **Check again**; it never deletes remote requests. Data and batch-render jobs
+both use this interaction. Email is kept only in page memory, outside saved
+workspaces and remembered job identities. Local **Stop waiting** cancels only that
+consumer. Cached data, active shared downloads and known remote IDs remain usable.

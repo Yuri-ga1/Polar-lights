@@ -692,3 +692,23 @@ footer pre {
     grid-template-columns: 255px minmax(400px, 1fr) 300px;
   }
 }
+
+.simurg-access {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: #0008;
+}
+.simurg-access form {
+  max-width: 34rem;
+  margin: 1rem;
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: var(--panel, white);
+  color: var(--text, #18202c);
+}
+.simurg-access button {
+  margin: 1rem 0.5rem 0 0;
+}

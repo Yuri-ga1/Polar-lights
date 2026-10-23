@@ -15,7 +15,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from contextlib import closing, nullcontext
+from contextlib import closing
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -38,6 +38,7 @@ from .models import DataRequest, MapRenderSpec
 
 logger = get_logger(__name__)
 _execution_store = ContextVar("execution_store", default=None)
+_acquisition_key = ContextVar("acquisition_key", default=None)
 
 
 class ExternalPending(BaseException):
@@ -68,6 +69,14 @@ class JobStore:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS job_config (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL)"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS job_secrets (id TEXT PRIMARY KEY, email TEXT NOT NULL)"
+            )
+            db.execute("""CREATE TABLE IF NOT EXISTS simurg_acquisitions (
+                key TEXT PRIMARY KEY, product TEXT NOT NULL, begin TEXT NOT NULL,
+                end TEXT NOT NULL, email TEXT NOT NULL, external TEXT,
+                created REAL NOT NULL, completed INTEGER NOT NULL DEFAULT 0,
+                parameters TEXT)""")
             # Additive migration serialized against other API/worker startups.
             db.execute("BEGIN IMMEDIATE")
             columns = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
@@ -83,7 +92,19 @@ class JobStore:
             }.items():
                 if name not in columns:
                     db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
-            db.execute("PRAGMA user_version=1")
+            acquisition_columns = {
+                row[1] for row in db.execute("PRAGMA table_info(simurg_acquisitions)")
+            }
+            for name, definition in {
+                "statuses": "TEXT",
+                "checked": "REAL",
+                "parameters": "TEXT",
+            }.items():
+                if name not in acquisition_columns:
+                    db.execute(
+                        f"ALTER TABLE simurg_acquisitions ADD COLUMN {name} {definition}"
+                    )
+            db.execute("PRAGMA user_version=2")
             db.commit()
 
     def connect(self):
@@ -91,7 +112,11 @@ class JobStore:
         db.row_factory = sqlite3.Row
         return db
 
-    def submit(self, kind, payload):
+    def submit(self, kind, payload, email=None):
+        if email:
+            from app.simurg.simurg_client import normalize_email
+
+            email = normalize_email(email)
         snapshot = effective_snapshot()
         if not hasattr(self.settings, "config_manager"):
             for key in snapshot["backend"]:
@@ -114,7 +139,9 @@ class JobStore:
                 "SELECT id FROM jobs WHERE hash=? AND status IN ('queued','downloading','processing','waiting_external','retrying')",
                 (digest,),
             ).fetchone()
-            if existing:
+            if existing and not payload.get("productId", "").startswith(
+                ("roti-", "tec-adjusted-")
+            ):
                 db.commit()
                 return existing["id"]
             count = db.execute(
@@ -134,6 +161,8 @@ class JobStore:
                 (job_id, current_request_id.get()),
             )
             db.execute("INSERT INTO job_config VALUES (?,?)", (job_id, config_json))
+            if email:
+                db.execute("INSERT INTO job_secrets VALUES (?,?)", (job_id, email))
             db.commit()
             logger.info(
                 "Job created",
@@ -251,7 +280,7 @@ class JobStore:
             },
         )
 
-    def retry(self, job_id, kind=None):
+    def retry(self, job_id, kind=None, email=None):
         row = self.get(job_id, kind)
         if row["status"] not in ("failed", "cancelled"):
             raise BackendError(
@@ -266,7 +295,44 @@ class JobStore:
                 "Resolve ambiguous remote submission with the operator first",
                 409,
             )
-        return self.submit(row["kind"], json.loads(row["payload"]))
+        code = json.loads(row["error"] or "{}").get("code")
+        if code not in {"SIMURG_EMAIL_REQUIRED", "SIMURG_LIMIT_REACHED"}:
+            with closing(self.connect()) as db:
+                secret = db.execute(
+                    "SELECT email FROM job_secrets WHERE id=?", (job_id,)
+                ).fetchone()
+            return self.submit(
+                row["kind"],
+                json.loads(row["payload"]),
+                email or (secret[0] if secret else None),
+            )
+        if email:
+            from app.simurg.simurg_client import normalize_email
+
+            email = normalize_email(email)
+        with closing(self.connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            if (
+                db.execute(
+                    "SELECT count(*) FROM jobs WHERE status NOT IN ('completed','failed','cancelled')"
+                ).fetchone()[0]
+                >= self.settings.max_jobs
+            ):
+                raise BackendError("QUEUE_FULL", "Job queue is full; retry later", 429)
+            if db.execute("SELECT status FROM jobs WHERE id=?", (job_id,)).fetchone()[
+                0
+            ] not in ("failed", "cancelled"):
+                raise BackendError("JOB_NOT_TERMINAL", "Job has already resumed", 409)
+            if email:
+                db.execute(
+                    "INSERT OR REPLACE INTO job_secrets VALUES (?,?)", (job_id, email)
+                )
+            db.execute(
+                "UPDATE jobs SET status='queued',stage='queued',error=NULL,failures=0,next_run=0,finished=NULL,updated=? WHERE id=?",
+                (time.time(), job_id),
+            )
+            db.commit()
+        return job_id
 
     def cancel(self, job_id, kind=None):
         self.get(job_id, kind)
@@ -359,12 +425,7 @@ def execute_job(settings, job_id, logging_config=None):
         with pin(snapshot), FileLock(str(store.root / f"{job_id}.lock")):
             if store.get(job_id)["status"] in TERMINAL:
                 return
-            payload = json.loads(row["payload"])
-            heavy = row["kind"] == "render" or payload.get("productId", "").endswith(
-                ("map", "keogram")
-            )
-            with FileLock(str(store.root / "heavy.lock")) if heavy else nullcontext():
-                _run_job(store, row, settings, job_id)
+            _run_job(store, row, settings, job_id)
     except ExternalPending:
         pass
     except BackendError as exc:
@@ -532,7 +593,12 @@ class JobRunner:
                             (time.time(), job_id),
                         )
                     timeout = time.monotonic() - began > limit
-                    if row["status"] == "cancelled" or timeout:
+                    shared = (
+                        json.loads(row["payload"])
+                        .get("productId", "")
+                        .startswith(("roti-", "tec-adjusted-"))
+                    )
+                    if (row["status"] == "cancelled" and not shared) or timeout:
                         self._terminate(process)
                         if timeout:
                             self.store.update(

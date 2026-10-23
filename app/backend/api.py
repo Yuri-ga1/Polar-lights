@@ -87,7 +87,7 @@ def create_app(settings=None, service=None, *, start_jobs=False):
             CORSMiddleware,
             allow_origins=list(settings.cors_origins),
             allow_methods=["GET", "POST", "DELETE"],
-            allow_headers=["Content-Type", "X-API-Key", "Prefer", "X-Request-ID"],
+            allow_headers=["Content-Type", "X-API-Key", "Prefer", "X-Request-ID", "X-Simurg-Email"],
             expose_headers=["X-Request-ID", "Location"],
         )
 
@@ -260,12 +260,12 @@ def create_app(settings=None, service=None, *, start_jobs=False):
                 "restartRequired": config_manager.restart_required if config_manager else []}
 
     @app.post("/api/v1/jobs/{jobId}/retry", status_code=202)
-    def retry_job(jobId: str):
-        return jobs.public(jobs.retry(jobId, "data"))
+    def retry_job(jobId: str, x_simurg_email: str | None = Header(None)):
+        return jobs.public(jobs.retry(jobId, "data", x_simurg_email))
 
     @app.post("/api/v1/map-render-jobs/{jobId}/retry", status_code=202)
-    def retry_render(jobId: str):
-        return jobs.public(jobs.retry(jobId, "render"))
+    def retry_render(jobId: str, x_simurg_email: str | None = Header(None)):
+        return jobs.public(jobs.retry(jobId, "render", x_simurg_email))
 
     @app.post(
         "/api/v1/aurora-map/geomagnetic-lines",
@@ -311,7 +311,7 @@ def create_app(settings=None, service=None, *, start_jobs=False):
             202: {"model": JobAccepted},
         },
     )
-    def data(body: DataRequest, prefer: str | None = Header(None)):
+    def data(body: DataRequest, prefer: str | None = Header(None), x_simurg_email: str | None = Header(None)):
         service.validate(body)
         cached = service.cached(body)
         logger.info(
@@ -321,7 +321,7 @@ def create_app(settings=None, service=None, *, start_jobs=False):
             "hit" if cached else "miss",
         )
         if not cached or prefer == "respond-async":
-            job_id = jobs.submit("data", body.model_dump(mode="json"))
+            job_id = jobs.submit("data", body.model_dump(mode="json"), x_simurg_email)
             result = JobAccepted(
                 jobId=job_id,
                 statusUrl=f"/api/v1/jobs/{job_id}",
@@ -385,13 +385,13 @@ def create_app(settings=None, service=None, *, start_jobs=False):
         response_model=JobStatus,
         response_model_exclude_none=True,
     )
-    def submit_render(spec: MapRenderSpec) -> dict:
+    def submit_render(spec: MapRenderSpec, x_simurg_email: str | None = Header(None)) -> dict:
         manifest = asset_manifest(settings.render_assets)
         if spec.assetVersion != manifest["assetVersion"]:
             raise BackendError(
                 "INVALID_REQUEST", "Render asset version does not match", 409
             )
-        job_id = jobs.submit("render", spec.model_dump(mode="json"))
+        job_id = jobs.submit("render", spec.model_dump(mode="json"), x_simurg_email)
         return jobs.public(job_id, "render")
 
     @app.get(

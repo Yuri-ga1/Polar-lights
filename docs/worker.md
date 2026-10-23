@@ -28,18 +28,23 @@ terminal: late results cannot change a cancelled job into a completed one.
 Heartbeat means that the coordinator still observes the execution process; it is
 not evidence of scientific progress. `attempts` counts execution sessions,
 including remote polling sessions; `failures` counts failed/interrupted attempts.
+Migration version 2 creates private `job_secrets` and shared
+`simurg_acquisitions` tables; no separate worker queue is introduced.
 
 Public status adds `stage`, `attempts`, `heartbeatAt`, `startedAt`, `finishedAt`,
 `nextRunAt`; new statuses are `waiting_external` and `retrying`. No percentage is
 invented. These are additive fields, but clients with exhaustive status enums need
 updating. Both job routes support `POST /{jobId}/retry` (202): failed/cancelled jobs
 create a new job with current settings, subject to queue admission/deduplication.
-Old results and errors remain available. Ambiguous remote submissions require
+Old results and errors remain available. SIMuRG email/limit failures are the
+exception: their retry resumes the original job and configuration snapshot, subject
+to queue admission, preserving its chart identity and completed checkpoints.
+Ambiguous remote submissions require
 operator reconciliation before retry.
 
 `max_jobs` counts all nonterminal jobs, including delayed retries and remote waits.
 `job_workers` bounds subprocesses; only one map/keogram/render/aurora operation is
-scheduled at a time, with an additional heavy-resource file lock. This conservative
+scheduled at a time by the elected coordinator. This conservative
 limit prevents simultaneous backend Chromium/HDF5-heavy jobs. Source locks and
 atomic published map files protect shared caches. Separate notebook processes are
 not governed by this queue; avoid concurrent notebook writes to the same raw files.
@@ -50,7 +55,7 @@ New-operation limits in `backend.toml`:
 |---|---:|---|
 | `job_timeout` | 1800 s | Time-series execution and existing source-lock timeout |
 | `long_job_timeout` | 43200 s | Map, keogram, aurora and rendering execution session |
-| `external_wait_timeout` | 259200 s | SIMuRG generation deadline measured from job creation |
+| `external_wait_timeout` | 259200 s | SIMuRG generation deadline measured from shared acquisition creation |
 | `job_max_attempts` | 3 | Maximum failed/interrupted attempts, including the initial failure |
 
 Transient source failures (429/502/503/504), unexpected exits and interrupted
@@ -176,3 +181,53 @@ passed. Full `ruff check app tests` still reports 373 existing diagnostics; comp
 against HEAD found 377 baseline diagnostics and no newly introduced diagnostic.
 The repository contained no tracked test directories before this change, so this
 is the added regression suite, not a claim that a missing historical suite ran.
+
+
+## Shared SIMuRG acquisition
+
+Each user has a separate SIMuRG data/render job; the acquisition identity excludes
+email, chart settings, sampling stride and individual timestamps within a daily
+file. The existing SQLite database records product, request window, compatible
+acquisition options, private account email, query IDs, submission intent and the
+last status snapshot. Backend requests acquire only missing UTC days, ending at
+the following midnight so the final 30-second sample is included; notebook
+three-day request windows remain unchanged. Requests exceeding three calendar days
+are rejected rather than automatically split.
+
+A short SQLite transaction selects an existing covering operation or reserves a
+missing day. A nonblocking per-acquisition file lock prevents concurrent execution;
+other consumers defer through the existing `waiting_external` mechanism with stage
+`waiting_download`. Compatible multi-day remote queries extend the persisted
+coverage, so other days can reuse their query IDs without supplying an email.
+Status snapshots are shared for 60 seconds to bound repeated polling. Waiting
+releases the worker process and all acquisition/account locks. An interrupted
+reservation is reusable; OS locks are released on process exit. A `submitting`
+marker with no known query IDs is reconciled remotely before any new submission;
+unresolvable ambiguity requires operator inspection.
+
+A separate SQLite lock per normalized email serializes discovery, request counting
+and creation across processes on the same local filesystem. It is released before
+waiting or downloading. All existing remote requests count towards 10. Coordination
+cannot cover independent clients or installations with different data roots; the
+remote service remains responsible for enforcing its account limit against those
+clients. A separate durable account intent marker blocks further creation after
+a crash or delayed API visibility until the previous submission can be reconciled.
+No code deletes remote queries or remote files.
+
+Raw result URLs additionally have a narrow per-file SQLite lock. Downloads retain
+the existing bounded retries, Range/If-Range, `.part` validation and atomic publish.
+A raw file is reusable by its actual UTC timestamp coverage, including after a
+crash before ingest. Corrupt local index files are skipped so acquisition can
+repair coverage. Successfully downloaded raw files survive later failures.
+
+Cancelling a SIMuRG consumer does not terminate an in-flight shared transfer. It
+may finish or yield while the consumer remains cancelled; another consumer can
+continue from the saved remote ID. With no consumers, remote generation is left
+intact and becomes recoverable when another request arrives. Shared generation
+is driven by dependent jobs, not by a new autonomous download daemon. Normal
+shutdown/timeouts still stop local processes; saved IDs and partial files remain.
+
+Email is private storage, not a dataset key. Treat the jobs directory and backups
+as private application state. Completed acquisitions clear their account email;
+normal terminal-job retention also removes corresponding `job_secrets` rows.
+Unfinished acquisitions retain the account needed to resume them.

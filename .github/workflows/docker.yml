@@ -15,9 +15,11 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose build
+      - name: Download test runner wheels
+        run: python3 -m pip download --dest /tmp/polar-test-wheels 'pytest>=8,<10'
       - name: Offline regressions and scientific/browser smoke (non-root)
         run: |
-          docker run --rm --init --network none --shm-size=1g -e RUN_RENDER_BROWSER_TESTS=1 -v "$PWD/tests:/tests:ro" polar-lights-backend:local python -m unittest discover -s /tests -v
+          docker run --rm --init --network none --shm-size=1g -e RUN_RENDER_BROWSER_TESTS=1 -v "$PWD/tests:/tests:ro" -v /tmp/polar-test-wheels:/test-wheels:ro polar-lights-backend:local sh -c 'python -m pip install --no-index --find-links /test-wheels --target /tmp/test-deps pytest && PYTHONPATH=/tmp/test-deps:/app python -m pytest -q -p no:cacheprovider /tests'
           docker run --rm --init --network none --shm-size=1g polar-lights-backend:local python -m deploy.smoke
       - name: Isolated Compose lifecycle, proxy and persistence smoke
         run: python3 deploy/integration.py

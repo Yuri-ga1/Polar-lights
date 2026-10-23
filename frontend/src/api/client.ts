@@ -1,3 +1,4 @@
+import { requestSimurgAccess } from "../components/SimurgAccess";
 import { logger, authHeaders } from "../logging";
 import { jobProgress } from "../jobFeedback";
 import { QueryClient } from "@tanstack/react-query";
@@ -176,7 +177,10 @@ export const apiClient = {
         body: JSON.stringify({ productId, parameters }),
         signal,
       });
-      if (response.status !== 202) return decodeResult(response);
+      if (response.status !== 202) {
+        progress("Cached");
+        return decodeResult(response);
+      }
       job = acceptedSchema.parse(await response.json());
       rememberedJob(key, JSON.stringify(job));
     }
@@ -188,6 +192,16 @@ export const apiClient = {
         signal.throwIfAborted();
         const statusResponse = await pollJob(job.statusUrl, signal);
         const status = jobSchema.parse(await statusResponse.json());
+        if (
+          status.status === "failed" &&
+          ["SIMURG_EMAIL_REQUIRED", "SIMURG_LIMIT_REACHED"].includes(
+            status.error?.code ?? "",
+          )
+        ) {
+          progress(jobProgress(status.error!.code.toLowerCase()));
+          await resumeSimurgJob(job.statusUrl, status.error!.code, signal);
+          continue;
+        }
         progress(
           `${jobProgress(
             [
@@ -196,7 +210,7 @@ export const apiClient = {
               "queued",
               "cancelled",
               "failed",
-            ].includes(status.status)
+            ].includes(status.status) && status.stage !== "waiting_download"
               ? status.status
               : (status.stage ?? status.status),
             status.attempts,
@@ -245,3 +259,20 @@ export const apiClient = {
     );
   },
 };
+
+export async function resumeSimurgJob(
+  path: string,
+  code: string,
+  signal: AbortSignal,
+) {
+  const email = await requestSimurgAccess(code, signal);
+  return jobSchema.parse(
+    await (
+      await fetchApi(path + "/retry", {
+        method: "POST",
+        headers: { "X-Simurg-Email": email },
+        signal,
+      })
+    ).json(),
+  );
+}

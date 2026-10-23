@@ -36,7 +36,12 @@ def cleanup(root, days, apply=False):
                     directory = root / job_id
                     if directory.exists():
                         shutil.rmtree(directory)
-                    for table in ("job_context", "job_config", "jobs"):
+                    for table in ("job_context", "job_config", "job_secrets", "jobs"):
+                        if not db.execute(
+                            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                            (table,),
+                        ).fetchone():
+                            continue
                         db.execute(f"DELETE FROM {table} WHERE id=?", (job_id,))
                 db.commit()
             else:

@@ -7,12 +7,14 @@ import shutil
 import tempfile
 import threading
 import time
+from contextlib import closing
+from datetime import timedelta
 from pathlib import Path
 
 import h5py
 import numpy as np
 import pandas as pd
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from app.configuration import current
 from app.storage.atomic import publish
@@ -58,13 +60,12 @@ class MapService:
                         ).hexdigest()[:24]
                         for key in handle["data"]:
                             entries[utc(key)] = (path, key, version)
-                except (OSError, ValueError) as exc:
-                    raise BackendError(
-                        "MAP_FILE_CORRUPTED",
-                        "Invalid local map file",
-                        500,
-                        file=path.name,
-                    ) from exc
+                except (OSError, ValueError):
+                    logger.warning(
+                        "Ignoring invalid local map file",
+                        extra={"event": "cache_invalid"},
+                    )
+                    continue
             self._indexes[product] = (signature, entries)
             return entries
 
@@ -72,6 +73,17 @@ class MapService:
         return utc(timestamp) in self.index(product)
 
     def acquire(self, product, timestamp):
+        if product != "gim-map":
+            if not self.has(product, timestamp):
+                try:
+                    self._acquire_simurg(product, timestamp)
+                except BackendError:
+                    raise
+                except Exception as exc:
+                    raise BackendError(
+                        "DOWNLOAD_FAILED", "Map acquisition failed", 502
+                    ) from exc
+            return
         directory = self.directory(product)
         # SIMuRG remote query discovery is account-scoped. Serialize the two
         # SIMuRG products as well as overlapping multi-day requests.
@@ -102,21 +114,119 @@ class MapService:
             )
 
     def _acquire_simurg(self, product, timestamp):
-        from app.simurg.simurg_client import SimurgClient
+        from app.simurg.simurg_client import SimurgClient, normalize_email
         from app.simurg.simurg_downloader import AdjustedTecDownloader, RotiDownloader
 
-        if not self.settings.simurg_email:
-            raise BackendError(
-                "DATA_NOT_AVAILABLE", "SIMURG_EMAIL is required for remote maps", 503
-            )
+        from .jobs import ExternalPending, JobStore, _acquisition_key, _execution_store
+        from .logging import job_id as current_job_id
+
+        store = _execution_store.get() or JobStore(self.settings)
+        job_id = current_job_id.get()
         raw = self.settings.root / "raw" / "simurg" / MAPS[product][0]
+        raw.mkdir(parents=True, exist_ok=True)
         downloader_type = (
             RotiDownloader if product == "roti-map" else AdjustedTecDownloader
         )
-        downloader = downloader_type(
-            SimurgClient(self.settings.simurg_email, polling_interval=current()["downloads"]["simurg_map_polling_interval"]), str(raw)
-        )
-        path = Path(downloader.download(str(utc(timestamp).date())))
+        # Inspect raw files by their actual UTC timestamps before asking for email.
+        for candidate in sorted(raw.glob("*.h5")):
+            if downloader_type.contains_timestamp(candidate, timestamp):
+                self._publish_file(candidate, self.directory(product) / candidate.name)
+                return
+        target = utc(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+        day = str(utc(timestamp).date())
+        # Include the final 30-second sample; the following midnight is
+        # a harmless shared boundary, not another daily acquisition.
+        next_day = str(utc(timestamp).date() + timedelta(days=1))
+        begin, end = f"{day} 00:00", f"{next_day} 00:00"
+        acquisition_parameters = json.dumps(downloader_type._args, sort_keys=True)
+        key = hashlib.sha256(
+            json.dumps(
+                [product, begin, end, downloader_type._args], sort_keys=True
+            ).encode()
+        ).hexdigest()
+        with closing(store.connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            shared = db.execute(
+                "SELECT * FROM simurg_acquisitions WHERE product=? AND parameters=? AND datetime(begin)<=datetime(?) AND datetime(end)>=datetime(?) AND completed=0 ORDER BY created LIMIT 1",
+                (product, acquisition_parameters, target, target),
+            ).fetchone()
+            if shared:
+                key, email = shared["key"], shared["email"]
+                begin, end = shared["begin"], shared["end"]
+            else:
+                secret = db.execute(
+                    "SELECT email FROM job_secrets WHERE id=?", (job_id,)
+                ).fetchone()
+                email = secret[0] if secret else self.settings.simurg_email
+                if not email:
+                    db.rollback()
+                    raise BackendError(
+                        "SIMURG_EMAIL_REQUIRED",
+                        "Enter your email to search or create SIMuRG requests",
+                        409,
+                    )
+                email = normalize_email(email)
+                db.execute(
+                    "INSERT OR REPLACE INTO simurg_acquisitions (key,product,begin,end,email,created,parameters) VALUES (?,?,?,?,?,?,?)",
+                    (
+                        key,
+                        product,
+                        begin,
+                        end,
+                        email,
+                        time.time(),
+                        acquisition_parameters,
+                    ),
+                )
+            db.commit()
+        lock = FileLock(str(store.root / f"acquisition-{key}.lock"), timeout=0)
+        try:
+            with lock:
+                if self.has(product, timestamp):
+                    return
+                client = SimurgClient(
+                    email,
+                    polling_interval=current()["downloads"][
+                        "simurg_map_polling_interval"
+                    ],
+                )
+                client.lock_root = store.root / "simurg-locks"
+                downloader = downloader_type(client, str(raw))
+                token = _acquisition_key.set(key)
+                try:
+                    path = Path(
+                        downloader.download(
+                            day, window=(begin, end), target_timestamp=timestamp
+                        )
+                    )
+                finally:
+                    _acquisition_key.reset(token)
+        except ExternalPending:
+            if shared and job_id:
+                with closing(store.connect()) as db:
+                    db.execute(
+                        "UPDATE jobs SET stage='waiting_download' WHERE id=? AND status='waiting_external'",
+                        (job_id,),
+                    )
+            raise
+        except BackendError as exc:
+            if exc.code == "SIMURG_LIMIT_REACHED":
+                with closing(store.connect()) as db:
+                    db.execute(
+                        "DELETE FROM simurg_acquisitions WHERE key=? AND external IS NULL",
+                        (key,),
+                    )
+            raise
+        except Timeout:
+            if job_id:
+                store.defer(job_id, external={"shared": key})
+                with closing(store.connect()) as db:
+                    db.execute(
+                        "UPDATE jobs SET stage='waiting_download' WHERE id=? AND status='waiting_external'",
+                        (job_id,),
+                    )
+                raise ExternalPending()
+            raise BackendError("DOWNLOAD_PENDING", "Waiting for existing download", 503)
         report_stage("processing")
         with h5py.File(path, "r") as handle:
             if "data" not in handle:
@@ -125,6 +235,11 @@ class MapService:
                 )
         destination = self.directory(product) / path.name
         self._publish_file(path, destination)
+        with closing(store.connect()) as db:
+            db.execute(
+                "UPDATE simurg_acquisitions SET completed=1,email='' WHERE key=?",
+                (key,),
+            )
 
     @staticmethod
     def _publish_file(source, destination):
@@ -192,7 +307,10 @@ class MapService:
                 nearestTimestamps=[iso(t) for t in sorted(nearest)],
             )
         path, key, version = entries[timestamp]
-        stride = parameters.samplingStride or {"full": 1, "medium": 4, "low": 16}[parameters.resolution]
+        stride = (
+            parameters.samplingStride
+            or {"full": 1, "medium": 4, "low": 16}[parameters.resolution]
+        )
         begin = time.perf_counter()
         try:
             report_stage("processing")
@@ -327,6 +445,13 @@ class MapService:
             try:
                 self.acquire(product, next(t for t in missing if t.normalize() == day))
             except BackendError as exc:
+                if exc.code in {
+                    "SIMURG_EMAIL_REQUIRED",
+                    "SIMURG_LIMIT_REACHED",
+                    "REMOTE_SUBMISSION_UNCERTAIN",
+                    "SIMURG_UNAVAILABLE",
+                }:
+                    raise
                 errors.append(exc.body())
         entries = self.index(product)
         available = [t for t in times if t in entries]

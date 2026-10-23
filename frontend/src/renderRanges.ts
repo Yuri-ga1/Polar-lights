@@ -4,6 +4,7 @@ export const renderSteps = [30, 60, 120, 300, 600, 900, 1800, 3600] as const;
 export function rangeTimestamps(
   ranges: RenderRange[],
   seconds: number,
+  restrictCalendarDays = true,
 ): string[] {
   if (!renderSteps.some((step) => step === seconds))
     throw Error("Choose a time step.");
@@ -40,8 +41,9 @@ export function rangeTimestamps(
   const ordered = [...times].sort((a, b) => a - b);
   if (!ordered.length) throw Error("Add at least one range.");
   if (
+    restrictCalendarDays &&
     Math.floor(ordered.at(-1)! / 86400000) - Math.floor(ordered[0] / 86400000) >
-    2
+      2
   )
     throw Error("Ranges must fit within three consecutive UTC calendar dates.");
   return ordered.map((t) => new Date(t).toISOString());

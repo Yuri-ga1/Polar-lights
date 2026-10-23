@@ -341,6 +341,6 @@ class MapRenderSpec(StrictModel):
         if self.maximum <= self.minimum:
             raise ValueError("maximum must exceed minimum")
         dates = [value.date() for value in self.timestamps]
-        if (max(dates) - min(dates)).days > 2:
+        if self.productId != "gim-map" and (max(dates) - min(dates)).days > 2:
             raise ValueError("Map render range cannot exceed three calendar dates")
         return self

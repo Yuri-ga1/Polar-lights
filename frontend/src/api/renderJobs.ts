@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { colorbarSchema, styleSchema } from "../workspace/schema";
-import { ApiError, fetchApi, pause, rememberedJob, pollJob } from "./client";
+import {
+  ApiError,
+  fetchApi,
+  pause,
+  rememberedJob,
+  pollJob,
+  resumeSimurgJob,
+} from "./client";
 import { jobSchema } from "./contracts";
 import { isFutureUtcDate } from "../dateLimits";
 export const assetSchema = z.object({
@@ -70,6 +77,7 @@ export const renderSpecSchema = z
   .strict()
   .refine((s) => s.maximum > s.minimum, "Maximum must exceed minimum")
   .refine((s) => {
+    if (s.productId === "gim-map") return true;
     const days = s.timestamps.map((value) =>
       Date.parse(`${value.slice(0, 10)}T00:00:00Z`),
     );
@@ -135,7 +143,29 @@ export const renderApi = {
       let state = initial;
       for (;;) {
         signal.throwIfAborted();
-        onStatus(state);
+        const needsAccess =
+          state.status === "failed" &&
+          ["SIMURG_EMAIL_REQUIRED", "SIMURG_LIMIT_REACHED"].includes(
+            state.error?.code ?? "",
+          );
+        onStatus(
+          needsAccess
+            ? {
+                ...state,
+                status: "waiting_external",
+                stage: state.error!.code.toLowerCase(),
+              }
+            : state,
+        );
+        if (
+          state.status === "failed" &&
+          ["SIMURG_EMAIL_REQUIRED", "SIMURG_LIMIT_REACHED"].includes(
+            state.error?.code ?? "",
+          )
+        ) {
+          state = await resumeSimurgJob(path, state.error!.code, signal);
+          continue;
+        }
         if (["failed", "cancelled"].includes(state.status))
           rememberedJob(key, null);
         if (state.status === "completed") {

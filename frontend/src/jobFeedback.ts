@@ -1,5 +1,9 @@
 export function jobProgress(stage: string, attempts = 0): string {
   const labels: Record<string, string> = {
+    simurg_email_required: "SIMuRG email required",
+    simurg_limit_reached: "SIMuRG limit reached",
+    cached: "Cached",
+    waiting_download: "Waiting for existing download",
     queued: "Queued on the server",
     downloading: "Downloading source data",
     waiting_external: "Waiting for external SIMuRG generation",

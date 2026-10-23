@@ -143,7 +143,7 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
   let timestamps: string[] = [],
     rangeError = "";
   try {
-    timestamps = rangeTimestamps(ranges, step);
+    timestamps = rangeTimestamps(ranges, step, chart.productId !== "gim-map");
   } catch (e) {
     rangeError = (e as Error).message;
   }
@@ -213,8 +213,8 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
       <p className="hint">
         Uses the appearance settings above. Full world: −180…180° longitude,
         −90…90° latitude. All times are UTC; both range endpoints are included
-        when aligned with the step. Maximum 48 frames within three calendar
-        dates.
+        when aligned with the step. Maximum 48 frames
+        {chart.productId === "gim-map" ? "." : " within three calendar dates."}
       </p>
       {ranges.map((range, i) => (
         <fieldset key={i} className="render-range">
