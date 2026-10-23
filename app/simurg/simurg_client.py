@@ -267,9 +267,22 @@ class SimurgClient:
         ):
             return False
 
-        if cls._norm_dt(server_query.get("begin")) != cls._norm_dt(payload_args.get("begin")):
+        try:
+            dates = (
+                datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+                for value in (
+                    server_query.get("begin"),
+                    server_query.get("end"),
+                    payload_args.get("begin"),
+                    payload_args.get("end"),
+                )
+            )
+            begin, end, wanted_begin, wanted_end = (
+                value.replace(tzinfo=value.tzinfo or timezone.utc) for value in dates
+            )
+        except ValueError:
             return False
-        if cls._norm_dt(server_query.get("end")) != cls._norm_dt(payload_args.get("end")):
+        if not (begin <= wanted_begin <= wanted_end <= end):
             return False
         if any(
             cls.status_has_keyword(server_query.get("status"), word)
@@ -298,6 +311,15 @@ class SimurgClient:
                     return False
 
         for key, value in payload_args.items():
+            # check responses can omit rendering flags; their absence does not
+            # make an otherwise compatible scientific dataset incompatible.
+            if (
+                key == "flags"
+                and server_query.get(key) is None
+                and isinstance(popt, dict)
+                and popt.get("format") == "hdf5"
+            ):
+                continue
             if (
                 key not in {"email", "begin", "end", "coordinates", "options"}
                 and server_query.get(key) != value
