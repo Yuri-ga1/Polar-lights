@@ -14,3 +14,7 @@ max_jobs = 32
 long_job_timeout = 43200
 job_max_attempts = 3
 external_wait_timeout = 259200
+
+# Terminal jobs only; 0 disables scheduled cleanup. Scientific caches persist.
+job_retention_days = 7
+cleanup_interval_seconds = 86400

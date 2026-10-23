@@ -17,6 +17,8 @@ class Settings:
     max_days: int = field(default_factory=lambda: current()["backend"]["max_days"])
     job_timeout: int = field(default_factory=lambda: current()["backend"]["job_timeout"])
     job_workers: int = field(default_factory=lambda: current()["backend"]["job_workers"])
+    job_retention_days: int = field(default_factory=lambda: current()["backend"]["job_retention_days"])
+    cleanup_interval_seconds: int = field(default_factory=lambda: current()["backend"]["cleanup_interval_seconds"])
     max_jobs: int = field(default_factory=lambda: current()["backend"]["max_jobs"])
     simurg_email: str = field(default_factory=lambda: os.getenv("SIMURG_EMAIL", ""))
     api_key: str = field(default_factory=lambda: os.getenv("POLAR_API_KEY", ""))

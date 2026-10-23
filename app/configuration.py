@@ -32,6 +32,8 @@ FIELDS = {
         "external_wait_timeout": (259200, int, 60, 2592000, "new", None),
         "job_timeout": (1800, int, 1, 86400, "new", None),
         "job_workers": (2, int, 1, 64, "dynamic", None),
+        "job_retention_days": (7, int, 1, 3650, "dynamic", "JOB_RETENTION_DAYS"),
+        "cleanup_interval_seconds": (86400, int, 0, 604800, "dynamic", "JOB_CLEANUP_INTERVAL_SECONDS"),
         "max_jobs": (32, int, 1, 100_000, "dynamic", None),
     },
     "logging": {

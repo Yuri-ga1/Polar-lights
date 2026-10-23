@@ -581,15 +581,36 @@ class JobRunner:
         self.thread = None
         self.active = {}
         self.last_status_write = 0
+        self.retention_thread = None
 
     def start(self):
         self.thread = threading.Thread(target=self._run, name="polar-jobs", daemon=True)
         self.thread.start()
+        self.retention_thread = threading.Thread(target=self._retention, name="polar-retention", daemon=True)
+        self.retention_thread.start()
 
     def close(self):
         self.stop_event.set()
         if self.thread:
             self.thread.join(timeout=10 + 6 * max(1, len(self.active)))
+        if self.retention_thread:
+            self.retention_thread.join(timeout=5)
+
+    def _retention(self):
+        from deploy.retention import cleanup
+
+        while not self.stop_event.is_set():
+            interval = self.store.settings.cleanup_interval_seconds
+            if interval:
+                try:
+                    cleanup(self.store.settings.root, self.store.settings.job_retention_days, apply=True, interval=interval)
+                except Timeout:
+                    pass  # Another process owns the cleanup lease.
+                except Exception:
+                    logger.exception("Scheduled retention failed", extra={"event": "retention_failed"})
+            # Recheck configuration regularly; the persisted stamp enforces the
+            # actual interval across restarts and multiple worker processes.
+            self.stop_event.wait(min(interval or 60, 60))
 
     def _run(self):
         lock = FileLock(str(self.store.root / "coordinator.lock"), timeout=0)

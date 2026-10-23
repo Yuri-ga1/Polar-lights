@@ -14,7 +14,8 @@ x-backend: &backend
     POLAR_LOG_DIR: /app/logs
     POLAR_API_KEY: ${POLAR_API_KEY:-}
     SIMURG_EMAIL: ${SIMURG_EMAIL:-}
-    JOB_RETENTION_DAYS: ${JOB_RETENTION_DAYS:-30}
+    JOB_RETENTION_DAYS: ${JOB_RETENTION_DAYS:-7}
+    JOB_CLEANUP_INTERVAL_SECONDS: ${JOB_CLEANUP_INTERVAL_SECONDS:-86400}
   volumes:
     - ./config:/app/config:ro
     - ./files/raw:/app/files/raw
