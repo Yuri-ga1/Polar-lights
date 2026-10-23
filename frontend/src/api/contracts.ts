@@ -94,7 +94,16 @@ export const acceptedSchema = z.object({
   statusUrl: z.string(),
   resultUrl: z.string(),
 });
+export const downloadProgressSchema = z.object({
+  bytesDownloaded: z.number().int().nonnegative(),
+  totalBytes: z.number().int().nonnegative().nullish(),
+  bytesPerSecond: z.number().nonnegative().nullish(),
+  etaSeconds: z.number().nonnegative().nullish(),
+  updatedAt: z.number(),
+});
+export type DownloadProgress = z.infer<typeof downloadProgressSchema>;
 export const jobSchema = z.object({
+  downloadProgress: downloadProgressSchema.nullish(),
   stage: z.string().nullish(),
   attempts: z.number().optional(),
   nextRunAt: z.number().nullish(),

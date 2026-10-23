@@ -14,6 +14,7 @@ import { chartState, useWorkspace, type ChartSpec } from "../store";
 import { cancelRequest, removeChart, requestChart } from "../requests";
 import { snapPosition } from "../workspace/geometry";
 import { ChartExport } from "./WorkspaceTools";
+import { DownloadProgress } from "./DownloadProgress";
 const MapView = lazy(() => import("../visualizations/MapView"));
 const AuroraMapView = lazy(() => import("../visualizations/AuroraMapView"));
 const PlotView = lazy(() => import("../visualizations/PlotView"));
@@ -250,7 +251,13 @@ export const ChartCard = memo(function ChartCard({
           )}
           {state === "loading" && (
             <div className="status-overlay" role="status">
-              <span className="spinner" /> {runtime?.progress || "Loading"}
+              <span className="spinner" />
+              <div className="loading-details">
+                <div>{runtime?.progress || "Loading"}</div>
+                {runtime?.downloadProgress && (
+                  <DownloadProgress progress={runtime.downloadProgress} />
+                )}
+              </div>
               <button onClick={() => cancelRequest(chart.id)}>
                 Stop waiting
               </button>

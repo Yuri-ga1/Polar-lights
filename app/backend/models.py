@@ -175,6 +175,14 @@ class AvailabilityResponse(BaseModel):
     source: str | list[str]
 
 
+class DownloadProgress(BaseModel):
+    bytesDownloaded: int = Field(ge=0)
+    totalBytes: int | None = Field(default=None, ge=0)
+    bytesPerSecond: float | None = Field(default=None, ge=0)
+    etaSeconds: float | None = Field(default=None, ge=0)
+    updatedAt: float
+
+
 class JobStatus(BaseModel):
     jobId: str
     status: Literal[
@@ -198,6 +206,7 @@ class JobStatus(BaseModel):
     resultUrl: str
     error: ErrorResponse | None = None
     specHash: str | None = None
+    downloadProgress: DownloadProgress | None = None
 
 
 class RenderFile(BaseModel):

@@ -438,15 +438,37 @@ class _SimurgDownloader(BaseDownloader):
                         raise ExternalPending()
                 raise
             try:
+                progress_callback = None
                 if durable_id:
-                    from app.backend.jobs import report_stage
+                    from app.backend.jobs import (
+                        _acquisition_key,
+                        _execution_store,
+                        report_stage,
+                    )
 
                     report_stage("downloading")
+                    store = _execution_store.get()
+                    acquisition = _acquisition_key.get()
+                    if store:
+
+                        def progress_callback(downloaded, total, rate):
+                            try:
+                                store.record_download_progress(
+                                    durable_id, acquisition, downloaded, total, rate
+                                )
+                            except sqlite3.Error:
+                                logger.warning(
+                                    "Could not record download progress",
+                                    extra={"event": "download_progress_unavailable"},
+                                )
+
+                        progress_callback(0, None, None)
                 return super()._download_result(
                     url,
                     timeout=self.client.timeout,
                     verify=self.client.verify,
                     polling_interval=self.client.polling_interval,
+                    progress_callback=progress_callback,
                 )
             finally:
                 db.rollback()

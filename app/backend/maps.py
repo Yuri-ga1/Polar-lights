@@ -178,6 +178,10 @@ class MapService:
                         acquisition_parameters,
                     ),
                 )
+            if job_id:
+                db.execute(
+                    "UPDATE jobs SET acquisition_key=? WHERE id=?", (key, job_id)
+                )
             db.commit()
         lock = FileLock(str(store.root / f"acquisition-{key}.lock"), timeout=0)
         try:

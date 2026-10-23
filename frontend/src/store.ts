@@ -6,6 +6,7 @@ import {
   type Product,
   type Result,
   type DataSpec,
+  type DownloadProgress,
 } from "./api/contracts";
 import {
   defaultStyle,
@@ -26,6 +27,7 @@ export type Runtime = {
   errorCode?: string;
   requestId?: string;
   progress?: string;
+  downloadProgress?: DownloadProgress;
 };
 export const STORAGE_KEY = "polar-lights.workspace.v1";
 function productPresentation(chart: ChartSpec): ChartSpec {

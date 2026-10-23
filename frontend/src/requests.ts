@@ -70,12 +70,13 @@ export async function requestChart(id: string, product: Product) {
             product.productId,
             parameters,
             controller.signal,
-            (progress) => {
+            (progress, downloadProgress) => {
               if (current())
                 useWorkspace.getState().setRuntime(id, {
                   status: "loading",
                   result: previous,
                   progress,
+                  downloadProgress,
                 });
             },
           );

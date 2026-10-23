@@ -10,6 +10,7 @@ import {
   resultSchema,
   geomagneticLineSchema,
   type DataSpec,
+  type DownloadProgress,
   type Result,
 } from "./contracts";
 export const queryClient = new QueryClient({
@@ -157,7 +158,7 @@ export const apiClient = {
     productId: string,
     parameters: DataSpec,
     signal: AbortSignal,
-    progress: (status: string) => void = () => {},
+    progress: (status: string, download?: DownloadProgress) => void = () => {},
     pollMs = 900,
   ): Promise<Result> {
     const key = JSON.stringify({ productId, parameters });
@@ -215,6 +216,7 @@ export const apiClient = {
               : (status.stage ?? status.status),
             status.attempts,
           )} · Job ID: ${status.jobId}`,
+          status.downloadProgress ?? undefined,
         );
         if (["failed", "cancelled"].includes(status.status))
           rememberedJob(key, null);

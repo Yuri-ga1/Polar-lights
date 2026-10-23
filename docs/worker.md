@@ -29,7 +29,11 @@ Heartbeat means that the coordinator still observes the execution process; it is
 not evidence of scientific progress. `attempts` counts execution sessions,
 including remote polling sessions; `failures` counts failed/interrupted attempts.
 Migration version 2 creates private `job_secrets` and shared
-`simurg_acquisitions` tables; no separate worker queue is introduced.
+`simurg_acquisitions` tables. Version 3 adds a current acquisition association and
+optional download counters to jobs/shared acquisitions; no separate worker queue
+is introduced. Progress is persisted at most once per second during streaming
+(plus initial/final snapshots), and polling consumers share the same counters.
+Stale counters retain their byte count but lose speed/ETA after ten seconds.
 
 Public status adds `stage`, `attempts`, `heartbeatAt`, `startedAt`, `finishedAt`,
 `nextRunAt`; new statuses are `waiting_external` and `retrying`. No percentage is

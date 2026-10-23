@@ -31,12 +31,15 @@ class BaseDownloader:
         publish(file_path + ".tmp", file_path)
         return file_path
 
-    def _get_existing_file(self, filename: str, min_size_bytes: int = 1) -> Optional[str]:
+    def _get_existing_file(
+        self, filename: str, min_size_bytes: int = 1
+    ) -> Optional[str]:
         """Возвращает путь к уже скачанному файлу, если он существует и не пустой."""
         file_path = os.path.join(self.out_dir, filename)
         if os.path.exists(file_path) and os.path.getsize(file_path) >= min_size_bytes:
             if filename.endswith((".h5", ".hdf5")):
                 import h5py
+
                 try:
                     with h5py.File(file_path, "r") as handle:
                         if not len(handle):
@@ -56,17 +59,22 @@ class BaseDownloader:
         polling_interval: float = 5,
         chunk_size: int = 1024 * 1024,
         show_progress: bool = True,
+        progress_callback=None,
     ) -> str:
         """Скачивает файл с докачкой до полного получения."""
         filename = os.path.basename(url) if filename is None else filename
         file_path = os.path.join(self.out_dir, filename)
-        
+
         existing_file = self._get_existing_file(filename)
         if existing_file:
-            logger.info(f"Using cached file: {existing_file}", extra={"event": "cache_hit"})
+            logger.info(
+                f"Using cached file: {existing_file}", extra={"event": "cache_hit"}
+            )
             return existing_file
-        
-        logger.info(f"Downloading results from {url}", extra={"event": "download_status"})
+
+        logger.info(
+            f"Downloading results from {url}", extra={"event": "download_status"}
+        )
 
         def _extract_total_size(resp: requests.Response, offset: int) -> Optional[int]:
             content_range = resp.headers.get("Content-Range")
@@ -93,7 +101,9 @@ class BaseDownloader:
                 validator = None
             if not validator:
                 offset = 0
-            headers = {"Range": f"bytes={offset}-", "If-Range": validator} if offset else {}
+            headers = (
+                {"Range": f"bytes={offset}-", "If-Range": validator} if offset else {}
+            )
 
             try:
                 resp = requests.get(
@@ -104,7 +114,14 @@ class BaseDownloader:
                     stream=True,
                 )
             except requests.RequestException as exc:
-                logger.warning("Download interrupted; retrying", extra={"event": "download_retry", "error": {"type": type(exc).__name__, "message": str(exc)}, "context": {"delay_seconds": polling_interval}})
+                logger.warning(
+                    "Download interrupted; retrying",
+                    extra={
+                        "event": "download_retry",
+                        "error": {"type": type(exc).__name__, "message": str(exc)},
+                        "context": {"delay_seconds": polling_interval},
+                    },
+                )
                 time.sleep(polling_interval)
                 continue
 
@@ -113,13 +130,23 @@ class BaseDownloader:
                 validator_path.unlink(missing_ok=True)
                 continue
             if resp.status_code not in (200, 206):
-                raise RuntimeError(f"Не удалось скачать по result_url {url}: {resp.status_code}")
+                raise RuntimeError(
+                    f"Не удалось скачать по result_url {url}: {resp.status_code}"
+                )
 
-            if resp.status_code == 206 and not resp.headers.get("Content-Range", "").startswith(f"bytes {offset}-"):
+            if resp.status_code == 206 and not resp.headers.get(
+                "Content-Range", ""
+            ).startswith(f"bytes {offset}-"):
                 resp.close()
                 raise RuntimeError("Invalid download Content-Range")
-            received_validator = resp.headers.get("ETag") or resp.headers.get("Last-Modified")
-            if resp.status_code == 206 and validator and received_validator != validator:
+            received_validator = resp.headers.get("ETag") or resp.headers.get(
+                "Last-Modified"
+            )
+            if (
+                resp.status_code == 206
+                and validator
+                and received_validator != validator
+            ):
                 resp.close()
                 validator_path.unlink(missing_ok=True)
                 continue
@@ -132,6 +159,27 @@ class BaseDownloader:
                 mode = "ab" if offset else "wb"
 
             total_size = _extract_total_size(resp, offset)
+            began = time.monotonic()
+            last_report = began
+            last_bytes = None
+
+            def report_download(downloaded, *, force=False):
+                nonlocal last_report, last_bytes
+                if progress_callback is None:
+                    return
+                now = time.monotonic()
+                if (not force and now - last_report < 1) or downloaded == last_bytes:
+                    return
+                elapsed = now - began
+                rate = (
+                    (downloaded - offset) / elapsed
+                    if elapsed > 0 and downloaded > offset
+                    else None
+                )
+                progress_callback(downloaded, total_size, rate)
+                last_report, last_bytes = now, downloaded
+
+            report_download(offset, force=True)
             progress = (
                 ProgressBar(
                     total=total_size,
@@ -149,19 +197,32 @@ class BaseDownloader:
                             f.flush()
                             if progress is not None:
                                 progress.update(min(total_size, f.tell()))
+                            report_download(
+                                f.tell(),
+                                force=total_size is not None and f.tell() >= total_size,
+                            )
                     f.flush()
                     os.fsync(f.fileno())
             except requests.RequestException as exc:
-                logger.warning("Download interrupted; retrying", extra={"event": "download_retry", "error": {"type": type(exc).__name__, "message": str(exc)}, "context": {"delay_seconds": polling_interval}})
+                logger.warning(
+                    "Download interrupted; retrying",
+                    extra={
+                        "event": "download_retry",
+                        "error": {"type": type(exc).__name__, "message": str(exc)},
+                        "context": {"delay_seconds": polling_interval},
+                    },
+                )
                 time.sleep(polling_interval)
                 continue
 
             finally:
                 resp.close()
             final_size = os.path.getsize(file_path)
+            report_download(final_size, force=True)
             if final_size and (total_size is None or final_size == total_size):
                 if final_path.endswith((".h5", ".hdf5")):
                     import h5py
+
                     with h5py.File(file_path, "r") as handle:
                         if not len(handle):
                             raise ValueError("Empty HDF5 download")

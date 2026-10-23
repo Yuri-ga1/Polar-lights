@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import multiprocessing
 import os
 import signal
@@ -89,6 +90,8 @@ class JobStore:
                 "next_run": "REAL NOT NULL DEFAULT 0",
                 "external": "TEXT",
                 "failures": "INTEGER NOT NULL DEFAULT 0",
+                "download_progress": "TEXT",
+                "acquisition_key": "TEXT",
             }.items():
                 if name not in columns:
                     db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
@@ -99,12 +102,13 @@ class JobStore:
                 "statuses": "TEXT",
                 "checked": "REAL",
                 "parameters": "TEXT",
+                "download_progress": "TEXT",
             }.items():
                 if name not in acquisition_columns:
                     db.execute(
                         f"ALTER TABLE simurg_acquisitions ADD COLUMN {name} {definition}"
                     )
-            db.execute("PRAGMA user_version=2")
+            db.execute("PRAGMA user_version=3")
             db.commit()
 
     def connect(self):
@@ -201,6 +205,24 @@ class JobStore:
         }
         if row["error"]:
             result["error"] = json.loads(row["error"])
+        if row["status"] not in TERMINAL and row["stage"] in (
+            "downloading",
+            "waiting_download",
+        ):
+            progress = row["download_progress"]
+            if row["acquisition_key"]:
+                with closing(self.connect()) as db:
+                    shared = db.execute(
+                        "SELECT download_progress FROM simurg_acquisitions WHERE key=?",
+                        (row["acquisition_key"],),
+                    ).fetchone()
+                progress = shared[0] if shared else None
+            if progress:
+                progress = json.loads(progress)
+                if time.time() - progress["updatedAt"] > 10:
+                    progress["bytesPerSecond"] = None
+                    progress["etaSeconds"] = None
+                result["downloadProgress"] = progress
         if row["kind"] == "render":
             from .render import spec_hash
 
@@ -208,6 +230,31 @@ class JobStore:
                 MapRenderSpec.model_validate_json(row["payload"])
             )
         return result
+
+    def record_download_progress(self, job_id, acquisition, downloaded, total, rate):
+        rate = rate if rate is not None and math.isfinite(rate) and rate > 0 else None
+        progress = json.dumps(
+            {
+                "bytesDownloaded": downloaded,
+                "totalBytes": total,
+                "bytesPerSecond": rate,
+                "etaSeconds": max(0, total - downloaded) / rate
+                if total is not None and rate
+                else None,
+                "updatedAt": time.time(),
+            },
+            allow_nan=False,
+        )
+        with closing(self.connect()) as db:
+            if acquisition:
+                db.execute(
+                    "UPDATE simurg_acquisitions SET download_progress=? WHERE key=?",
+                    (progress, acquisition),
+                )
+            else:
+                db.execute(
+                    "UPDATE jobs SET download_progress=? WHERE id=?", (progress, job_id)
+                )
 
     def update(self, job_id, status, *, error=None, media=None, files=None):
         with closing(self.connect()) as db:
