@@ -7,6 +7,7 @@ import pandas as pd
 from app.base_classes.base_processor import BaseProcessor
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 
 class OmniProcessor(BaseProcessor):
@@ -169,6 +170,7 @@ class OmniProcessor(BaseProcessor):
         return df
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
         filenames = self._build_filename(date_str)
         path = self._pick_existing_file(filenames)

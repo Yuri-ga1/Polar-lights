@@ -12,6 +12,7 @@ import requests
 from app.base_classes.base_downloader import BaseDownloader
 
 from app.logging_config import get_logger, logged_stage
+from app.storage.raw_retention import raw_locked
 
 logger = get_logger(__name__)
 
@@ -135,6 +136,7 @@ class NmdbDownloader(BaseDownloader):
             logger.warning(f"NMDB station metadata warning: {exc}", extra={"event": "data_quality_warning"})
 
     @logged_stage("download", entry=False)
+    @raw_locked
     def download(
         self,
         start: Union[str, datetime],

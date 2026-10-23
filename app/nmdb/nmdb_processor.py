@@ -11,6 +11,7 @@ from app.base_classes.base_processor import BaseProcessor
 from app.storage.data_paths import DataPaths
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 
 class NmdbProcessor(BaseProcessor):
@@ -311,6 +312,7 @@ class NmdbProcessor(BaseProcessor):
     # ---------- public ----------
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
         """
         Ищет подходящий nmdb_*.txt в папке и возвращает DataFrame.

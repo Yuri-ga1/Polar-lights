@@ -17,6 +17,7 @@ from app.base_classes.base_processor import BaseProcessor
 import ionex
 
 from app.logging_config import get_logger, logged_stage
+from app.storage.raw_retention import raw_locked
 
 logger = get_logger(__name__)
 
@@ -187,6 +188,7 @@ class GimProcessor(BaseProcessor):
     # -------------------------
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(self, date_value: Union[str, date, datetime]) -> Optional[Dict[datetime, NDArray]]:
         target_date = self._coerce_date(date_value)
         file_path = self._find_file(target_date)

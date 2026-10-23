@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from app.base_classes.base_processor import BaseProcessor
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -206,6 +207,7 @@ class SimurgProcessor(BaseProcessor):
         return None
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(
         self,
         date_value: Union[str, date, datetime],
@@ -280,6 +282,7 @@ class SimurgProcessor(BaseProcessor):
             time_step=time_metadata.get("time_step"),
         )
 
+    @raw_locked
     def available_times(
         self,
         date_value: Union[str, date, datetime],
@@ -301,6 +304,7 @@ class SimurgProcessor(BaseProcessor):
         except Exception:
             return []
 
+    @raw_locked
     def iter_slices(
         self,
         date_value: Union[str, date, datetime],
@@ -335,6 +339,7 @@ class SimurgProcessor(BaseProcessor):
         except Exception:
             return
 
+    @raw_locked
     def iter_slices_range(
         self,
         start_datetime: str | datetime,

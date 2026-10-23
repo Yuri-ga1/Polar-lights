@@ -20,6 +20,7 @@ from app.pipeline.datetime_range import (
 )
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 
 @dataclass(frozen=True)
@@ -296,6 +297,7 @@ class IonosondeProcessor(BaseProcessor):
     # -------------------------
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(
         self,
         target_date: Union[str, date, datetime],
@@ -366,6 +368,7 @@ class IonosondeProcessor(BaseProcessor):
         return out
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load_range(
         self,
         start_datetime: Union[str, datetime, pd.Timestamp],

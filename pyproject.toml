@@ -15,6 +15,7 @@ dependencies = [
     "selenium (>=4.39.0,<5.0.0)",
     "webdriver-manager (>=4.0.2,<5.0.0)",
     "h5py (>=3.15.1,<4.0.0)",
+    "filelock (>=3.16,<4.0)",
     "cartopy (>=0.25.0,<0.26.0)",
     "ppigrf (>=2.1.0,<3.0.0)",
     "ionex @ git+https://github.com/gnss-lab/ionex.git",
@@ -36,7 +37,6 @@ build-backend = "poetry.core.masonry.api"
 backend = [
     "fastapi (>=0.115,<1.0)",
     "uvicorn (>=0.34,<1.0)",
-    "filelock (>=3.16,<4.0)",
     "pyarrow (>=19,<24)",
     "playwright (==1.55.0)"
 ]

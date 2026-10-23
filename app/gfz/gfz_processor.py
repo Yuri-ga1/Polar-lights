@@ -11,6 +11,7 @@ import pandas as pd
 from app.base_classes.base_processor import BaseProcessor
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,7 @@ class GfzProcessor(BaseProcessor):
     # ---------- public API ----------
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(
         self,
         date_str: Optional[str] = None,

@@ -9,6 +9,7 @@ from typing import Callable, Iterable, Union
 import pandas as pd
 
 from app.logging_config import logged_stage, get_logger
+from app.storage.raw_retention import processed_operation, verify_processed
 
 
 class BaseProcessor(ABC):
@@ -155,6 +156,7 @@ class BaseProcessor(ABC):
         return intervals
 
     @logged_stage("processing", entry=False)
+    @processed_operation
     def get_data(self, processed_path: str | Path, start: str | datetime, end: str | datetime, acquire_missing: Callable, *, unique_keys: Iterable[str] | None = None, columns: Iterable[str] | None = None, frequency_policies: dict | None = None) -> pd.DataFrame:
         """Processed-first retrieval shared by tabular processors."""
         if columns is not None:
@@ -175,6 +177,7 @@ class BaseProcessor(ABC):
                 rows = acquire_missing(missing)
                 if rows is not None and not rows.empty:
                     storage.merge(rows)
+                    verify_processed(processed_path, rows)
                 frame = storage.read()
             return frame.reindex(columns=columns).loc[utc(start):utc(end)]
         missing = self.missing_intervals(processed_path, start, end)
@@ -183,4 +186,5 @@ class BaseProcessor(ABC):
             rows = acquire_missing(missing)
             if rows is not None and not rows.empty:
                 self.update_processed(processed_path, rows, unique_keys=unique_keys)
+                verify_processed(processed_path, self.add_time_columns(rows))
         return self.select_processed(processed_path, start, end)

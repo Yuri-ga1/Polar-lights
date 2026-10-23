@@ -9,6 +9,8 @@ from pathlib import Path
 import h5py
 
 from app.storage.atomic import publish
+from app.storage.raw_retention import raw_lock
+from app.storage.timeseries import utc
 
 
 class HDF5MapStorage:
@@ -16,6 +18,17 @@ class HDF5MapStorage:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+
+    def read_day(self, day):
+        """Read both pipeline aggregates and backend daily GIM files."""
+        result = {}
+        for path in sorted(self.path.parent.glob("*.h5")):
+            with h5py.File(path, "r") as handle:
+                for key, dataset in handle["data"].items():
+                    timestamp = utc(key)
+                    if timestamp.date() == utc(day).date():
+                        result[timestamp.to_pydatetime()] = dataset[:]
+        return result
 
     def timestamps(self) -> set[str]:
         if not self.path.is_file():
@@ -55,6 +68,10 @@ class HDF5MapStorage:
         return added
 
     def ingest_slices(self, slices: dict[datetime, object]) -> int:
+        with raw_lock(self.path.parent.parent.parent / "raw" / "gim"):
+            return self._ingest_slices(slices)
+
+    def _ingest_slices(self, slices: dict[datetime, object]) -> int:
         """Append parsed non-HDF5 map slices (for example IONEX/GIM) by UTC timestamp."""
         if not slices:
             return 0

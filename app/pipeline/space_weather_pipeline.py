@@ -16,6 +16,7 @@ from app.omni.omni_downloader import OmniDownloader
 from app.omni.omni_processor import OmniProcessor
 from app.pipeline.datetime_range import validate_datetime_range
 from app.storage.data_paths import DataPaths
+from app.storage.raw_retention import preserve_operation
 
 from app.logging_config import logged_stage
 
@@ -62,6 +63,7 @@ def _safe_download(label: str, action: Callable[[], str]) -> str | None:
     try:
         return action()
     except Exception as exc:
+        preserve_operation()
         logger.warning("Download failed for %s: %s", label, exc)
         return None
 
@@ -71,8 +73,11 @@ def _omni_raw_frame(processor: OmniProcessor, raw_path: str) -> pd.DataFrame | N
         raw = Path(raw_path).read_text(encoding="utf-8", errors="ignore")
         pre = processor._extract_pre_block(raw)
         frame = processor._parse_table(pre, processor._parse_selected_parameters(pre))
+        if frame.empty:
+            preserve_operation()
         return None if frame.empty else frame.rename(columns={"DateTime": "datetime"})
     except Exception as exc:
+        preserve_operation()
         logger.warning("Failed to process OMNI raw file %s: %s", raw_path, exc)
         return None
 
@@ -96,6 +101,7 @@ def _retrieve_kp(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestam
     try:
         return GfzProcessor.to_processed_frame(GfzProcessor._load_kp_file(raw_path))
     except Exception as exc:
+        preserve_operation()
         logger.warning("Failed to process GFZ raw file %s: %s", raw_path, exc)
         return None
 
@@ -109,7 +115,10 @@ def _retrieve_dst(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timesta
                 frame = KyotoProcessor(paths.kyoto_dir)._load_month_file(raw_path)
                 if not frame.empty:
                     frames.append(frame)
+                else:
+                    preserve_operation()
             except Exception as exc:
+                preserve_operation()
                 logger.warning("Failed to process Kyoto raw file %s: %s", raw_path, exc)
     return pd.concat(frames, ignore_index=True) if frames else None
 

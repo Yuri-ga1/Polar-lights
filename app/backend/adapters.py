@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.base_classes.base_processor import BaseProcessor
+from app.storage.raw_retention import preserve_operation, raw_operation
 from app.storage.timeseries import TimeSeriesStorage
 
 from .catalog import COLUMNS, column_spec
@@ -20,6 +21,24 @@ class SourceAdapters:
         self.root = root
 
     def acquire(self, source, start, end, columns):
+        with raw_operation(self.raw_dir(source)) as operation:
+            archive = self.root / "processed" / f"{source}.csv"
+            if source != "nmdb" and archive.is_file():
+                cached = TimeSeriesStorage(archive).read()
+                policies = {c: column_spec(c).policy for c in columns}
+                if not any(TimeSeriesStorage.missing(cached, start, end, policies).values()):
+                    logger.info("Using processed source cache", extra={"event": "cache_hit", "context": {"source": source}})
+                    return cached.reindex(columns=columns).loc[start:end]
+            frame = self._acquire(source, start, end, columns)
+            if source != "nmdb":
+                # Persist the complete parsed response, including times outside
+                # the requested API interval, before discarding its source.
+                archive = self.root / "processed" / f"{source}.csv"
+                TimeSeriesStorage(archive).merge(frame)
+                operation.verify_frame(archive, frame)
+            return frame.reindex(columns=columns).loc[start:end]
+
+    def _acquire(self, source, start, end, columns):
         begin = time.perf_counter()
         try:
             frame = getattr(self, source)(start, end, columns)
@@ -37,7 +56,7 @@ class SourceAdapters:
                 "DATA_NOT_AVAILABLE", "Source returned no data", 404, source=source
             )
         frame = TimeSeriesStorage.normalize(frame)
-        return frame.reindex(columns=columns).loc[start:end]
+        return frame
 
     def raw_dir(self, source):
         path = self.root / "raw" / source
@@ -63,6 +82,8 @@ class SourceAdapters:
         begin = time.perf_counter()
         try:
             result = action()
+            if result is None or result.empty:
+                preserve_operation()
             pipeline_logger.info("Processing completed", extra={"event": "processing_completed", "duration_ms": (time.perf_counter() - begin) * 1000, "context": {"operation": action.__qualname__, "records": len(result) if result is not None else 0}})
             return result
         except Exception as exc:

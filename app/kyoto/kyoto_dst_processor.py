@@ -8,6 +8,7 @@ import pandas as pd
 from app.base_classes.base_processor import BaseProcessor
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 
 class KyotoProcessor(BaseProcessor):
@@ -104,6 +105,7 @@ class KyotoProcessor(BaseProcessor):
         return df
 
     @logged_stage("processing", entry=False)
+    @raw_locked
     def load(self, date_str: str) -> Optional[pd.DataFrame]:
         d = self._parse_date(date_str)
         filename = self._month_file_for_date(d)

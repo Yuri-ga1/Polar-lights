@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from app.base_classes.base_downloader import BaseDownloader
 from app.logging_config import get_logger, logged_stage
 from app.simurg.simurg_client import SimurgClient
+from app.storage.raw_retention import raw_locked
 
 logger = get_logger(__name__)
 
@@ -102,6 +103,7 @@ class _SimurgDownloader(BaseDownloader):
             return False
 
     @logged_stage("download", entry=False)
+    @raw_locked
     def download(
         self,
         date_str: str,

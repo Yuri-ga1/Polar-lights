@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -18,6 +19,12 @@ from filelock import FileLock, Timeout
 
 from app.configuration import current
 from app.storage.atomic import publish
+from app.storage.raw_retention import (
+    raw_lock,
+    raw_operation,
+    remember_raw,
+    validate_map,
+)
 from app.storage.timeseries import iso, utc
 
 from .catalog import KEOGRAMS, MAPS
@@ -128,10 +135,15 @@ class MapService:
             RotiDownloader if product == "roti-map" else AdjustedTecDownloader
         )
         # Inspect raw files by their actual UTC timestamps before asking for email.
-        for candidate in sorted(raw.glob("*.h5")):
-            if downloader_type.contains_timestamp(candidate, timestamp):
-                self._publish_file(candidate, self.directory(product) / candidate.name)
-                return
+        try:
+            with raw_lock(raw, timeout=0):
+                for candidate in sorted(raw.glob("*.h5")):
+                    if downloader_type.contains_timestamp(candidate, timestamp):
+                        self._publish_file(candidate, self.directory(product) / candidate.name)
+                        return
+        except Timeout:
+            # Join the existing durable shared-acquisition path below.
+            pass
         target = utc(timestamp).strftime("%Y-%m-%d %H:%M:%S")
         day = str(utc(timestamp).date())
         # Include the final 30-second sample; the following midnight is
@@ -185,7 +197,7 @@ class MapService:
             db.commit()
         lock = FileLock(str(store.root / f"acquisition-{key}.lock"), timeout=0)
         try:
-            with lock:
+            with lock, raw_lock(raw, timeout=0):
                 if self.has(product, timestamp):
                     return
                 client = SimurgClient(
@@ -205,6 +217,20 @@ class MapService:
                     )
                 finally:
                     _acquisition_key.reset(token)
+                report_stage("processing")
+                with h5py.File(path, "r") as handle:
+                    if "data" not in handle:
+                        raise BackendError(
+                            "MAP_FILE_CORRUPTED", "Downloaded map has no data group", 502
+                        )
+                destination = self.directory(product) / path.name
+                self._publish_file(path, destination)
+                with closing(store.connect()) as db:
+                    db.execute(
+                        "UPDATE simurg_acquisitions SET completed=1,email='' WHERE key=?",
+                        (key,),
+                    )
+
         except ExternalPending:
             if shared and job_id:
                 with closing(store.connect()) as db:
@@ -231,39 +257,48 @@ class MapService:
                     )
                 raise ExternalPending()
             raise BackendError("DOWNLOAD_PENDING", "Waiting for existing download", 503)
-        report_stage("processing")
-        with h5py.File(path, "r") as handle:
-            if "data" not in handle:
-                raise BackendError(
-                    "MAP_FILE_CORRUPTED", "Downloaded map has no data group", 502
-                )
-        destination = self.directory(product) / path.name
-        self._publish_file(path, destination)
-        with closing(store.connect()) as db:
-            db.execute(
-                "UPDATE simurg_acquisitions SET completed=1,email='' WHERE key=?",
-                (key,),
-            )
 
     @staticmethod
     def _publish_file(source, destination):
-        fd, name = tempfile.mkstemp(dir=destination.parent, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as out, open(source, "rb") as incoming:
-                shutil.copyfileobj(incoming, out, 1024 * 1024)
-                out.flush()
-                os.fsync(out.fileno())
-            publish(name, destination)
-        finally:
-            Path(name).unlink(missing_ok=True)
+        source, destination = Path(source), Path(destination)
+        with raw_lock(source.parent):
+            validate_map(source)
+            fd, name = tempfile.mkstemp(dir=destination.parent, suffix=".tmp")
+            os.close(fd)
+            Path(name).unlink()
+            try:
+                try:
+                    # Same-filesystem publication needs no second large copy.
+                    # Retain the source link until publication and readback succeed.
+                    os.link(source, name)
+                except OSError as exc:
+                    if exc.errno not in (errno.EXDEV, errno.EPERM, errno.EOPNOTSUPP):
+                        raise
+                    shutil.copyfile(source, name)
+                publish(name, destination)
+                validate_map(destination)
+                identity = source.stat()
+                size = identity.st_size if identity.st_nlink == 1 else 0
+                try:
+                    source.unlink()
+                except OSError:
+                    logger.warning("Raw cleanup failed after successful publication", extra={"event": "raw_cleanup_failed"}, exc_info=True)
+                    return
+                logger.info("Raw map published and removed", extra={"event": "raw_cleanup_completed", "context": {"files": 1, "bytes": size}})
+            finally:
+                Path(name).unlink(missing_ok=True)
 
     def _acquire_gim(self, timestamp):
+        with raw_operation(self.settings.root / "raw" / "gim") as operation:
+            self._process_gim(timestamp, operation)
+
+    def _process_gim(self, timestamp, operation):
         from app.simurg.gim_downloader import GimDownloader
         from app.simurg.gim_processor import GimProcessor
 
         raw = self.settings.root / "raw" / "gim"
         day = str(utc(timestamp).date())
-        GimDownloader(str(raw)).download(day)
+        remember_raw(GimDownloader(str(raw)).download(day))
         slices = GimProcessor(raw).load(day)
         if not slices:
             raise BackendError(
@@ -280,7 +315,11 @@ class MapService:
                         iso(slice_time), data=values, compression="gzip"
                     )
                 out.flush()
-            os.replace(name, directory / f"gim_{day}.h5")
+            if utc(timestamp) not in validate_map(name):
+                raise BackendError("DATA_NOT_AVAILABLE", "Requested GIM timestamp is absent", 404)
+            destination = directory / f"gim_{day}.h5"
+            publish(name, destination)
+            operation.verify_slices(destination, slices)
         finally:
             Path(name).unlink(missing_ok=True)
 

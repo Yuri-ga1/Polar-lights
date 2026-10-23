@@ -11,6 +11,7 @@ import requests
 from app.logging_config import get_logger, logged_stage
 from app.progress_bar import ProgressBar
 from app.storage.atomic import publish
+from app.storage.raw_retention import raw_locked, remember_raw
 
 logger = get_logger(__name__)
 
@@ -22,6 +23,7 @@ class BaseDownloader:
         self.out_dir = out_dir
         os.makedirs(self.out_dir, exist_ok=True)
 
+    @raw_locked
     def _write_text_file(self, filename: str, content: str) -> str:
         file_path = os.path.join(self.out_dir, filename)
         with open(file_path + ".tmp", "w", encoding="utf-8") as f:
@@ -29,7 +31,7 @@ class BaseDownloader:
             f.flush()
             os.fsync(f.fileno())
         publish(file_path + ".tmp", file_path)
-        return file_path
+        return remember_raw(file_path)
 
     def _get_existing_file(
         self, filename: str, min_size_bytes: int = 1
@@ -46,10 +48,11 @@ class BaseDownloader:
                             return None
                 except (OSError, ValueError):
                     return None
-            return file_path
+            return remember_raw(file_path)
         return None
 
     @logged_stage("download", entry=False)
+    @raw_locked
     def _download_result(
         self,
         url: str,
@@ -228,5 +231,5 @@ class BaseDownloader:
                             raise ValueError("Empty HDF5 download")
                 publish(file_path, final_path)
                 validator_path.unlink(missing_ok=True)
-                return final_path
+                return remember_raw(final_path)
         raise RuntimeError("Download retry limit reached; partial file retained")

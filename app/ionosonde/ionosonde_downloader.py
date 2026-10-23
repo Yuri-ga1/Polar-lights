@@ -12,6 +12,7 @@ import requests
 from app.base_classes.base_downloader import BaseDownloader
 
 from app.logging_config import logged_stage, get_logger
+from app.storage.raw_retention import raw_locked
 
 logger = get_logger(__name__)
 
@@ -241,6 +242,7 @@ class IonosondeDownloader(BaseDownloader):
     # -------------------------
 
     @logged_stage("download", entry=False)
+    @raw_locked
     def download(
         self,
         target_date: Union[str, date, datetime],

@@ -10,6 +10,7 @@ import requests
 from app.base_classes.base_downloader import BaseDownloader
 
 from app.logging_config import logged_stage
+from app.storage.raw_retention import raw_locked
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class GfzDownloader(BaseDownloader):
         return text
 
     @logged_stage("download", entry=False)
+    @raw_locked
     def download(
         self,
         date_str: Optional[str] = None,
