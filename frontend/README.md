@@ -24,6 +24,8 @@ Open http://127.0.0.1:5173. Vite proxies `/api` to `http://localhost:8000`. Set 
 
 For a separate API origin, set `VITE_API_BASE_URL` to the origin (without `/api/v1`) and set `POLAR_CORS_ORIGINS=http://localhost:5173` on the backend, matching the actual browser origin. CORS is opt-in in the existing backend; the development proxy does not require CORS. Production hosting must serve `dist/`, proxy `/api`, and serve the bundled `land.geojson` from the application root. Deploy at the domain root. If the backend uses `POLAR_API_KEY`, configure an authenticated same-origin reverse proxy to add the key; do not place secrets in frontend environment variables.
 
+Request, chart, and group IDs work on HTTP origins: the frontend uses native `crypto.randomUUID()` when available and otherwise generates UUID v4 IDs with `crypto.getRandomValues()`. It requires Web Crypto randomness and never falls back to `Math.random()`. This compatibility fix does not replace HTTPS for production deployments; HTTP traffic remains unencrypted.
+
 ## Run without the backend
 
 ```sh

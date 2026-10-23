@@ -1,3 +1,4 @@
+import { createUuid } from "../uuid";
 import { http, HttpResponse, delay } from "msw";
 import { tableFromArrays, tableToIPC } from "apache-arrow";
 import rawCatalog from "./catalog.json";
@@ -216,7 +217,7 @@ export const handlers = [
         },
         { status: 422 },
       );
-    const jobId = crypto.randomUUID();
+    const jobId = createUuid();
     renderJobs.set(jobId, { spec: parsed.data, polls: 0, cancelled: false });
     return HttpResponse.json(
       {
@@ -331,7 +332,7 @@ export const handlers = [
         { status: 404 },
       );
     await delay(100);
-    const jobId = crypto.randomUUID();
+    const jobId = createUuid();
     jobs.set(jobId, { request: body, polls: 0, cancelled: false });
     return HttpResponse.json(
       {

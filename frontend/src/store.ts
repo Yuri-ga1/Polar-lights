@@ -1,3 +1,4 @@
+import { createUuid } from "./uuid";
 import { hashKey } from "@tanstack/react-query";
 import { create } from "zustand";
 import {
@@ -199,7 +200,7 @@ export const useWorkspace = create<Workspace>((set, get) => {
     selectMany: selection,
     add: (product, position) => {
       const s = get(),
-        id = crypto.randomUUID(),
+        id = createUuid(),
         offset = s.charts.length * 28;
       let charts: ChartSpec[] = [
         ...s.charts,
@@ -262,10 +263,10 @@ export const useWorkspace = create<Workspace>((set, get) => {
         groups = new Map<string, string>();
       const copies = s.clipboard.map((original, i) => {
         const c = structuredClone(original);
-        c.id = crypto.randomUUID();
+        c.id = createUuid();
         if (c.layoutSpec.groupId) {
           if (!groups.has(c.layoutSpec.groupId))
-            groups.set(c.layoutSpec.groupId, crypto.randomUUID());
+            groups.set(c.layoutSpec.groupId, createUuid());
           c.layoutSpec.groupId = groups.get(c.layoutSpec.groupId);
         }
         c.layoutSpec = {
@@ -419,7 +420,7 @@ export const useWorkspace = create<Workspace>((set, get) => {
         )
       )
         return;
-      const groupId = crypto.randomUUID();
+      const groupId = createUuid();
       commit({
         charts: s.charts.map((c) =>
           s.selectedIds.includes(c.id)

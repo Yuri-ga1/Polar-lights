@@ -1,3 +1,4 @@
+import { createUuid } from "../uuid";
 import { requestSimurgAccess } from "../components/SimurgAccess";
 import { logger, authHeaders } from "../logging";
 import { jobProgress } from "../jobFeedback";
@@ -39,7 +40,7 @@ export class ApiError extends Error {
   }
 }
 export async function fetchApi(path: string, init?: RequestInit) {
-  const requestId = crypto.randomUUID();
+  const requestId = createUuid();
   const headers = new Headers(init?.headers);
   Object.entries(authHeaders()).forEach(([key, value]) =>
     headers.set(key, value),
