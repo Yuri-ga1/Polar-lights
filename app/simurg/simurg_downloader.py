@@ -230,9 +230,47 @@ class _SimurgDownloader(BaseDownloader):
                         (acquisition,),
                     ).fetchone()
                 if saved[0] and time.time() - (saved[1] or 0) < 60:
-                    statuses = json.loads(saved[0])
+                    cached = json.loads(saved[0])
+                    if set(cached) == set(query_ids):
+                        statuses = cached
             if statuses is None:
                 statuses = self.client.check_statuses(query_ids)
+                if acquisition:
+                    with closing(store.connect()) as db:
+                        db.execute(
+                            "UPDATE simurg_acquisitions SET statuses=?,checked=? WHERE key=?",
+                            (json.dumps(statuses), time.time(), acquisition),
+                        )
+            if any(q.get("status") == "not_found" for q in statuses.values()):
+                # A cached not_found is not proof of deletion. Only a successful
+                # fresh account listing can invalidate persisted remote IDs.
+                queries = self.client.checking_by_mail()
+                present = self.client._to_id_set(queries)
+                missing = set(query_ids) - present
+                if missing:
+                    external[key] = [qid for qid in query_ids if qid not in missing]
+                    with closing(store.connect()) as db:
+                        db.execute("BEGIN IMMEDIATE")
+                        if acquisition:
+                            db.execute(
+                                "UPDATE simurg_acquisitions SET external=?,statuses=NULL,checked=NULL WHERE key=?",
+                                (json.dumps(external), acquisition),
+                            )
+                        db.execute(
+                            "UPDATE jobs SET external=? WHERE id=?",
+                            (json.dumps(external), durable_id),
+                        )
+                        db.commit()
+                    self.client.remove_query_ids(missing)
+                    # Yield before rediscovery: the next session uses the normal
+                    # cache/shared/reuse/create path and account-limit lock.
+                    from app.backend.jobs import ExternalPending
+
+                    store.defer(durable_id, external=external)
+                    raise ExternalPending()
+                statuses = {
+                    str(q["id"]): q for q in queries if str(q["id"]) in query_ids
+                }
                 if acquisition:
                     with closing(store.connect()) as db:
                         db.execute(
