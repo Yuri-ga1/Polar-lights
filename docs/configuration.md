@@ -114,3 +114,9 @@ mv config/logging.tmp config/logging.toml
 API и worker независимо наблюдают общий TOML. Новые лимиты `long_job_timeout`,
 `job_max_attempts`, `external_wait_timeout`, защищённая диагностика двух процессов
 и правила миграции описаны в [worker.md](worker.md).
+
+Job retention: `backend.toml` accepts dynamic `job_retention_days` (default 7,
+range 1–3650, environment `JOB_RETENTION_DAYS`) and `cleanup_interval_seconds`
+(default 86400, range 0–604800, environment `JOB_CLEANUP_INTERVAL_SECONDS`). Zero
+interval disables scheduled cleanup. The existing worker applies the policy to
+terminal completion times; permanent scientific caches are excluded.

@@ -151,13 +151,13 @@ For a consistent database/artifact backup, stop writers, checkpoint WAL, then co
 the entire data root, configuration and renderer assets. Store secrets separately.
 Restore these together and start the worker to recover nonterminal records.
 
-There is no automatic deletion. Retain raw caches for expensive-source reuse and
-retain job directories/rows for the site's chosen audit period. For manual cleanup,
-stop workers/API, back up, then delete only terminal jobs older than the chosen
-cutoff, their `job_context`/`job_config` rows and corresponding job directories in
-one maintenance operation. Never delete active/waiting jobs, their `.part` files,
-or live lock files. Stale `.tmp` files can be removed while services are stopped.
-Monitor disk usage and SQLite WAL growth; queue bounds do not bound retained disk.
+The worker automatically removes terminal job artifacts older than seven days
+from their `finished` time; active/waiting jobs and shared scientific datasets
+are protected. `JOB_CLEANUP_INTERVAL_SECONDS=0` disables scheduling. Online manual
+preview/apply and conservative historical raw cleanup are described in
+[Storage retention and cleanup](deployment.md#storage-retention-and-cleanup).
+Source raw files are removed only after verified permanent publication. Unknown
+partials and reusable bulk source inputs remain available for recovery.
 
 ## Verification
 

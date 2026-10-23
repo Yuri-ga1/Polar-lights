@@ -88,10 +88,10 @@ Do not increase concurrency beyond available RAM. Worker `shm_size` defaults to
 the schema maximum of 64 workers; normal two-worker shutdown is bounded by 22 seconds.
 
 Logs rotate using `config/logging.toml` (default 30 days, 20 MiB per file); Docker
-stdout logs are also bounded. Job artifacts are retained until explicit maintenance.
-Disk use is not bounded by queue limits. Choose `JOB_RETENTION_DAYS` and schedule
-an offline maintenance window as described below; this value does not silently
-delete data in a running worker.
+stdout logs are also bounded. Terminal job artifacts expire automatically after
+`JOB_RETENTION_DAYS` (default 7); the worker checks daily. Permanent scientific
+stores are excluded, so queue and retention limits do not bound total disk use.
+Historical raw cleanup remains an explicit preview/apply operation, described below.
 
 ## Per-service upgrade and shutdown
 
@@ -147,25 +147,72 @@ extract into that checkout (`tar -xzf /path/to/backup.tgz -C /path/to/checkout`)
 matching UID/GID and image versions, then `docker compose up -d --wait`. Do not
 extract over a running deployment or mix an old database with newer artifact files.
 
-## Explicit job cleanup
+## Storage retention and cleanup
 
-Back up first, stop API/worker and any other writers, then preview:
+`files/maps/` and `files/processed/` are permanent scientific stores. Existing
+Compose bind mounts for raw, maps, processed and SQLite jobs remain unchanged;
+all cleanup paths use `POLAR_DATA_ROOT`.
+
+The existing worker runs terminal-job retention in a background thread. The
+default is **7 days after `finished`**, checked once every **86400 seconds**.
+Configure `JOB_RETENTION_DAYS` and `JOB_CLEANUP_INTERVAL_SECONDS` in `.env`, or
+`job_retention_days` / `cleanup_interval_seconds` in `config/backend.toml`.
+The TOML values reload without a restart; environment changes require recreating
+the affected containers. An interval of `0` disables the scheduler. A durable
+last-run stamp and `retention.lock` coordinate all workers and survive restarts.
+The existing per-job execution locks protect even cancelled workers still running.
+Short SQLite transactions recheck eligibility against concurrent job changes.
+Old terminal rows lacking a known `finished` time are conservatively retained.
+
+Manual preview/apply works while the deployment is running:
 
 ```bash
-docker compose stop api worker
 docker compose run --rm --no-deps worker python -m deploy.retention
-# After reviewing the preview:
 docker compose run --rm --no-deps worker python -m deploy.retention --apply
-docker compose start api worker
 ```
 
-Use `--days 30` to override `JOB_RETENTION_DAYS` from `.env`. The tool locks out the
-coordinator and deletes only old terminal rows, their config/context rows and their
-job directories. It does not remove raw/map caches, results, active jobs, or lock
-files. API writers must be stopped by the operator. Filesystem deletion and SQLite
-are not one transaction: an interrupted cleanup may leave terminal rows pointing
-to removed artifacts; rerun cleanup or restore the backup. Never use `down -v`,
-recursive data deletion or volume pruning as routine maintenance.
+Use `--days 14` to override the default. Only expired `completed`, `failed` and
+`cancelled` job directories and their database/config/context/secret rows are
+removed. Shared scientific files, SQLite/WAL/SHM, infrastructure locks, unfinished
+SIMuRG acquisitions and submission intents are preserved. Completed acquisition
+metadata is removed only when no remaining job references it. Cleanup failures
+are logged and do not stop the worker. Filesystem deletion and SQLite cannot be
+one atomic transaction: an interruption may leave an expired row with missing
+artifacts; rerunning retention completes its removal.
+
+Coordinated tabular acquisitions preserve the complete parsed response in
+`processed/` before removing only the raw files used by that operation. Readback
+checks all parsed timestamps and columns. Map publication validates all HDF5
+point datasets in bounded chunks. SIMuRG uses a temporary hard link followed by
+atomic publication on the same filesystem, retaining the original raw link until
+successful readback. Filesystems without hard-link support use copy/publication.
+GIM raw files are removed after all parsed slices have been published and checked.
+Failures retain raw files; source locks protect concurrent downloads/readers and
+historical cleanup. Cache-first requests continue to use permanent data.
+
+Historical cleanup is **manual and opt-in**:
+
+```bash
+docker compose run --rm --no-deps worker python -m deploy.retention --raw
+docker compose run --rm --no-deps worker python -m deploy.retention --raw --apply
+```
+
+The preview reports candidate paths, file count and recoverable bytes. A SIMuRG
+raw HDF5 must exactly match a validated published map. GIM/IONEX inputs require
+matching permanent datasets for every parsed slice. Supported OMNI, Kp, Kyoto,
+GIRO and NMDB responses are reparsed with existing processors and checked against
+all their saved columns and timestamps. Active jobs, source locks or changed
+results prevent deletion. Unknown files, metadata, partial downloads and uncertain
+results remain untouched; age alone never makes raw data eligible.
+
+Standalone downloader/processor calls still retain raw files. Notebook pipelines
+using `BaseProcessor.get_data()` and the miscellaneous pipeline opt into verified
+cleanup; SIMuRG notebook pipelines already download directly into permanent maps.
+Shared Aurorasaurus bulk inputs, observation link stores and solar source products
+are retained: their per-date outputs do not prove the whole input is redundant.
+Abandoned partials/temporary files without proof of ownership are also retained.
+Use the shared raw operation/source lock when adding new acquisition workflows.
+Never use volume pruning or recursive cache deletion as routine maintenance.
 
 ## Public access
 
