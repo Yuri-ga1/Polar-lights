@@ -65,13 +65,16 @@ class AuroraMapRequest(StrictModel):
     parameters: AuroraMapParameters
 
 
-class AuroraGeomagneticLinesRequest(StrictModel):
+class MapOverlaysRequest(StrictModel):
     timestamp: datetime
-    latitudes: list[float] = Field(min_length=1)
 
     _zone = field_validator("timestamp")(
         classmethod(SeriesParameters.require_zone.__func__)
     )
+
+
+class AuroraGeomagneticLinesRequest(MapOverlaysRequest):
+    latitudes: list[float] = Field(min_length=1)
 
     @field_validator("latitudes")
     @classmethod
@@ -279,7 +282,22 @@ class RenderAppearance(StrictModel):
             Annotated[str, Field(pattern=r"^rgb\(\d{1,3},\d{1,3},\d{1,3}\)$")],
         ]
     ] = Field(
-        default_factory=lambda: [(0, "rgb(68,1,84)"), (1, "rgb(253,231,37)")],
+        default_factory=lambda: [
+            (i / 8, f"rgb({r},{g},{b})")
+            for i, (r, g, b) in enumerate(
+                [
+                    (0, 0, 128),
+                    (0, 0, 255),
+                    (0, 128, 255),
+                    (0, 255, 255),
+                    (128, 255, 128),
+                    (255, 255, 0),
+                    (255, 128, 0),
+                    (255, 0, 0),
+                    (128, 0, 0),
+                ]
+            )
+        ],
         min_length=2,
         max_length=128,
     )
@@ -291,6 +309,11 @@ class RenderAppearance(StrictModel):
     pointSize: float = Field(default=3, ge=1, le=30)
     opacity: float = Field(default=0.85, ge=0, le=1)
     showNoData: bool = False
+    showAuroraGeomagnetic: bool = False
+    auroraGeomagneticLatitudes: list[Annotated[float, Field(ge=-90, le=90)]] = Field(
+        default_factory=lambda: [0]
+    )
+    showAuroraTerminator: bool = False
     noData: str = Field(default="#999999", pattern=r"^#[0-9a-fA-F]{6}$")
     font: Literal["system-ui", "serif", "monospace"] = "system-ui"
     fontSize: float = Field(default=12, ge=8, le=40)

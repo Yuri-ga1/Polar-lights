@@ -39,6 +39,7 @@ from .models import (
     JobStatus,
     KeogramResponse,
     MapJsonResponse,
+    MapOverlaysRequest,
     MapRenderSpec,
     RenderFiles,
     SeriesResponse,
@@ -273,6 +274,10 @@ def create_app(settings=None, service=None, *, start_jobs=False):
     )
     def aurora_geomagnetic_lines(body: AuroraGeomagneticLinesRequest) -> dict:
         return service.aurora_geomagnetic_lines(body.timestamp, body.latitudes)
+
+    @app.post("/api/v1/maps/overlays")
+    def map_overlays(body: MapOverlaysRequest) -> dict:
+        return service._aurora_overlays(body.timestamp.replace(tzinfo=None))
 
     @app.get(
         "/api/v1/catalog",

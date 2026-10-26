@@ -499,9 +499,9 @@ class DataService:
     @staticmethod
     def _aurora_overlays(timestamp):
         """Return the terminator and the night-side polygon for the map."""
-        import cartopy.crs as ccrs
         import numpy as np
 
+        from app.backend.geo_paths import night_cap_polygons
         from app.visualization.geo_utils import get_subsolar_latlon
 
         subsolar_lat, subsolar_lon = np.deg2rad(get_subsolar_latlon(timestamp))
@@ -547,54 +547,15 @@ class DataService:
         if len(current) > 1:
             terminator.append(current)
 
-        from shapely.affinity import translate
-        from shapely.geometry import Polygon, box
-
-        sun_latitude, sun_longitude = np.degrees([subsolar_lat, subsolar_lon])
-        anti_solar_longitude = (sun_longitude + 180 + 180) % 360 - 180
-        rotated = ccrs.RotatedPole(
-            pole_latitude=-sun_latitude,
-            pole_longitude=anti_solar_longitude,
-            central_rotated_longitude=0,
-        )
-        delta = np.degrees(np.arccos(6371.0 / (6371.0 + 300.0)))
-        boundary_longitudes = np.linspace(-180, 180, 361)
-        x = np.concatenate([boundary_longitudes, [180, -180, -180]])
-        y = np.concatenate(
-            [
-                np.full_like(boundary_longitudes, delta),
-                [90, 90, delta],
-            ]
-        )
-        geo_points = ccrs.PlateCarree().transform_points(rotated, x, y)
-        longitudes = np.rad2deg(np.unwrap(np.deg2rad(geo_points[:, 0])))
-        night_shape = Polygon(np.column_stack([longitudes, geo_points[:, 1]])).buffer(0)
-        night_polygons = []
-        min_lon, _, max_lon, _ = night_shape.bounds
-        for window in range(
-            int(np.floor((min_lon + 180) / 360)),
-            int(np.floor((max_lon + 180) / 360)) + 1,
-        ):
-            clipped = night_shape.intersection(
-                box(-180 + window * 360, -90, 180 + window * 360, 90)
-            )
-            if clipped.is_empty:
-                continue
-            pieces = list(clipped.geoms) if hasattr(clipped, "geoms") else [clipped]
-            for piece in pieces:
-                if piece.geom_type == "Polygon" and not piece.is_empty:
-                    ring = translate(piece, xoff=-360 * window).exterior.coords
-                    night_polygons.append(
-                        [[float(lon), float(lat)] for lon, lat in ring]
-                    )
+        night_polygons = night_cap_polygons(subsolar_lat, subsolar_lon, shell_angle)
         return {"terminator": terminator, "nightPolygons": night_polygons}
 
     @staticmethod
     def _geomagnetic_line_paths(timestamp, latitudes):
         import cartopy.crs as ccrs
         import matplotlib.pyplot as plt
-        import numpy as np
 
+        from app.backend.geo_paths import contour_paths
         from app.visualization.geo_utils import geomagnetic_lines
 
         figure = plt.figure()
@@ -607,16 +568,12 @@ class DataService:
             level_index = {latitude: index for index, latitude in enumerate(levels)}
             lines = []
             for latitude in latitudes:
-                segments = (
-                    equator.allsegs[0]
+                path = (
+                    equator.get_paths()[0]
                     if latitude == 0
-                    else contour.allsegs[level_index[latitude]]
+                    else contour.get_paths()[level_index[latitude]]
                 )
-                paths = [
-                    segment.astype(float).tolist()
-                    for segment in segments
-                    if len(segment) > 1 and np.isfinite(segment).all()
-                ]
+                paths = contour_paths(path)
                 lines.append({"latitude": float(latitude), "paths": paths})
             return lines
         finally:
