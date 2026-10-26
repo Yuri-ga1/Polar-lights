@@ -1,3 +1,9 @@
+import {
+  useMapOverlays,
+  clipHemisphere,
+  clipNightPolygon,
+  lineSegments,
+} from "./mapOverlays";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Deck,
@@ -5,7 +11,13 @@ import {
   COORDINATE_SYSTEM,
   type PickingInfo,
 } from "@deck.gl/core";
-import { ScatterplotLayer, PathLayer, TextLayer } from "@deck.gl/layers";
+import {
+  ScatterplotLayer,
+  PathLayer,
+  TextLayer,
+  PolygonLayer,
+  LineLayer,
+} from "@deck.gl/layers";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
 import { bounds, drawOrder, mapColor } from "./colors";
@@ -48,6 +60,7 @@ export default function PolarMap({
     [land, setLand] = useState<Land | null>(null),
     [error, setError] = useState("");
   const north = style.map.projection === "north-polar";
+  const overlays = useMapOverlays(result.metadata.timestamp, style.map);
   const indices = useMemo(
     () =>
       drawOrder(result.value, style.map.showNoData).filter((i) =>
@@ -179,6 +192,18 @@ export default function PolarMap({
       }
     deck.current?.setProps({
       layers: [
+        new PolygonLayer({
+          id: "polar-night",
+          data: overlays.nightPolygons
+            .map((ring) => clipNightPolygon(ring, north))
+            .filter((ring) => ring.length >= 3)
+            .map((ring) => ring.map(project)),
+          getPolygon: (ring) => ring,
+          getFillColor: [77, 84, 94, 95],
+          stroked: false,
+          pickable: false,
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+        }),
         new PathLayer({
           id: "coast",
           data: coast,
@@ -214,6 +239,31 @@ export default function PolarMap({
             getFillColor: [result, style],
           },
         }),
+        new LineLayer({
+          id: "polar-geomagnetic",
+          data: lineSegments(
+            clipHemisphere(overlays.geomagnetic, north).map((path) =>
+              path.map(project),
+            ),
+          ),
+          getSourcePosition: (segment) => segment[0],
+          getTargetPosition: (segment) => segment[1],
+          getColor: [238, 142, 32, 220],
+          getWidth: 1.5,
+          widthUnits: "pixels",
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+        }),
+        new PathLayer({
+          id: "polar-terminator",
+          data: clipHemisphere(overlays.terminator, north).map((path) =>
+            path.map(project),
+          ),
+          getPath: (path) => path,
+          getColor: [20, 29, 41, 170],
+          getWidth: 1.5,
+          widthUnits: "pixels",
+          coordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+        }),
         new TextLayer({
           id: "labels",
           data: style.map.labels ? [0, 90, 180, 270] : [],
@@ -225,7 +275,18 @@ export default function PolarMap({
         }),
       ],
     });
-  }, [result, indices, style, north, land, range, ready]);
+  }, [
+    result,
+    indices,
+    style,
+    north,
+    land,
+    range,
+    ready,
+    overlays.geomagnetic,
+    overlays.terminator,
+    overlays.nightPolygons,
+  ]);
   const units =
     typeof result.metadata.units === "string" ? result.metadata.units : "";
   return (
@@ -247,7 +308,9 @@ export default function PolarMap({
       {!indices.length && (
         <span className="partial-label">No points in this hemisphere</span>
       )}
-      {error && <p role="alert">{error}</p>}
+      {(error || overlays.error) && (
+        <p role="alert">{error || overlays.error}</p>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { mapOverlaysSchema } from "./contracts";
 import { createUuid } from "../uuid";
 import { requestSimurgAccess } from "../components/SimurgAccess";
 import { logger, authHeaders } from "../logging";
@@ -244,6 +245,15 @@ export const apiClient = {
         rememberedJob(key, null);
       throw error;
     }
+  },
+  async mapOverlays(timestamp: string, signal: AbortSignal) {
+    const response = await fetchApi("/api/v1/maps/overlays", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timestamp }),
+      signal,
+    });
+    return mapOverlaysSchema.parse(await response.json());
   },
   async auroraGeomagneticLines(
     timestamp: string,

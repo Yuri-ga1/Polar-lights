@@ -1,8 +1,9 @@
+import { lineSegments } from "./mapOverlays";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { PathLayer, PolygonLayer } from "@deck.gl/layers";
+import { PathLayer, PolygonLayer, LineLayer } from "@deck.gl/layers";
 import type { AuroraResult } from "../api/contracts";
 import { apiClient } from "../api/client";
 import { useWorkspace, type StyleSpec } from "../store";
@@ -268,10 +269,13 @@ export default function AuroraMapView({
             getFillColor: [observations],
           },
         }),
-        new PathLayer<GeoPath>({
+        new LineLayer({
           id: `aurora-geomagnetic-line-${chartId}`,
-          data: style.map.showAuroraGeomagnetic ? geomagneticLine : [],
-          getPath: (path) => path,
+          data: lineSegments(
+            style.map.showAuroraGeomagnetic ? geomagneticLine : [],
+          ),
+          getSourcePosition: (segment) => segment[0],
+          getTargetPosition: (segment) => segment[1],
           getColor: [238, 142, 32, 220],
           getWidth: 1.5,
           widthUnits: "pixels",

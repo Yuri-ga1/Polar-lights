@@ -44,7 +44,7 @@ export const styleSchema = z.object({
   title: text,
   subtitle: text.default(""),
   legend: z.boolean(),
-  palette: z.enum(["viridis", "plasma", "ice"]),
+  palette: z.enum(["viridis", "plasma", "ice", "jet"]),
   vmin: number.optional(),
   vmax: number.optional(),
   axes: z.boolean().default(true),
@@ -212,7 +212,7 @@ export function defaultStyle(title: string, productId?: string): StyleSpec {
   return styleSchema.parse({
     title,
     legend: true,
-    palette: "viridis",
+    palette: productId?.endsWith("-map") ? "jet" : "viridis",
     ...(mapMaximum === undefined
       ? {}
       : { vmin: 0, vmax: mapMaximum, colorbar: { range: "recommended" } }),

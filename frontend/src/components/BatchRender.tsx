@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchApi } from "../api/client";
+import { apiClient, fetchApi } from "../api/client";
 import {
   renderApi,
   renderSpecSchema,
@@ -56,14 +56,26 @@ function PinnedPreview({
     if (result?.dataType !== "map" || !matchingFrame) return;
     void (async () => {
       try {
-        const [script, land] = await Promise.all([
+        const [script, land, magneticLines, solar] = await Promise.all([
           fetchApi("/api/v1/render-assets/world.js", {
             signal: controller.signal,
           }).then((r) => r.text()),
           fetchApi("/api/v1/render-assets/land.geojson", {
             signal: controller.signal,
           }).then((r) => r.json()),
+          spec.appearance?.showAuroraGeomagnetic &&
+          spec.appearance.auroraGeomagneticLatitudes.length
+            ? apiClient.auroraGeomagneticLines(
+                timestamp!,
+                spec.appearance.auroraGeomagneticLatitudes,
+                controller.signal,
+              )
+            : Promise.resolve({ lines: [] }),
+          spec.appearance?.showAuroraTerminator
+            ? apiClient.mapOverlays(timestamp!, controller.signal)
+            : Promise.resolve({ terminator: [], nightPolygons: [] }),
         ]);
+        if (controller.signal.aborted) return;
         const points = result.lat.map((lat, i) => [
           result.lon[i],
           lat,
@@ -73,6 +85,9 @@ function PinnedPreview({
           spec,
           points,
           land,
+          geomagnetic: magneticLines.lines.flatMap((line) => line.paths),
+          terminator: solar.terminator,
+          nightPolygons: solar.nightPolygons,
           title: `${new Date(timestamp!).toISOString().slice(0, 19).replaceAll(":", "-")}Z_${chart.productId}`,
           units: result.metadata.units,
         }).replaceAll("<", "\\u003c");
@@ -182,6 +197,9 @@ export function BatchRender({ chart }: { chart: ChartSpec }) {
         pointSize: m.pointSize,
         opacity: m.opacity,
         showNoData: m.showNoData,
+        showAuroraGeomagnetic: m.showAuroraGeomagnetic,
+        auroraGeomagneticLatitudes: m.auroraGeomagneticLatitudes,
+        showAuroraTerminator: m.showAuroraTerminator,
         noData: s.colorbar.noData,
         colorbar: s.colorbar,
       },

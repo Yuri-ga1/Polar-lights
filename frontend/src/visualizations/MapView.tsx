@@ -1,9 +1,15 @@
+import { useMapOverlays, lineSegments, type GeoPath } from "./mapOverlays";
 import { logger } from "../logging";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { ScatterplotLayer } from "@deck.gl/layers";
+import {
+  ScatterplotLayer,
+  PathLayer,
+  PolygonLayer,
+  LineLayer,
+} from "@deck.gl/layers";
 import type { PickingInfo } from "@deck.gl/core";
 import type { MapResult } from "../api/contracts";
 import type { StyleSpec } from "../store";
@@ -37,6 +43,7 @@ export default function MapView(props: Props) {
   );
 }
 function GeographicMap({ result, style, chartId }: Props) {
+  const overlays = useMapOverlays(result.metadata.timestamp, style.map);
   const host = useRef<HTMLDivElement>(null);
   const overlay = useRef<MapboxOverlay | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -201,6 +208,14 @@ function GeographicMap({ result, style, chartId }: Props) {
   useEffect(() => {
     overlay.current?.setProps({
       layers: [
+        new PolygonLayer<GeoPath>({
+          id: "map-night",
+          data: overlays.nightPolygons,
+          getPolygon: (ring) => ring,
+          getFillColor: [77, 84, 94, 95],
+          stroked: false,
+          pickable: false,
+        }),
         new ScatterplotLayer<number>({
           id: "scientific-points",
           data: indexes,
@@ -227,9 +242,35 @@ function GeographicMap({ result, style, chartId }: Props) {
             );
           },
         }),
+        new LineLayer({
+          id: "map-geomagnetic-lines",
+          data: lineSegments(overlays.geomagnetic),
+          getSourcePosition: (segment) => segment[0],
+          getTargetPosition: (segment) => segment[1],
+          getColor: [238, 142, 32, 220],
+          getWidth: 1.5,
+          widthUnits: "pixels",
+        }),
+        new PathLayer<GeoPath>({
+          id: "map-terminator",
+          data: overlays.terminator,
+          getPath: (path) => path,
+          getColor: [20, 29, 41, 170],
+          getWidth: 1.2,
+          widthUnits: "pixels",
+        }),
       ],
     });
-  }, [indexes, result, style, range, ready]);
+  }, [
+    indexes,
+    result,
+    style,
+    range,
+    ready,
+    overlays.geomagnetic,
+    overlays.terminator,
+    overlays.nightPolygons,
+  ]);
   const units =
     typeof result.metadata.units === "string" ? result.metadata.units : "";
   return (
@@ -240,9 +281,9 @@ function GeographicMap({ result, style, chartId }: Props) {
       data-timestamp={result.metadata.timestamp}
     >
       <div ref={host} className="map-host" />
-      {error && (
+      {(error || overlays.error) && (
         <div role="alert" className="map-error">
-          Map rendering: {error}
+          Map rendering: {error || overlays.error}
         </div>
       )}
       <div className="map-hud" aria-live="polite">

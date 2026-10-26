@@ -282,6 +282,27 @@ export const handlers = [
     HttpResponse.json({ status: "ok", apiVersion: "1.0.0" }),
   ),
   http.get("*/api/v1/catalog", () => HttpResponse.json(catalog)),
+  http.post("*/api/v1/maps/overlays", () =>
+    HttpResponse.json({
+      terminator: [
+        Array.from({ length: 37 }, (_, i) => [
+          30 + Math.sin(i / 6) * 10,
+          -90 + i * 5,
+        ]),
+      ],
+      nightPolygons: [
+        [
+          ...Array.from({ length: 37 }, (_, i) => [
+            30 + Math.sin(i / 6) * 10,
+            -90 + i * 5,
+          ]),
+          [180, 90],
+          [180, -90],
+          [30, -90],
+        ],
+      ],
+    }),
+  ),
   http.post("*/api/v1/aurora-map/geomagnetic-lines", async ({ request }) => {
     const { latitudes } = (await request.json()) as { latitudes: number[] };
     return HttpResponse.json({

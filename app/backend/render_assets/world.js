@@ -2,7 +2,16 @@
    preserves the full [-180,180] × [-90,90] extent, including both poles. */
 window.drawWorld = function (
   canvas,
-  { spec, points, land, title, units = "" },
+  {
+    spec,
+    points,
+    land,
+    title,
+    units = "",
+    geomagnetic = [],
+    terminator = [],
+    nightPolygons = [],
+  },
 ) {
   canvas.width = spec.width;
   canvas.height = spec.height;
@@ -76,6 +85,15 @@ window.drawWorld = function (
     }
   }
   if (a.coastline) continents(true);
+  ctx.fillStyle = "rgba(77,84,94,0.37)";
+  for (const ring of nightPolygons) {
+    ctx.beginPath();
+    ring.forEach(([lon, lat], i) =>
+      i ? ctx.lineTo(x(lon), y(lat)) : ctx.moveTo(x(lon), y(lat)),
+    );
+    ctx.closePath();
+    ctx.fill();
+  }
   if (a.graticule) {
     ctx.strokeStyle = "#91a5b0";
     ctx.lineWidth = 0.5;
@@ -109,6 +127,20 @@ window.drawWorld = function (
   }
   ctx.globalAlpha = 1;
   if (a.coastline) continents(false);
+  for (const [paths, stroke, width] of [
+    [geomagnetic, "rgba(238,142,32,0.86)", 1.5],
+    [terminator, "rgba(20,29,41,0.67)", 1.2],
+  ]) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = width;
+    for (const path of paths) {
+      ctx.beginPath();
+      path.forEach(([lon, lat], i) =>
+        i ? ctx.lineTo(x(lon), y(lat)) : ctx.moveTo(x(lon), y(lat)),
+      );
+      ctx.stroke();
+    }
+  }
   ctx.restore();
   ctx.fillStyle = "#42556a";
   ctx.strokeStyle = "#829ba9";

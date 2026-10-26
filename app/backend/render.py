@@ -157,11 +157,27 @@ def render_maps(service, spec, directory, on_processing):
                     )
                     if np.isfinite(lon) and np.isfinite(lat)
                 ]
+                geomagnetic = []
+                if (
+                    spec.appearance.showAuroraGeomagnetic
+                    and spec.appearance.auroraGeomagneticLatitudes
+                ):
+                    lines = service.aurora_geomagnetic_lines(
+                        timestamp, spec.appearance.auroraGeomagneticLatitudes
+                    )
+                    geomagnetic = [
+                        path for line in lines["lines"] for path in line["paths"]
+                    ]
+                solar = {"terminator": [], "nightPolygons": []}
+                if spec.appearance.showAuroraTerminator:
+                    solar = service._aurora_overlays(timestamp.replace(tzinfo=None))
                 page.evaluate(
                     "input => window.drawWorld(document.getElementById('map'), input)",
                     {
                         "spec": spec.model_dump(mode="json"),
                         "points": points,
+                        "geomagnetic": geomagnetic,
+                        **solar,
                         "land": land,
                         "title": name,
                         "units": metadata.get("units", ""),

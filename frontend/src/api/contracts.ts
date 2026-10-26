@@ -48,6 +48,10 @@ export const metadataSchema = z
   })
   .passthrough();
 const numbers = z.array(z.number().nullable());
+export const mapOverlaysSchema = z.object({
+  terminator: z.array(z.array(z.tuple([z.number(), z.number()]))),
+  nightPolygons: z.array(z.array(z.tuple([z.number(), z.number()]))),
+});
 export const resultSchema = z.discriminatedUnion("dataType", [
   z.object({
     dataType: z.literal("aurora"),
@@ -62,10 +66,7 @@ export const resultSchema = z.discriminatedUnion("dataType", [
         forms: z.string(),
       }),
     ),
-    overlays: z.object({
-      terminator: z.array(z.array(z.tuple([z.number(), z.number()]))),
-      nightPolygons: z.array(z.array(z.tuple([z.number(), z.number()]))),
-    }),
+    overlays: mapOverlaysSchema,
     metadata: metadataSchema,
   }),
   z.object({

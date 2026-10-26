@@ -40,6 +40,11 @@ export const renderSpecSchema = z
         pointSize: z.number().min(1).max(30),
         opacity: z.number().min(0).max(1),
         showNoData: z.boolean(),
+        showAuroraGeomagnetic: z.boolean().default(false),
+        auroraGeomagneticLatitudes: z
+          .array(z.number().finite().min(-90).max(90))
+          .default([0]),
+        showAuroraTerminator: z.boolean().default(false),
         noData: z.string(),
         colorbar: colorbarSchema.pick({
           visible: true,

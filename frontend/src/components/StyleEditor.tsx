@@ -226,7 +226,7 @@ export function StyleEditor({
           <Choice
             label="Palette"
             value={s.palette}
-            options={["viridis", "plasma", "ice"]}
+            options={["viridis", "plasma", "ice", "jet"]}
             onChange={(palette) => update({ palette })}
           />
           <Check
@@ -391,8 +391,7 @@ export function StyleEditor({
           {stopError && <p role="alert">{stopError}</p>}
         </details>
       )}
-      {(projectionOptions(product).length > 0 ||
-        product.productId === "aurora-map") && (
+      {product.graphType === "map" && (
         <details open>
           <summary>Map view</summary>
           {projectionOptions(product).length > 0 && (
@@ -418,78 +417,74 @@ export function StyleEditor({
             value={m.labels}
             onChange={(labels) => map({ labels })}
           />
-          {product.productId === "aurora-map" && (
-            <>
-              <Check
-                label="Show geomagnetic line"
-                value={m.showAuroraGeomagnetic}
-                onChange={(showAuroraGeomagnetic) =>
-                  map({ showAuroraGeomagnetic })
-                }
-              />
-              {latitudeDrafts.map((draft, index) => (
-                <div className="geomagnetic-line-editor" key={index}>
-                  <Field label={`Geomagnetic latitude ${index + 1} (°)`}>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={draft}
-                      onChange={(event) => {
-                        const next = [...latitudeDrafts];
-                        next[index] = event.target.value;
-                        setLatitudeDrafts(next);
-                        setLatitudeError("");
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          applyLatitudes();
-                        }
-                      }}
-                    />
-                  </Field>
-                  <button
-                    type="button"
-                    aria-label={`Remove geomagnetic latitude ${index + 1}`}
-                    onClick={() => {
-                      setLatitudeDrafts(
-                        latitudeDrafts.filter(
-                          (_, lineIndex) => lineIndex !== index,
-                        ),
-                      );
+          <>
+            <Check
+              label="Show geomagnetic line"
+              value={m.showAuroraGeomagnetic}
+              onChange={(showAuroraGeomagnetic) =>
+                map({ showAuroraGeomagnetic })
+              }
+            />
+            {latitudeDrafts.map((draft, index) => (
+              <div className="geomagnetic-line-editor" key={index}>
+                <Field label={`Geomagnetic latitude ${index + 1} (°)`}>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draft}
+                    onChange={(event) => {
+                      const next = [...latitudeDrafts];
+                      next[index] = event.target.value;
+                      setLatitudeDrafts(next);
                       setLatitudeError("");
                     }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setLatitudeDrafts([...latitudeDrafts, ""]);
-                  setLatitudeError("");
-                }}
-              >
-                Add geomagnetic line
-              </button>
-              <button type="button" onClick={applyLatitudes}>
-                Apply lines
-              </button>
-              <p className="hint">
-                Apply an empty list to hide all lines without contacting the
-                server. You can also use the visibility checkbox.
-              </p>
-              {latitudeError && <p role="alert">{latitudeError}</p>}
-              <Check
-                label="Solar terminator"
-                value={m.showAuroraTerminator}
-                onChange={(showAuroraTerminator) =>
-                  map({ showAuroraTerminator })
-                }
-              />
-            </>
-          )}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        applyLatitudes();
+                      }
+                    }}
+                  />
+                </Field>
+                <button
+                  type="button"
+                  aria-label={`Remove geomagnetic latitude ${index + 1}`}
+                  onClick={() => {
+                    setLatitudeDrafts(
+                      latitudeDrafts.filter(
+                        (_, lineIndex) => lineIndex !== index,
+                      ),
+                    );
+                    setLatitudeError("");
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setLatitudeDrafts([...latitudeDrafts, ""]);
+                setLatitudeError("");
+              }}
+            >
+              Add geomagnetic line
+            </button>
+            <button type="button" onClick={applyLatitudes}>
+              Apply lines
+            </button>
+            <p className="hint">
+              Apply an empty list to hide all lines without contacting the
+              server. You can also use the visibility checkbox.
+            </p>
+            {latitudeError && <p role="alert">{latitudeError}</p>}
+            <Check
+              label="Solar terminator"
+              value={m.showAuroraTerminator}
+              onChange={(showAuroraTerminator) => map({ showAuroraTerminator })}
+            />
+          </>
           <Numeric
             label="Point size"
             value={m.pointSize}
