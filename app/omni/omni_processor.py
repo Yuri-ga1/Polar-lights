@@ -138,9 +138,6 @@ class OmniProcessor(BaseProcessor):
         if df.empty:
             return df
 
-        # типы
-        df[base_cols] = df[base_cols].astype(int)
-
         # fill values → NaN
         for c in temp_cols:
             s = df[c].astype(str).str.strip()
@@ -149,13 +146,11 @@ class OmniProcessor(BaseProcessor):
             df.loc[mask, c] = pd.NA
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-
-        # DateTime
         dt = (
-            pd.to_datetime(df["year"].astype(str), format="%Y")
-            + pd.to_timedelta(df["doy"] - 1, unit="D")
-            + pd.to_timedelta(df["hr"], unit="h")
-            + pd.to_timedelta(df["mn"], unit="m")
+            pd.to_datetime(df.pop("year").astype(int).astype(str), format="%Y")
+            + pd.to_timedelta(df.pop("doy").astype(int) - 1, unit="D")
+            + pd.to_timedelta(df.pop("hr").astype(int), unit="h")
+            + pd.to_timedelta(df.pop("mn").astype(int), unit="m")
         )
         df.insert(0, "DateTime", dt)
 

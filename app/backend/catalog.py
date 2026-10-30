@@ -29,7 +29,7 @@ OMNI = {
     "omni_proton_density": ("proton density", "cm^-3"),
     "omni_flow_pressure": ("flow pressure", "nPa"),
     "omni_ae": ("ae", "nT"),
-    "omni_sym_h": ("sym", "nT"),
+    "omni_sym_h": ("symh", "nT"),
 }
 COLUMNS = {
     name: Column(name, "omni", unit, 60, raw) for name, (raw, unit) in OMNI.items()

@@ -14,7 +14,7 @@ from app.kyoto.kyoto_dst_downloader import KyotoDstDownloader
 from app.kyoto.kyoto_dst_processor import KyotoProcessor
 from app.omni.omni_downloader import OmniDownloader
 from app.omni.omni_processor import OmniProcessor
-from app.pipeline.datetime_range import validate_datetime_range
+from app.pipeline.datetime_range import concat_dataframes, validate_datetime_range
 from app.storage.data_paths import DataPaths
 from app.storage.raw_retention import preserve_operation
 
@@ -84,14 +84,21 @@ def _omni_raw_frame(processor: OmniProcessor, raw_path: str) -> pd.DataFrame | N
 
 def _retrieve_omni(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
     processor = OmniProcessor(paths.omni_dir)
-    frames: list[pd.DataFrame] = []
-    for anchor in pd.date_range(start.normalize(), end.normalize(), freq="MS"):
-        raw_path = _safe_download("OMNI", lambda day=anchor: OmniDownloader(paths.omni_dir).download(day.date().isoformat()))
-        if raw_path:
-            frame = _omni_raw_frame(processor, raw_path)
-            if frame is not None:
-                frames.append(frame)
-    return pd.concat(frames, ignore_index=True) if frames else None
+    start = processor._as_utc_naive(start)
+    end = processor._as_utc_naive(end)
+    raw_path = _safe_download(
+        "OMNI",
+        lambda: OmniDownloader(paths.omni_dir).download_range(
+            start.to_pydatetime(), end.to_pydatetime()
+        ),
+    )
+    if raw_path is None:
+        return None
+    frame = _omni_raw_frame(processor, raw_path)
+    if frame is None:
+        return None
+    # OMNIWeb returns complete hours; persist only the requested samples.
+    return frame.loc[frame["datetime"].between(start, end)].reset_index(drop=True)
 
 
 def _retrieve_kp(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
@@ -131,7 +138,15 @@ def _load_processed_first(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd
     dst_processor = KyotoProcessor(paths.kyoto_dir)
     dst_processor.expected_frequency = timedelta(hours=1)
 
-    omni = omni_processor.get_data(paths.omni_processed, start, end, lambda ranges: _retrieve_omni(paths, ranges[0][0], ranges[-1][1]))
+    omni_start, omni_end = start.ceil("min"), end.floor("min")
+    omni = pd.DataFrame()
+    if omni_start <= omni_end:
+        omni = omni_processor.get_data(
+            paths.omni_processed, omni_start, omni_end,
+            lambda ranges: concat_dataframes(
+                _retrieve_omni(paths, gap_start, gap_end) for gap_start, gap_end in ranges
+            ),
+        )
     kp = kp_processor.get_data(paths.kp_processed, start, end, lambda ranges: _retrieve_kp(paths, ranges[0][0], ranges[-1][1]))
     dst = dst_processor.get_data(paths.kyoto_processed, start, end, lambda ranges: _retrieve_dst(paths, ranges[0][0], ranges[-1][1]))
     return SpaceWeatherData(

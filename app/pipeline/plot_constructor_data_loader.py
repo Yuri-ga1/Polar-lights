@@ -40,8 +40,7 @@ from app.ionosonde.ionosonde_processor import IonosondeProcessor
 from app.nmdb.nmdb_downloader import NmdbDownloader
 from app.nmdb.nmdb_processor import NmdbProcessor
 
-from app.omni.omni_downloader import OmniDownloader
-from app.omni.omni_processor import OmniProcessor
+from app.pipeline.space_weather_pipeline import SpaceWeatherPaths, _retrieve_omni
 from app.storage.data_paths import DataPaths
 
 from app.logging_config import get_logger, logged_stage
@@ -589,14 +588,11 @@ class PlotConstructorDataLoader:
         return NmdbProcessor(folder_path=out_dir).load(self.primary_date_str)
 
     def _load_omni(self):
-        out_dir = str(self.paths.raw_source("omni"))
-
-        for date_str in self.download_dates:
-            self._safe_download(
-                lambda d=date_str: OmniDownloader(out_dir=out_dir).download(d)
-            )
-
-        return OmniProcessor(folder_path=out_dir).load(self.primary_date_str)
+        return _retrieve_omni(
+            SpaceWeatherPaths.from_base(str(self.paths.root)),
+            pd.Timestamp(self.start_dt),
+            pd.Timestamp(self.end_dt),
+        )
 
     def _aurora_stub(
         self, date_str: str | None = None, params: dict[str, Any] | None = None

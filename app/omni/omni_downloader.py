@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import requests
 
 from app.base_classes.base_downloader import BaseDownloader
-
 from app.logging_config import logged_stage
 from app.storage.raw_retention import raw_locked
+
 
 class OmniDownloader(BaseDownloader):
     """Класс для загрузки данных OMNI (1‑минутное разрешение)."""
@@ -33,8 +34,8 @@ class OmniDownloader(BaseDownloader):
 
     def _build_query(self, start_dt: datetime, end_dt: datetime,
                      var_ids: Iterable[int]) -> List[Tuple[str, str]]:
-        start_date = start_dt.strftime("%Y%m%d00")
-        end_date = end_dt.strftime("%Y%m%d23")
+        start_date = start_dt.strftime("%Y%m%d%H")
+        end_date = end_dt.strftime("%Y%m%d%H")
         params: List[Tuple[str, str]] = [
             ("activity", "retrieve"),
             ("res", "min"),
@@ -52,6 +53,39 @@ class OmniDownloader(BaseDownloader):
         resp = requests.get(url, timeout=60)
         resp.raise_for_status()
         return resp.text
+
+    @staticmethod
+    def _validate_text(text: str) -> None:
+        """Reject error pages returned with HTTP 200 before caching them."""
+        from app.omni.omni_processor import OmniProcessor
+
+        pre = OmniProcessor._extract_pre_block(text)
+        try:
+            parameters = OmniProcessor._parse_selected_parameters(pre)
+            row = re.search(
+                r"^\s*\d{4}\s+\d{1,3}\s+\d{1,2}\s+\d{1,2}\s+(.+)$",
+                pre,
+                re.MULTILINE,
+            )
+            if row is None or len(row.group(1).split()) != len(parameters):
+                raise ValueError("Не найдены строки данных OMNI.")
+            for value in row.group(1).split():
+                float(value)
+        except ValueError as exc:
+            detail = re.sub(r"<[^>]*>", " ", text)
+            detail = " ".join(detail.split())[:300]
+            raise RuntimeError(
+                f"OMNIWeb вернул ответ без таблицы данных: {detail}"
+            ) from exc
+
+    def _get_existing_file(self, filename: str, min_size_bytes: int = 1) -> Optional[str]:
+        path = super()._get_existing_file(filename, min_size_bytes)
+        if path:
+            try:
+                self._validate_text(Path(path).read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, RuntimeError):
+                return None
+        return path
     
     def _retrieve_text(self, params: List[Tuple[str, str]]) -> str:
         try:
@@ -63,10 +97,7 @@ class OmniDownloader(BaseDownloader):
         text = response.text
         match = re.search(r"https?://[^\s'\"]+\.lst", text)
         if match:
-            try:
-                return self._download_lst(match.group(0))
-            except Exception:
-                return text
+            return self._download_lst(match.group(0))
         return text
 
     @logged_stage("download", entry=False)
@@ -96,14 +127,13 @@ class OmniDownloader(BaseDownloader):
         params = self._build_query(month_start, month_end, self.DEFAULT_VAR_IDS)
         data_text = self._retrieve_text(params)
 
-        if not data_text or not data_text.strip():
-            raise RuntimeError("OMNIWeb вернул пустой ответ или формат неизвестен.")
+        self._validate_text(data_text)
 
         return self._write_text_file(filename, data_text)
 
     @logged_stage("download", entry=False)
     @raw_locked
-    def download_range(self, start: datetime, end: datetime, columns: Iterable[str]) -> str:
+    def download_range(self, start: datetime, end: datetime, columns: Iterable[str] | None = None) -> str:
         """Backend range API; the existing monthly download API is unchanged.
 
         OMNIWeb accepts hour boundaries. Only requested variables and hours
@@ -114,15 +144,16 @@ class OmniDownloader(BaseDownloader):
             "omni_speed": 21, "omni_proton_density": 25,
             "omni_flow_pressure": 27, "omni_ae": 37, "omni_sym_h": 41,
         }
-        variables = sorted({names[column] for column in columns})
+        if end < start:
+            raise ValueError("end must be greater than or equal to start")
+        variables = sorted(
+            self.DEFAULT_VAR_IDS if columns is None else {names[column] for column in columns}
+        )
         filename = f"omni_{start:%Y%m%d%H}-{end:%Y%m%d%H}_{'-'.join(map(str, variables))}.txt"
         existing = self._get_existing_file(filename)
         if existing:
             return existing
         params = self._build_query(start, end, variables)
-        params = [(key, start.strftime("%Y%m%d%H") if key == "start_date" else
-                   end.strftime("%Y%m%d%H") if key == "end_date" else value) for key, value in params]
         text = self._retrieve_text(params)
-        if not text.strip():
-            raise RuntimeError("OMNIWeb returned an empty response")
+        self._validate_text(text)
         return self._write_text_file(filename, text)
