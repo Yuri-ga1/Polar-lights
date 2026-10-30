@@ -562,7 +562,10 @@ class PlotConstructorDataLoader:
 
         out_dir = str(self.paths.raw_source("giro"))
 
-        IonosondeDownloader(out_dir=out_dir).download(
+        IonosondeDownloader(
+            out_dir=out_dir,
+            allow_insecure_ssl=params.get("allow_insecure_ssl", False),
+        ).download(
             target_date=self.primary_date_str,
             station=station,
         )

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import requests
@@ -39,13 +41,14 @@ class StationDownloadReport:
 
 
 class IonosondeDownloader(BaseDownloader):
-    BASE_URL: str = "https://lgdc.uml.edu/common/DIDBGetValues"
+    BASE_URL: str = "https://lgdc.uml.edu/fastchar/getbest"
     STATIONS_PAGE: str = "https://giro.uml.edu/didbase/scaled.php"
 
     def __init__(
         self,
         out_dir: str = ".",
         timeout: float = 60.0,
+        allow_insecure_ssl: bool = False,
     ) -> None:
         super().__init__(out_dir=out_dir)
         self.timeout = timeout
@@ -60,6 +63,8 @@ class IonosondeDownloader(BaseDownloader):
 
         self._session = requests.Session()
         self._session.headers.update(self._headers)
+        # Applies to both the station directory and measurement downloads.
+        self._session.verify = not allow_insecure_ssl
 
         self._availability_cache: Dict[Tuple[str, str], Set[str]] = {}
 
@@ -104,6 +109,9 @@ class IonosondeDownloader(BaseDownloader):
                 resp.raise_for_status()
                 return resp
 
+            except requests.exceptions.SSLError as exc:
+                raise DataFetchError(str(exc)) from exc
+
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.Timeout,
@@ -145,21 +153,21 @@ class IonosondeDownloader(BaseDownloader):
         """Retrieve valid URSI station codes from GIRO page."""
         try:
             html = self._get_text(self.STATIONS_PAGE)
-        except Exception:
-            return []
+            codes = list(dict.fromkeys(re.findall(r"\(([A-Z0-9_]{5})\)", html)))
+            if codes:
+                return codes
+            reason = "Station directory returned no URSI codes"
+        except (TemporaryNetworkError, DataFetchError) as exc:
+            reason = str(exc)
 
-        # URSI station codes look like IF843, MO155 etc.
-        codes = re.findall(r"\(([A-Z]{2}\d{3})\)", html)
-
-        seen: Set[str] = set()
-        ordered: List[str] = []
-
-        for code in codes:
-            if code not in seen:
-                seen.add(code)
-                ordered.append(code)
-
-        return ordered
+        # Keep automatic selection usable during directory outages. Each
+        # candidate is still checked against live data for the requested dates.
+        snapshot = json.loads(Path(__file__).with_name("stations.json").read_text())
+        logger.warning(
+            "GIRO station directory unavailable; using bundled station list",
+            extra={"event": "station_directory_fallback", "context": {"reason": reason}},
+        )
+        return snapshot["stations"]
 
     # -------------------------
     # availability check
@@ -213,10 +221,11 @@ class IonosondeDownloader(BaseDownloader):
                 continue
 
             ts = parts[0]
-            if len(ts) >= 10:
-                day_str = ts[:10]
-                if day_str != "---":
-                    unique_days.add(day_str)
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?", ts):
+                try:
+                    unique_days.add(datetime.fromisoformat(ts.replace("Z", "+00:00")).date().isoformat())
+                except ValueError:
+                    continue
 
         return unique_days
 
@@ -336,6 +345,7 @@ class IonosondeDownloader(BaseDownloader):
         if filename is None:
             filename_local = (
                 f"{station}_{'_'.join(char_names)}_"
+                f"{d0:%Y%m%d}-{d1:%Y%m%d}_dmuf{dmuf}_"
                 f"{center.strftime('%Y%m%d')}.txt"
             )
         else:
@@ -345,15 +355,21 @@ class IonosondeDownloader(BaseDownloader):
 
         existing_file = self._get_existing_file(filename_local)
         if existing_file:
-            return StationDownloadReport(
-                station=station,
-                start=d0,
-                end=d1,
-                requested_days=requested_days,
-                downloaded_days=requested_days,
-                output_path=existing_file,
-                skipped_reason=None,
-            )
+            try:
+                cached_days = self._parse_unique_days(Path(existing_file).read_text(encoding="utf-8"))
+            except (OSError, UnicodeError):
+                cached_days = set()
+            cached_days = {day for day in cached_days if d0.isoformat() <= day <= d1.isoformat()}
+            if cached_days and len(cached_days) >= min_days_present:
+                return StationDownloadReport(
+                    station=station,
+                    start=d0,
+                    end=d1,
+                    requested_days=requested_days,
+                    downloaded_days=len(cached_days),
+                    output_path=existing_file,
+                    skipped_reason=None,
+                )
 
         from_dt = datetime.combine(d0, datetime.min.time())
         to_dt = datetime.combine(d1, datetime.max.time().replace(microsecond=0))
@@ -386,7 +402,7 @@ class IonosondeDownloader(BaseDownloader):
         unique_days = self._parse_unique_days(text)
         downloaded_days = len(unique_days)
 
-        if downloaded_days < min_days_present:
+        if not unique_days or downloaded_days < min_days_present:
             return StationDownloadReport(
                 station=station,
                 start=d0,

@@ -211,7 +211,10 @@ class SourceAdapters:
             )
             path = report.output_path
             if not path:
-                path = str(Path(folder) / f"AL945_backend_{day:%Y%m%d}.txt")
+                raise BackendError(
+                    "DATA_NOT_AVAILABLE", report.skipped_reason or "GIRO returned no data",
+                    404, source="giro", station=report.station,
+                )
 
             def parse(raw_path=path):
                 return IonosondeProcessor(folder)._parse_downloaded_text(

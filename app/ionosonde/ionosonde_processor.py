@@ -43,7 +43,7 @@ class IonosondeProcessor(BaseProcessor):
         self,
         date_value: Union[str, pd.Timestamp],
         station: Optional[str] = None,
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, ...]:
         """
         Downloader creates: {station}_{product}_{dataset}_{YYYYMMDD}.txt
 
@@ -57,11 +57,11 @@ class IonosondeProcessor(BaseProcessor):
         day_anchor = d.strftime("%Y%m%d")
 
         if station:
+            station = station.strip().upper()
             return (
                 f"{station}_*_{day_anchor}.txt",
                 f"{station}_foF2_hmF2_{day_anchor}.txt",
                 f"{station}_*.txt",
-                "*.txt",
             )
 
         return (
@@ -71,7 +71,7 @@ class IonosondeProcessor(BaseProcessor):
             "*.txt",
         )
 
-    def _pick_existing_file(self, patterns: tuple[str, str, str]) -> Optional[str]:
+    def _pick_existing_file(self, patterns: tuple[str, ...]) -> Optional[str]:
         for pat in patterns:
             matches = sorted(glob.glob(self._full_path(pat)))
             for path in matches:
@@ -134,9 +134,9 @@ class IonosondeProcessor(BaseProcessor):
             return None
 
         filename = os.path.basename(path)
-        station_code = filename.split("_", maxsplit=1)[0].strip()
+        station_code = filename[:5]
 
-        if re.fullmatch(r"[A-Z]{2}\d{3}", station_code):
+        if re.fullmatch(r"[A-Z0-9_]{5}", station_code):
             return station_code
 
         return None
@@ -205,11 +205,11 @@ class IonosondeProcessor(BaseProcessor):
         lon = None
 
         location_pattern = re.compile(
-            r"#\s*Location:\s*GEO\s+"
-            r"(?P<lat>\d+(?:\.\d+)?[NS])\s+"
-            r"(?P<lon>\d+(?:\.\d+)?[EW]),\s*"
-            r"URSI-Code\s+(?P<code>[A-Z]{2}\d{3})"
-            r"(?:\s+(?P<name>.*))?"
+            r"#\s*Location:\s*GEO\s*\(?\s*"
+            r"(?P<lat>\d+(?:\.\d+)?)\s*(?P<lat_hemi>[NS])\s+"
+            r"(?P<lon>\d+(?:\.\d+)?)\s*(?P<lon_hemi>[EW])\s*\)?\s*,\s*"
+            r"URSI-Code\s+(?P<code>[A-Z0-9_]{5})"
+            r"(?:[,\s]+(?P<name>.*))?"
         )
 
         for line in raw.splitlines():
@@ -217,8 +217,8 @@ class IonosondeProcessor(BaseProcessor):
             if not match:
                 continue
 
-            lat = cls._normalize_geo_coordinate(match.group("lat"), "lat")
-            lon = cls._normalize_geo_coordinate(match.group("lon"), "lon")
+            lat = cls._normalize_geo_coordinate(match.group("lat") + match.group("lat_hemi"), "lat")
+            lon = cls._normalize_geo_coordinate(match.group("lon") + match.group("lon_hemi"), "lon")
             station_code = match.group("code") or station_code
             station_name = (match.group("name") or "").strip() or None
             break
