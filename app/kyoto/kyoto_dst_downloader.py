@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Optional
 
 import requests
@@ -31,6 +32,20 @@ class KyotoDstDownloader(BaseDownloader):
             urls.append(base)
         return urls
 
+    @staticmethod
+    def _validate_text(text: str, date: datetime) -> None:
+        from app.kyoto.kyoto_dst_processor import KyotoProcessor
+
+        for line in text.splitlines():
+            rows = KyotoProcessor._parse_line(line)
+            if rows:
+                timestamp = rows[0]["datetime"]
+                if (timestamp.year, timestamp.month) == (date.year, date.month):
+                    return
+        raise RuntimeError(
+            f"Ответ WDC Kyoto не содержит записей Dst за {date:%Y-%m}"
+        )
+
     @logged_stage("download", entry=False)
     @raw_locked
     def download(self, date_str: str, filename: Optional[str] = None,
@@ -39,7 +54,11 @@ class KyotoDstDownloader(BaseDownloader):
         save_name = filename or f"dst_{date.strftime('%Y%m')}.for"
         existing_file = self._get_existing_file(save_name)
         if existing_file:
-            return existing_file
+            try:
+                self._validate_text(Path(existing_file).read_text(encoding="utf-8"), date)
+                return existing_file
+            except (OSError, UnicodeError, RuntimeError):
+                pass
 
         try_versions = list(versions) if versions is not None else list(self.DEFAULT_VERSIONS)
         urls = self._build_urls(date, try_versions)
@@ -47,14 +66,13 @@ class KyotoDstDownloader(BaseDownloader):
         for url in urls:
             try:
                 resp = requests.get(url, timeout=60)
-                if resp.status_code == 200:
-                    data = resp.text
-                    if not data.strip():
-                        raise RuntimeError(f"Получен пустой файл с {url}")
-                    return self._write_text_file(save_name, data)
-            except Exception as exc:
+                resp.raise_for_status()
+                data = resp.text
+                self._validate_text(data, date)
+            except (requests.RequestException, RuntimeError) as exc:
                 last_exc = exc
                 continue
+            return self._write_text_file(save_name, data)
         raise RuntimeError(
             f"Не удалось загрузить Dst из WDC Kyoto для {date_str}. "
             f"Попробованы каталоги: {', '.join(try_versions)}. Последняя ошибка: {last_exc}"

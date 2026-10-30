@@ -36,54 +36,31 @@ class KyotoProcessor(BaseProcessor):
         return self.MONTH_FILE_PATTERN.format(yyyymm=yyyymm)
 
     @staticmethod
-    def _yy_to_year(yy: int) -> int:
-        return 1900 + yy if yy >= 80 else 2000 + yy
-
-    def _parse_line(self, line: str) -> Optional[List[Dict]]:
-        line = line.strip()
-        if not line:
-            return None
-
-        m = self.LINE_RE.match(line)
+    def _parse_line(line: str) -> Optional[List[Dict]]:
+        line = line.rstrip("\r\n")
+        m = KyotoProcessor.LINE_RE.match(line)
         if not m:
             return None
-
-        yy = int(m.group("yy"))
-        mm = int(m.group("mm"))
-        dd = int(m.group("dd"))
-        year = self._yy_to_year(yy)
-
-        # Берём токен и "хвост" строки после него (важно: numbers могут быть слеплены, типа -99-116)
-        parts = line.split()
-        if not parts:
+        if len(line) < 120:
             return None
-        token = parts[0]
-        rest = line[len(token):]
 
-        # Достаём все целые числа из хвоста (работает даже на "-99-116")
-        vals = [int(x) for x in re.findall(r"[+-]?\d+", rest)]
+        # Kyoto uses fixed-width records: base at 17–20, hourly values at
+        # 21–116, daily mean at 117–120. Splitting shifts hours or joins values.
+        try:
+            century = int(line[14:16]) if line[14:16].strip() else 19
+            year = century * 100 + int(m.group("yy"))
+            base_day = date(year, int(m.group("mm")), int(m.group("dd")))
+            base = int(line[16:20]) * 100
+            hourly = [int(line[offset:offset + 4]) for offset in range(20, 116, 4)]
+        except ValueError:
+            return None
 
-        # Ожидаем 24 или 25 значений (иногда первый "0" служебный)
-        if len(vals) == 25:
-            hourly = vals[-24:]
-        elif len(vals) == 24:
-            hourly = vals
-        else:
-            # если больше 24 — берём последние 24; если меньше — строку пропускаем
-            if len(vals) > 24:
-                hourly = vals[-24:]
-            else:
-                return None
-
-        base_day = date(year, mm, dd)
         rows: List[Dict] = []
         for hour, dst in enumerate(hourly):
             rows.append(
                 {
                     "datetime": datetime(base_day.year, base_day.month, base_day.day, hour, 0, 0),
-                    "date": base_day,
-                    "hour": hour,
-                    "dst": dst,
+                    "dst": float("nan") if dst == 9999 else base + dst,
                 }
             )
         return rows

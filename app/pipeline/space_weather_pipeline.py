@@ -115,11 +115,16 @@ def _retrieve_kp(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestam
 
 def _retrieve_dst(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame | None:
     frames: list[pd.DataFrame] = []
-    for anchor in pd.date_range(start.normalize(), end.normalize(), freq="MS"):
+    start = KyotoProcessor._as_utc_naive(start)
+    end = KyotoProcessor._as_utc_naive(end)
+    month_start = start.normalize().replace(day=1)
+    for anchor in pd.date_range(month_start, end.normalize(), freq="MS"):
         raw_path = _safe_download("Kyoto Dst", lambda day=anchor: KyotoDstDownloader(paths.kyoto_dir).download(day.date().isoformat()))
         if raw_path:
             try:
                 frame = KyotoProcessor(paths.kyoto_dir)._load_month_file(raw_path)
+                if not frame.empty:
+                    frame = frame.loc[frame["datetime"].between(start, end)]
                 if not frame.empty:
                     frames.append(frame)
                 else:
@@ -148,7 +153,15 @@ def _load_processed_first(paths: SpaceWeatherPaths, start: pd.Timestamp, end: pd
             ),
         )
     kp = kp_processor.get_data(paths.kp_processed, start, end, lambda ranges: _retrieve_kp(paths, ranges[0][0], ranges[-1][1]))
-    dst = dst_processor.get_data(paths.kyoto_processed, start, end, lambda ranges: _retrieve_dst(paths, ranges[0][0], ranges[-1][1]))
+    dst_start, dst_end = start.ceil("h"), end.floor("h")
+    dst = pd.DataFrame()
+    if dst_start <= dst_end:
+        dst = dst_processor.get_data(
+            paths.kyoto_processed, dst_start, dst_end,
+            lambda ranges: concat_dataframes(
+                _retrieve_dst(paths, gap_start, gap_end) for gap_start, gap_end in ranges
+            ),
+        )
     return SpaceWeatherData(
         omni=None if omni.empty else omni_processor.with_datetime(omni),
         kp=None if kp.empty else kp_processor.with_datetime(kp),
