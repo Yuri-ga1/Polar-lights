@@ -21,6 +21,7 @@ x-backend: &backend
     - ./files/raw:/app/files/raw
     - ./files/processed:/app/files/processed
     - ./files/maps:/app/files/maps
+    - ./files/cache:/app/files/cache
     - ./files/jobs:/app/files/jobs
     - ./results:/app/results
     - ./logs:/app/logs

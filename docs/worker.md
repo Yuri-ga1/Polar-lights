@@ -235,3 +235,13 @@ Email is private storage, not a dataset key. Treat the jobs directory and backup
 as private application state. Completed acquisitions clear their account email;
 normal terminal-job retention also removes corresponding `job_secrets` rows.
 Unfinished acquisitions retain the account needed to resume them.
+
+
+## JSOC / SDO scientific images
+
+[JSOC/SDO acquisition](jsoc_sdo.md) is available through the existing notebook
+solar-disk pipeline and PlotConstructor. Existing HTTP product routes and worker
+jobs remain compatible; no independent queue or polling daemon is introduced.
+API and worker share `files/cache` for the durable JSOC acquisition index.
+This directory is not subject to terminal-job retention and must be backed up
+with `files/maps` and `files/raw`.

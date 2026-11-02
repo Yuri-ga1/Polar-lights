@@ -140,6 +140,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.store.get(cancelled)["status"], "cancelled")
         with closing(self.store.connect()) as db:
             db.execute("UPDATE jobs SET updated=0")
+            db.execute("UPDATE jobs SET finished=0 WHERE status='cancelled'")
         self.assertEqual(cleanup(self.root, 30), 1)
         self.assertEqual(self.store.get(cancelled)["status"], "cancelled")
         cleanup(self.root, 30, apply=True)

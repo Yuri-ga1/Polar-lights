@@ -46,6 +46,7 @@ def main():
             "files/processed",
             "files/maps",
             "files/jobs",
+            "files/cache",
             "results",
             "logs",
         ):

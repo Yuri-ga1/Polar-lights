@@ -339,3 +339,13 @@ npm run build
 10 секунд, прежние скорость и ETA скрываются. Для обработки и ожидания SIMuRG
 процент завершения не выдумывается. В Notebook вызовы без callback сохраняют
 прежнее поведение консольного прогресса.
+
+
+## JSOC / SDO scientific images
+
+[JSOC/SDO acquisition](jsoc_sdo.md) is available through the existing notebook
+solar-disk pipeline and PlotConstructor. Existing HTTP product routes and worker
+jobs remain compatible; no independent queue or polling daemon is introduced.
+API and worker share `files/cache` for the durable JSOC acquisition index.
+This directory is not subject to terminal-job retention and must be backed up
+with `files/maps` and `files/raw`.

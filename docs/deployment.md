@@ -14,7 +14,7 @@ cp .env.example .env
 # Set POLAR_UID/POLAR_GID in .env to the output of these commands:
 id -u
 id -g
-mkdir -p files/raw files/processed files/maps files/jobs results logs
+mkdir -p files/raw files/processed files/maps files/cache files/jobs results logs
 # Existing directories must be writable by that UID/GID; do not chmod 777.
 docker compose config --quiet
 docker compose build
@@ -134,8 +134,10 @@ entire durable state; the one-off API container runs only the supplied command:
 ```bash
 docker compose stop api worker
 docker compose run --rm --no-deps api python -c 'import sqlite3; c=sqlite3.connect("files/jobs/jobs.sqlite3"); print(c.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()); c.close()'
+# Checkpoint the separate shared JSOC index if it has been created.
+docker compose run --rm --no-deps api python -c 'import pathlib, sqlite3; p=pathlib.Path("files/cache/jsoc/exports.sqlite"); c=sqlite3.connect(p) if p.exists() else None; print(c.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone() if c else "JSOC index absent"); c and c.close()'
 mkdir -p backups
-tar -czf "backups/polar-$(date -u +%Y%m%dT%H%M%SZ).tgz" config files/raw files/processed files/maps files/jobs results logs
+tar -czf "backups/polar-$(date -u +%Y%m%dT%H%M%SZ).tgz" config files/raw files/processed files/maps files/cache files/jobs results logs
 docker compose start api worker
 ```
 
@@ -279,3 +281,9 @@ Local validation on 2026-10-12:
 
 References: [Compose service options](https://docs.docker.com/reference/compose-file/services/),
 [Playwright browser installation](https://playwright.dev/python/docs/browsers).
+
+
+The common backend volume includes `./files/cache:/app/files/cache` for both API
+and worker under POLAR_UID/POLAR_GID. Keep the JSOC index (including WAL during
+operation) private: it contains export emails and temporary URLs. Terminal-job
+retention does not clean it. See [JSOC/SDO recovery and settings](jsoc_sdo.md).
