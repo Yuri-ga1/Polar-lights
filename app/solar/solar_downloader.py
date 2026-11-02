@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import json
 import logging
+import tempfile
 from pathlib import Path
 
 import requests
+from filelock import FileLock
 from PIL import Image
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.base_classes.base_downloader import BaseDownloader
+from app.logging_config import logged_stage
 from app.solar.models import SolarDiskConfig, utc_datetime
 from app.solar.srs_parser import parse_srs
-
-from app.logging_config import logged_stage
+from app.storage.atomic import publish
 
 logger = logging.getLogger(__name__)
 HELIOVIEWER = "https://api.helioviewer.org/v2/"
@@ -67,9 +69,15 @@ class SolarDownloader(BaseDownloader):
 
     def write_bytes(self, name: str, content: bytes) -> Path:
         target = Path(self.out_dir) / name
-        temporary = target.with_suffix(target.suffix + ".part")
-        temporary.write_bytes(content)
-        temporary.replace(target)
+        with tempfile.NamedTemporaryFile(
+            dir=target.parent, suffix=".part", delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        try:
+            publish(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
         return target
 
     def write_json(self, name, value):
@@ -157,8 +165,29 @@ class HelioviewerDownloader(SolarDownloader):
 
 
 class SRSDownloader(SolarDownloader):
+    def __init__(self, config):
+        super().__init__(config)
+        from app.storage.data_paths import DataPaths
+
+        self.out_dir = str(
+            DataPaths.from_root(config.download_base_dir).raw_source("noaa/srs")
+        )
+
+    def cached(self, name):
+        path = super().cached(name)
+        if path is None and not self.config.force_download:
+            legacy = self.config.cache_dir / name
+            if legacy.is_file():
+                return legacy
+        return path
+
     @logged_stage("download", entry=False)
     def download(self, day):
+        lock = Path(self.out_dir) / f"{day:%Y%m%d}SRS.lock"
+        with FileLock(str(lock), timeout=self.config.jsoc.lock_timeout):
+            return self._download(day)
+
+    def _download(self, day):
         name = f"{day:%Y%m%d}SRS.txt"
         provenance_name = name + ".json"
         path, provenance = self.cached(name), self.cached(provenance_name)

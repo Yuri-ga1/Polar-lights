@@ -114,7 +114,7 @@ poetry install
 poetry run python -m app.pipeline.solar_disk_pipeline --date 2026-01-20 --time 12:00:00
 ```
 
-This downloads the nearest Helioviewer HMI continuum JP2 and the historical NOAA
+The compatible default downloads the nearest Helioviewer HMI continuum JP2 and the historical NOAA
 Solar Region Summary, rotates region coordinates to the HMI WCS epoch, and saves
 an annotated PNG plus source/coordinate metadata in `results/2026-01-20/`.
 Subsequent runs use the file cache; `--force-download` refreshes it.
@@ -128,6 +128,12 @@ fig, ax = build_solar_disk(SolarDiskConfig(requested_time="2026-01-20T12:00:00Z"
 See [the solar disk section in the main notebook](notebooks/00_examples_and_run.ipynb) for multiple dates and
 `PlotConstructor` integration, and [source and coordinate details](docs/solar_disk.md)
 for the scientific conventions, configuration, and control-run verification.
+
+For scientific JSOC FITS, use `SolarDiskConfig(provider="jsoc", jsoc_email=email,
+requested_time="2026-01-20T12:00:00Z")`. The notebook asks for your registered
+email. Shared SQLite and lossless HDF5 reuse one observation across users; repeat
+requests read local data with zero JSOC HTTP calls. `provider="auto"` permits a
+labelled visual JP2 fallback. See [JSOC/SDO acquisition](docs/jsoc_sdo.md).
 
 To render every available ROTI or adjusted TEC map from a notebook, stream the
 SIMuRG slices into `plot_all_maps`. The helper splits output into several PNG
@@ -202,8 +208,8 @@ id -u
 id -g
 # Enter those values as POLAR_UID and POLAR_GID in the file.
 nano .env
-mkdir -p files/raw files/processed files/maps files/jobs results logs
-sudo chown "$(id -u):$(id -g)" files files/raw files/processed files/maps files/jobs results logs
+mkdir -p files/raw files/processed files/maps files/cache files/jobs results logs
+sudo chown "$(id -u):$(id -g)" files files/raw files/processed files/maps files/cache files/jobs results logs
 sudo docker compose config --quiet
 sudo docker compose build
 sudo docker compose up -d --wait --wait-timeout 180

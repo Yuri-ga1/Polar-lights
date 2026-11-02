@@ -16,7 +16,7 @@ class DataPaths:
     root: Path
 
     @classmethod
-    def from_root(cls, root: str | Path = "files") -> "DataPaths":
+    def from_root(cls, root: str | Path = "files") -> DataPaths:
         return cls(Path(root))
 
     @property
@@ -30,6 +30,10 @@ class DataPaths:
     @property
     def maps(self) -> Path:
         return self.root / "maps"
+
+    @property
+    def cache(self) -> Path:
+        return self.root / "cache"
 
     def raw_source(self, source: str) -> Path:
         path = self.raw / source

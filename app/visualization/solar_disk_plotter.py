@@ -9,9 +9,8 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
-from app.solar.models import SolarDiskData, utc_datetime
-
 from app.logging_config import logged_stage
+from app.solar.models import SolarDiskData, utc_datetime
 
 
 @logged_stage("plot", entry=True)
@@ -61,7 +60,11 @@ def plot_solar_disk_on_ax(ax, data: SolarDiskData):
     ax.set_ylim(-0.5, values.shape[0] - 0.5)
     actual = utc_datetime(data.metadata["observation_time"])
     display_time = actual + timedelta(microseconds=500000)
-    ax.set_title(f"SDO HMI {display_time:%d %b %Y %H:%M:%S} UTC", fontsize=15, pad=13)
+    ax.set_title(
+        f"SDO {config.sdo_product.instrument.upper() if data.metadata.get('scientific') else 'HMI'} {display_time:%d %b %Y %H:%M:%S} UTC",
+        fontsize=15,
+        pad=13,
+    )
     annotations = []
     for item in data.regions:
         annotation = ax.annotate(
@@ -118,6 +121,14 @@ def plot_solar_disk_on_ax(ax, data: SolarDiskData):
         occupied.append(box)
     if config.colorbar:
         ax.figure.colorbar(
-            image, ax=ax, fraction=0.046, pad=0.04, label="JP2 display intensity"
+            image,
+            ax=ax,
+            fraction=0.046,
+            pad=0.04,
+            label=(
+                str(solar_map.unit or "Scientific intensity")
+                if data.metadata.get("scientific")
+                else "JP2 display intensity"
+            ),
         )
     return ax

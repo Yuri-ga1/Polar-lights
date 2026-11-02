@@ -15,10 +15,9 @@ from sunpy.map import Map
 from sunpy.physics.differential_rotation import solar_rotate_coordinate
 
 from app.base_classes.base_processor import BaseProcessor
-from app.solar.models import ProjectedRegion, SolarDiskData, utc_datetime
-from app.solar.solar_downloader import HelioviewerDownloader, SRSDownloader
-
 from app.logging_config import logged_stage
+from app.solar.models import ProjectedRegion, SolarDiskData
+from app.solar.solar_downloader import SRSDownloader
 
 logger = logging.getLogger(__name__)
 
@@ -130,33 +129,18 @@ class SolarProcessor(BaseProcessor):
 
     @logged_stage("processing", entry=False)
     def load(self, config):
-        with HelioviewerDownloader(config) as downloader:
-            closest, path, url = downloader.download()
-            solar_map = read_jp2_map(path, downloader, int(closest["id"]))
-        observed = solar_map.date.to_datetime(timezone=UTC)
+        from app.solar.providers import load_disk
+
+        solar_map, source_metadata = load_disk(config)
+        observed = solar_map.date.utc.to_datetime(timezone=UTC)
         delta = abs((observed - config.requested_time).total_seconds())
-        if delta > config.max_time_delta_minutes * 60:
-            raise ValueError(
-                f"JP2 observation time {observed.isoformat()} exceeds the requested tolerance"
-            )
-        if abs((observed - utc_datetime(closest["date"])).total_seconds()) > 2:
-            raise ValueError(
-                "JP2 observation time does not match the selected Helioviewer frame"
-            )
         metadata = {
             "requested_time": config.requested_time.isoformat(),
             "observation_time": observed.isoformat(),
             "coordinate_reference_time": solar_map.reference_date.utc.isot + "Z",
             "time_delta_seconds": delta,
-            "helioviewer": {
-                "source": "SDO/HMI HMI Int JP2 (Helioviewer)",
-                "source_id": config.source_id,
-                "image_id": int(closest["id"]),
-                "url": url,
-                "cache_path": str(path),
-                "closest": closest,
-            },
-            "rotation_model": "SunPy Howard differential rotation (sidereal); native HMI observer and WCS reference epoch",
+            **source_metadata,
+            "rotation_model": "SunPy Howard differential rotation (sidereal); native observer and WCS reference epoch",
         }
         regions = []
         if config.annotate_active_regions:

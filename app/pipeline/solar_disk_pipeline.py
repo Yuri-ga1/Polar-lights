@@ -9,11 +9,10 @@ from collections.abc import Sequence
 
 import matplotlib.pyplot as plt
 
+from app.logging_config import logged_stage
 from app.solar.models import SolarDiskConfig
 from app.solar.solar_processor import SolarProcessor
 from app.visualization.solar_disk_plotter import plot_solar_disk_on_ax
-
-from app.logging_config import logged_stage
 
 __all__ = [
     "SolarDiskConfig",
@@ -40,8 +39,11 @@ def _save(fig, configs, datasets):
         if len(datasets) == 1
         else {"panels": [data.metadata for data in datasets]}
     )
+    config.metadata_path.parent.mkdir(parents=True, exist_ok=True)
     config.metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-    logging.getLogger(__name__).info("Plot saved", extra={"event": "plot_saved", "context": {"path": path}})
+    logging.getLogger(__name__).info(
+        "Plot saved", extra={"event": "plot_saved", "context": {"path": path}}
+    )
 
 
 @logged_stage("processing", entry=True)
@@ -75,6 +77,12 @@ def build_solar_disk(config: SolarDiskConfig):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--provider", choices=("helioviewer", "jsoc", "auto"), default="helioviewer"
+    )
+    parser.add_argument(
+        "--jsoc-email", help="Registered JSOC email (required for jsoc/auto)"
+    )
     parser.add_argument("--date", default="2026-01-20", help="UTC date, YYYY-MM-DD")
     parser.add_argument("--time", default="12:00:00", help="UTC time, HH:MM[:SS]")
     parser.add_argument("--max-time-delta-minutes", type=float, default=30)
@@ -89,8 +97,11 @@ def main():
     parser.add_argument("--filename")
     args = parser.parse_args()
     from app.logging_config import configure_logging
+
     configure_logging()
     config = SolarDiskConfig(
+        provider=args.provider,
+        jsoc_email=args.jsoc_email,
         requested_time=f"{args.date}T{args.time}Z",
         max_time_delta_minutes=args.max_time_delta_minutes,
         force_download=args.force_download,

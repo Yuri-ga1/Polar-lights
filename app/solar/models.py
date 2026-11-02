@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.solar.sdo import JSOCSettings, SDOProduct
 from app.visualization.plot_settings import DPI
 
 
@@ -32,9 +33,24 @@ class SolarDiskConfig:
     label_fontsize: float = 11
     colorbar: bool = False
     save: bool = True
+    provider: str = "helioviewer"
+    jsoc_email: str | None = field(default=None, repr=False)
+    sdo_product: SDOProduct = field(default_factory=SDOProduct)
+    jsoc: JSOCSettings = field(default_factory=JSOCSettings)
 
     def __post_init__(self):
         object.__setattr__(self, "requested_time", utc_datetime(self.requested_time))
+        if self.provider not in ("helioviewer", "jsoc", "auto"):
+            raise ValueError("provider must be helioviewer, jsoc or auto")
+        if self.provider != "helioviewer" and (
+            not self.jsoc_email or "@" not in self.jsoc_email
+        ):
+            raise ValueError("Set jsoc_email to your registered JSOC email")
+        if (
+            self.provider != "helioviewer"
+            and self.max_time_delta_minutes * 60 > self.jsoc.search_window_seconds
+        ):
+            raise ValueError("JSOC search window must cover the requested tolerance")
         if self.source_id != 18:
             raise ValueError("SolarDisk supports SDO/HMI Int (source_id=18) only.")
         if self.max_time_delta_minutes < 0:
