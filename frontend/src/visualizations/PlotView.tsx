@@ -106,6 +106,9 @@ export default function PlotView({
         range: style.xMin && style.xMax ? [style.xMin, style.xMax] : undefined,
         autorange: !(style.xMin && style.xMax),
         type: "date",
+        tickformat:
+          result.dataType === "timeseries" ? "%H:%M<br>%d %b" : undefined,
+        automargin: true,
         anchor: "free",
         position: 0,
       },

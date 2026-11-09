@@ -185,16 +185,21 @@ def plot_ionosonde(
 
     if use_exact_range:
         locator = mdates.AutoDateLocator(minticks=4, maxticks=9)
-        formatter = DateFormatter("%m-%d %H:%M")
+        formatter = DateFormatter("%H:%M\n%d %b")
         for ax in axes:
             ax.set_xlim(pd.Timestamp(start_dt), pd.Timestamp(end_dt))
             ax.xaxis.set_major_locator(locator)
             ax.xaxis.set_major_formatter(formatter)
         axes[-1].set_xlabel("Date and time, UT", fontweight="bold")
     else:
+        day_start = pd.to_datetime(df["datetime"]).min().normalize()
+        hours = list(range(0, 25, 3))
         for ax in axes:
             ax.set_xlim(0, 24)
-            ax.set_xticks(list(range(0, 25, 3)))
+            ax.set_xticks(
+                hours,
+                [(day_start + pd.Timedelta(hours=h)).strftime("%H:%M\n%d %b") for h in hours],
+            )
         axes[-1].set_xlabel("Time, UT", fontweight="bold")
 
     fig.suptitle(format_ionosonde_title(df), fontweight="bold")

@@ -4,6 +4,7 @@ from typing import Iterable
 
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import matplotlib.ticker as mticker
 from cartopy import feature
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
@@ -339,6 +340,7 @@ def plot_timeseries_on_ax(
     y = pd.to_numeric(df[value_col], errors="coerce")
 
     ax.plot(x, y, color=color, linewidth=linewidth)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M\n%d %b"))
     ax.grid(True, alpha=0.3)
     if title:
         ax.set_title(title)

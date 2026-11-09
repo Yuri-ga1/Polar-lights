@@ -302,7 +302,7 @@ class PlotRenderer:
         hour_step: int | None = None,
     ) -> tuple[list[pd.Timestamp], list[str]]:
         if x_end <= x_start:
-            return [x_start], [x_start.strftime("%H") + "\n" + cls._format_constructor_date_label(x_start)]
+            return [x_start], [x_start.strftime("%H:%M\n%d %b")]
 
         day_starts = pd.date_range(
             x_start.normalize(),
@@ -332,7 +332,7 @@ class PlotRenderer:
 
         ticks = sorted(set(ticks))
 
-        labels = [tick.strftime("%H") for tick in ticks]
+        labels = [tick.strftime("%H:%M\n%d %b") for tick in ticks]
 
         return ticks, labels
 
@@ -376,7 +376,6 @@ class PlotRenderer:
         ax.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
         ax.xaxis.set_major_formatter(FixedFormatter(labels))
         ax.tick_params(axis="x", pad=5, labelbottom=True)
-        cls._apply_date_axis_labels(ax, x_start, x_end)
 
     @classmethod
     def apply_time_xaxis_format(
@@ -410,7 +409,6 @@ class PlotRenderer:
         ax.xaxis.set_major_locator(FixedLocator(mdates.date2num(ticks)))
         ax.xaxis.set_major_formatter(FixedFormatter(labels))
         ax.tick_params(axis="x", pad=5, labelbottom=True)
-        cls._apply_date_axis_labels(ax, x_start, x_end)
 
     @staticmethod
     def draw_time_markers(ax: plt.Axes, params: dict[str, Any]) -> None:

@@ -30,7 +30,7 @@ def _common_xlim_and_ticks(
         left, right = validate_datetime_range(start_datetime, end_datetime)
         xlim = (pd.Timestamp(left), pd.Timestamp(right))
         locator = mdates.AutoDateLocator(minticks=4, maxticks=9)
-        return xlim, locator, DateFormatter("%m-%d %H:%M")
+        return xlim, locator, DateFormatter("%H:%M\n%d %b")
 
     left = max(df["datetime"].min() for df in dfs)
     right = min(df["datetime"].max() for df in dfs)
@@ -40,7 +40,7 @@ def _common_xlim_and_ticks(
     day_ticks = pd.date_range(x_start, x_end + pd.Timedelta(days=1), freq=tick_freq)
     xlim = (x_start, x_end + pd.Timedelta(days=1) + pd.Timedelta(minutes=1))
 
-    return xlim, day_ticks, DateFormatter("%d")
+    return xlim, day_ticks, DateFormatter("%H:%M\n%d %b")
 
 
 def _style_x(ax: plt.Axes, xlim, day_ticks, formatter, show_xlabel: bool = False) -> None:

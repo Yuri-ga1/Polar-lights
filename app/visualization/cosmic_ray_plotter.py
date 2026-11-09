@@ -35,7 +35,7 @@ def plot_cosmic_ray_variations(
 ):
     labels_count = len(stations)
     labels = panel_labels(labels_count)
-    formatter = DateFormatter("%d")
+    formatter = DateFormatter("%H:%M\n%d %b")
 
     cr_df = cr_df.copy()
     kp_df = kp_df.copy()
@@ -61,7 +61,7 @@ def plot_cosmic_ray_variations(
     if use_exact_range:
         xlim = (pd.Timestamp(start_dt), pd.Timestamp(end_dt))
         ticks = mdates.AutoDateLocator(minticks=4, maxticks=9)
-        formatter = DateFormatter("%m-%d %H:%M")
+        formatter = DateFormatter("%H:%M\n%d %b")
         title_start = pd.Timestamp(start_dt)
         title_end = pd.Timestamp(end_dt)
     else:
