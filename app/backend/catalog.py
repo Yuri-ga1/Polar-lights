@@ -38,6 +38,12 @@ COLUMNS.update(
     kp=Column("kp", "kp", "", 10800, "kp"),
     kyoto_dst=Column("kyoto_dst", "kyoto", "nT", 3600, "dst"),
 )
+GEC_NORMALIZATIONS = {"gec_tec": "TECU", "gec_0": "GECu", "gec_450": "GECu"}
+GEC = [
+    f"gec_{normalization}__{source}"
+    for normalization in GEC_NORMALIZATIONS
+    for source in ("igsg", "codg", "uhrg")
+]
 MAPS = {
     "roti-map": ("roti", "TECU/min"),
     "tec-adjusted-map": ("tec_adjusted", "TECU"),
@@ -50,6 +56,7 @@ PRODUCTS = (
     "kyoto-dst",
     "nmdb",
     "giro",
+    "gec",
     "timeseries",
     "aurora-map",
     *MAPS,
@@ -60,6 +67,16 @@ PRODUCTS = (
 def column_spec(name):
     if name in COLUMNS:
         return COLUMNS[name]
+    match = re.fullmatch(r"gec_(gec_tec|gec_0|gec_450)__([a-z][a-z0-9_]*)", name)
+    if match:
+        normalization, source = match.groups()
+        return Column(
+            name,
+            "gec",
+            GEC_NORMALIZATIONS[normalization],
+            3600,
+            f"{normalization}/{source}",
+        )
     # Processed NMDB station values are relative amplitude percentages sampled
     # every ten minutes in files/processed/nmdb.csv.
     match = re.fullmatch(r"nmdb_([a-z0-9]{3,6})_amplitude_percent", name)
@@ -86,6 +103,8 @@ def check_product(product):
 
 
 def product_columns(product, known=()):
+    if product == "gec":
+        return list(dict.fromkeys([*GEC, *[c for c in known if c.startswith("gec_")]]))
     if product == "omni":
         return list(OMNI)
     if product == "kp":
@@ -100,7 +119,7 @@ def product_columns(product, known=()):
         )
     if product == "giro":
         return ["giro_al945_fof2", "giro_al945_hmf2"]
-    return list(COLUMNS)
+    return [*COLUMNS, *product_columns("gec", known)]
 
 
 def validate_columns(product, columns):
@@ -251,7 +270,11 @@ def catalog(known=(), remote_maps=False, station_metadata=None, aurora_default=N
                     c: {
                         "source": column_spec(c).source,
                         "units": column_spec(c).units,
-                        "frequencySeconds": column_spec(c).seconds,
+                        **(
+                            {"frequencySeconds": column_spec(c).seconds}
+                            if column_spec(c).source != "gec"
+                            else {"sampling": "native"}
+                        ),
                         "offsetSeconds": 0,
                         **(
                             {

@@ -113,7 +113,9 @@ function Field({
           {p.type === "select" && <option value="">Select…</option>}
           {p.values?.map((v) => (
             <option key={v} value={v}>
-              {v}
+              {p.name === "columns" && String(v).startsWith("gec_")
+                ? String(v).replace(/^gec_(.*?)__(.*)$/, "$2 · $1")
+                : v}
             </option>
           ))}
         </select>

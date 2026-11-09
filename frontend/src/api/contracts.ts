@@ -31,6 +31,8 @@ const columnMeta = z
     offsetSeconds: z.number().optional(),
     missingCount: z.number().optional(),
     missingIntervals: z.array(z.array(z.string())).optional(),
+    sampling: z.string().optional(),
+    missingSamples: z.record(z.boolean()).optional(),
   })
   .passthrough();
 export const metadataSchema = z

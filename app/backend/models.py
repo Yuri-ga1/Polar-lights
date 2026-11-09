@@ -43,7 +43,7 @@ class MapParameters(StrictModel):
 
 
 class SeriesRequest(StrictModel):
-    productId: Literal["omni", "kp", "kyoto-dst", "nmdb", "giro", "timeseries"]
+    productId: Literal["omni", "kp", "kyoto-dst", "nmdb", "giro", "gec", "timeseries"]
     parameters: SeriesParameters
 
 

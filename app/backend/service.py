@@ -143,7 +143,13 @@ class DataService:
         if isinstance(request, KeogramRequest):
             return self.maps.keogram_cached(request)
         p = request.parameters
-        policies = {c: column_spec(c).policy for c in p.columns}
+        gec_columns = [c for c in p.columns if column_spec(c).source == "gec"]
+        if (
+            gec_columns
+            and self.adapters.gec(p.start, p.end, gec_columns, cache_only=True) is None
+        ):
+            return False
+        policies = {c: column_spec(c).policy for c in p.columns if c not in gec_columns}
         return not any(
             self.storage.missing(self.storage.read(), p.start, p.end, policies).values()
         )
@@ -203,29 +209,50 @@ class DataService:
         self.validate(request)
         p = request.parameters
         specs = validate_columns(request.productId, p.columns)
+        regular = {c: s for c, s in specs.items() if s.source != "gec"}
+        gec_columns = [c for c in specs if c not in regular]
         errors = []
+        gec_index = pd.DatetimeIndex([], tz="UTC")
         begin = time.perf_counter()
-        frame = BaseProcessor().get_data(
-            self.storage.path,
-            p.start,
-            p.end,
-            lambda missing: self._acquire(p.start, p.end, specs, errors),
-            columns=p.columns,
-            frequency_policies={c: s.policy for c, s in specs.items()},
+        frame = (
+            BaseProcessor().get_data(
+                self.storage.path,
+                p.start,
+                p.end,
+                lambda missing: self._acquire(p.start, p.end, regular, errors),
+                columns=list(regular),
+                frequency_policies={c: s.policy for c, s in regular.items()},
+            )
+            if regular
+            else TimeSeriesStorage.normalize(pd.DataFrame())
         )
+        if gec_columns:
+            try:
+                report_stage("downloading")
+                rows = self.adapters.acquire(
+                    "gec", utc(p.start), utc(p.end), gec_columns
+                )
+                gec_index = rows.index
+                self.storage.merge(rows)
+                frame = pd.concat([frame, rows], axis=1).sort_index()
+            except BackendError as exc:
+                errors.append(exc.body())
+                frame = frame.reindex(columns=p.columns)
         # Include absent expected samples, but do not invent values or repeat
         # sparse samples at the cadence of the densest source.
         index = pd.DatetimeIndex([], tz="UTC")
-        for spec in specs.values():
+        for spec in regular.values():
             index = index.union(spec.policy.expected(p.start, p.end))
-        index = index.union(frame.dropna(how="all").index).sort_values()
+        index = index.union(
+            frame.index if gec_columns else frame.dropna(how="all").index
+        ).sort_values()
         if (
             len(index) > self.settings.max_samples
             or len(index) * len(specs) > self.settings.max_cells
         ):
             raise BackendError("INVALID_REQUEST", "Response exceeds cell limit", 413)
         frame = frame.reindex(index)
-        if frame.notna().sum().sum() == 0 and len(index):
+        if frame.notna().sum().sum() == 0 and (len(index) or gec_columns):
             if errors:
                 error = errors[0]
                 raise BackendError(
@@ -242,11 +269,19 @@ class DataService:
         report_stage("processing")
         version = self.storage.version(frame)
         missing = self.storage.missing(
-            frame, p.start, p.end, {c: s.policy for c, s in specs.items()}
+            frame, p.start, p.end, {c: s.policy for c, s in regular.items()}
+        )
+        missing.update(
+            {
+                c: [(t, t) for t in gec_index[frame.loc[gec_index, c].isna()]]
+                for c in gec_columns
+            }
         )
         column_metadata = {}
         for column, spec in specs.items():
-            expected = spec.policy.expected(p.start, p.end)
+            expected = (
+                spec.policy.expected(p.start, p.end) if column in regular else gec_index
+            )
             station = {}
             if spec.source == "nmdb" and hasattr(
                 self.adapters, "nmdb_station_metadata"
@@ -255,7 +290,16 @@ class DataService:
             column_metadata[column] = {
                 "source": spec.source,
                 "units": spec.units,
-                "frequencySeconds": spec.seconds,
+                **(
+                    {"frequencySeconds": spec.seconds}
+                    if column in regular
+                    else {
+                        "sampling": "native",
+                        "normalization": spec.raw_name.split("/")[0],
+                        "gimSource": spec.raw_name.split("/")[1],
+                        "missingSamples": {iso(a): True for a, _ in missing[column]},
+                    }
+                ),
                 "offsetSeconds": 0,
                 **({"station": spec.raw_name, **station} if station else {}),
                 "datasetVersion": self.storage.version(frame[[column]].dropna()),
@@ -274,7 +318,10 @@ class DataService:
                 "source": sorted({s.source for s in specs.values()}),
                 "columnMetadata": column_metadata,
                 "units": {c: s.units for c, s in specs.items()},
-                "frequency": {c: f"{s.seconds}s" for c, s in specs.items()},
+                "frequency": {
+                    c: f"{s.seconds}s" if c in regular else "native"
+                    for c, s in specs.items()
+                },
                 "nullPolicy": {
                     "missing_data": "null at an expected sample",
                     "no_sample_expected": "null outside the column UTC sampling grid",

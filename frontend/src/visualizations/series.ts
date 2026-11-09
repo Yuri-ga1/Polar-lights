@@ -6,6 +6,10 @@ export function sampleStatus(
 ): string {
   if (result.columns[column][index] !== null) return "observed";
   const meta = result.metadata.columnMetadata?.[column];
+  if (meta?.sampling === "native")
+    return meta.missingSamples?.[result.time[index]]
+      ? "missing_data"
+      : "no_sample_expected";
   if (!result.metadata.nullPolicy || !meta?.frequencySeconds)
     return "null (unspecified)";
   const seconds = Date.parse(result.time[index]) / 1000;

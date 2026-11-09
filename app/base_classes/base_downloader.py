@@ -63,6 +63,9 @@ class BaseDownloader:
         chunk_size: int = 1024 * 1024,
         show_progress: bool = True,
         progress_callback=None,
+        validate_file=None,
+        retry_backoff: float = 1,
+        max_retry_delay: float | None = None,
     ) -> str:
         """Скачивает файл с докачкой до полного получения."""
         filename = os.path.basename(url) if filename is None else filename
@@ -70,6 +73,8 @@ class BaseDownloader:
 
         existing_file = self._get_existing_file(filename)
         if existing_file:
+            if validate_file is not None:
+                validate_file(existing_file)
             logger.info(
                 f"Using cached file: {existing_file}", extra={"event": "cache_hit"}
             )
@@ -97,6 +102,9 @@ class BaseDownloader:
         file_path += ".part"
         validator_path = Path(file_path + ".json")
         for attempt in range(5):
+            delay = polling_interval * retry_backoff ** attempt
+            if max_retry_delay is not None:
+                delay = min(delay, max_retry_delay)
             offset = os.path.getsize(file_path) if os.path.exists(file_path) else 0
             try:
                 validator = json.loads(validator_path.read_text())
@@ -122,10 +130,10 @@ class BaseDownloader:
                     extra={
                         "event": "download_retry",
                         "error": {"type": type(exc).__name__, "message": str(exc)},
-                        "context": {"delay_seconds": polling_interval},
+                        "context": {"delay_seconds": delay},
                     },
                 )
-                time.sleep(polling_interval)
+                time.sleep(delay)
                 continue
 
             if resp.status_code == 416:
@@ -133,8 +141,15 @@ class BaseDownloader:
                 validator_path.unlink(missing_ok=True)
                 continue
             if resp.status_code not in (200, 206):
+                status = resp.status_code
+                resp.close()
+                if retry_backoff > 1 and (status == 429 or status >= 500):
+                    logger.warning("HTTP %s; retrying in %s seconds", status, delay,
+                                   extra={"event": "download_retry"})
+                    time.sleep(delay)
+                    continue
                 raise RuntimeError(
-                    f"Не удалось скачать по result_url {url}: {resp.status_code}"
+                    f"Не удалось скачать по result_url {url}: {status}"
                 )
 
             if resp.status_code == 206 and not resp.headers.get(
@@ -212,10 +227,10 @@ class BaseDownloader:
                     extra={
                         "event": "download_retry",
                         "error": {"type": type(exc).__name__, "message": str(exc)},
-                        "context": {"delay_seconds": polling_interval},
+                        "context": {"delay_seconds": delay},
                     },
                 )
-                time.sleep(polling_interval)
+                time.sleep(delay)
                 continue
 
             finally:
@@ -223,6 +238,8 @@ class BaseDownloader:
             final_size = os.path.getsize(file_path)
             report_download(final_size, force=True)
             if final_size and (total_size is None or final_size == total_size):
+                if validate_file is not None:
+                    validate_file(file_path)
                 if final_path.endswith((".h5", ".hdf5")):
                     import h5py
 

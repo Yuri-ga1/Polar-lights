@@ -295,6 +295,117 @@
       }
     },
     {
+      "productId": "gec",
+      "title": "GEC",
+      "category": "space-weather",
+      "graphType": "timeseries",
+      "available": true,
+      "units": {
+        "gec_gec_tec__igsg": "TECU",
+        "gec_gec_tec__codg": "TECU",
+        "gec_gec_tec__uhrg": "TECU",
+        "gec_gec_0__igsg": "GECu",
+        "gec_gec_0__codg": "GECu",
+        "gec_gec_0__uhrg": "GECu",
+        "gec_gec_450__igsg": "GECu",
+        "gec_gec_450__codg": "GECu",
+        "gec_gec_450__uhrg": "GECu"
+      },
+      "parameterSchema": [
+        {
+          "name": "start",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "end",
+          "type": "datetime",
+          "required": true
+        },
+        {
+          "name": "columns",
+          "type": "multiselect",
+          "required": true,
+          "values": [
+            "gec_gec_tec__igsg",
+            "gec_gec_tec__codg",
+            "gec_gec_tec__uhrg",
+            "gec_gec_0__igsg",
+            "gec_gec_0__codg",
+            "gec_gec_0__uhrg",
+            "gec_gec_450__igsg",
+            "gec_gec_450__codg",
+            "gec_gec_450__uhrg"
+          ],
+          "default": ["gec_gec_tec__igsg"]
+        }
+      ],
+      "capabilities": {
+        "colorbar": false,
+        "projection": false,
+        "renderJobs": false,
+        "async": true
+      },
+      "availabilityStrategy": "local-index-then-acquire",
+      "remoteAcquisition": true,
+      "columnMetadata": {
+        "gec_gec_tec__igsg": {
+          "source": "gec",
+          "units": "TECU",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_tec__codg": {
+          "source": "gec",
+          "units": "TECU",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_tec__uhrg": {
+          "source": "gec",
+          "units": "TECU",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_0__igsg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_0__codg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_0__uhrg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_450__igsg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_450__codg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_450__uhrg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        }
+      }
+    },
+    {
       "productId": "timeseries",
       "title": "TIMESERIES",
       "category": "space-weather",
@@ -310,7 +421,16 @@
         "omni_ae": "nT",
         "omni_sym_h": "nT",
         "kp": "",
-        "kyoto_dst": "nT"
+        "kyoto_dst": "nT",
+        "gec_gec_tec__igsg": "TECU",
+        "gec_gec_tec__codg": "TECU",
+        "gec_gec_tec__uhrg": "TECU",
+        "gec_gec_0__igsg": "GECu",
+        "gec_gec_0__codg": "GECu",
+        "gec_gec_0__uhrg": "GECu",
+        "gec_gec_450__igsg": "GECu",
+        "gec_gec_450__codg": "GECu",
+        "gec_gec_450__uhrg": "GECu"
       },
       "parameterSchema": [
         {
@@ -338,7 +458,16 @@
             "omni_ae",
             "omni_sym_h",
             "kp",
-            "kyoto_dst"
+            "kyoto_dst",
+            "gec_gec_tec__igsg",
+            "gec_gec_tec__codg",
+            "gec_gec_tec__uhrg",
+            "gec_gec_0__igsg",
+            "gec_gec_0__codg",
+            "gec_gec_0__uhrg",
+            "gec_gec_450__igsg",
+            "gec_gec_450__codg",
+            "gec_gec_450__uhrg"
           ]
         }
       ],
@@ -409,6 +538,60 @@
           "source": "kyoto",
           "units": "nT",
           "frequencySeconds": 3600,
+          "offsetSeconds": 0
+        },
+        "gec_gec_tec__igsg": {
+          "source": "gec",
+          "units": "TECU",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_tec__codg": {
+          "source": "gec",
+          "units": "TECU",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_tec__uhrg": {
+          "source": "gec",
+          "units": "TECU",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_0__igsg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_0__codg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_0__uhrg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_450__igsg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_450__codg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
+          "offsetSeconds": 0
+        },
+        "gec_gec_450__uhrg": {
+          "source": "gec",
+          "units": "GECu",
+          "sampling": "native",
           "offsetSeconds": 0
         }
       }

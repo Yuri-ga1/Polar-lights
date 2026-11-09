@@ -21,6 +21,9 @@ class SourceAdapters:
         self.root = root
 
     def acquire(self, source, start, end, columns):
+        if source == "gec":
+            # The GEC pipeline owns its yearly archives and verified raw lifecycle.
+            return self._acquire(source, start, end, columns)
         with raw_operation(self.raw_dir(source)) as operation:
             archive = self.root / "processed" / f"{source}.csv"
             if source != "nmdb" and archive.is_file():
@@ -62,6 +65,30 @@ class SourceAdapters:
         path = self.root / "raw" / source
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
+
+    def gec(self, start, end, columns, *, cache_only=False):
+        from collections import defaultdict
+
+        from app.pipeline.gec_pipeline import prepare_gec_data_range
+
+        groups = defaultdict(dict)
+        for column in columns:
+            normalization, source = column_spec(column).raw_name.split("/")
+            groups[normalization][source] = column
+        frames = []
+        for normalization, mapping in groups.items():
+            frame = prepare_gec_data_range(
+                start,
+                end,
+                list(mapping),
+                normalization,
+                str(self.root),
+                cache_only=cache_only,
+            )
+            if frame is None:
+                return None
+            frames.append(TimeSeriesStorage.normalize(frame).rename(columns=mapping))
+        return pd.concat(frames, axis=1).sort_index()
 
     @staticmethod
     def download(action, *args, **kwargs):
