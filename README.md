@@ -3,6 +3,12 @@
 ## Project Overview
 Polar Lights is a data-processing and visualization project for auroral and ionospheric monitoring. The pipeline coordinates multiple workflows (aurora mapping, ROTI, adjusted TEC, and supporting data products) and writes output plots and artifacts for a selected date.
 
+## Run in Google Colab
+
+You can create the graphs you are interested. To do so, follow the link below. First, run the **Set up environment** block, and then proceed to whichever section interests you.
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/main/notebooks/00_examples_and_run.ipynb)
+
 ## Installation (Poetry)
 1. Install Poetry (if not already installed).
 2. Install dependencies:
@@ -151,11 +157,6 @@ output_dir = plot_all_maps(
 
 For `PlotConstructor`, use `time="all"` or `plot_all_times=True` in map params.
 
-## Run in Google Colab
-
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yuri-ga1/Polar-lights/blob/main/notebooks/00_examples_and_run.ipynb)
-
-> После открытия в Colab: **File → Save a copy in Drive**, чтобы получить свою копию и спокойно редактировать.
 
 ## Логирование
 
