@@ -62,7 +62,7 @@ class DataProducts(DataProduct, Enum):
     tec_adjusted = DataProduct(
         "TEC Adjusted",
         "tec_adjusted",
-        ColorLimits(0, 80, "TEC, TECU"),
+        ColorLimits(0, 60, "TEC, TECU"),
     )
 
 
