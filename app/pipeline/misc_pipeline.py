@@ -46,6 +46,9 @@ def _resolve_cosmic_stations(
     requested_stations: Sequence[str] | None,
     fallback_count: int = 3,
 ) -> list[str]:
+    if cr_df is None:
+        raise ValueError("Dataset doesn't exist")
+    
     station_columns = [column for column in cr_df.columns if column != "datetime"]
     if not station_columns:
         return []
