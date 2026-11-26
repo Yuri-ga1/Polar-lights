@@ -37,7 +37,6 @@ from app.pipeline.keogram_coordinates import convert_keogram_slices_to_magnetic
 from app.ionosonde.ionosonde_downloader import IonosondeDownloader
 from app.ionosonde.ionosonde_processor import IonosondeProcessor
 
-from app.nmdb.nmdb_downloader import NmdbDownloader
 from app.nmdb.nmdb_processor import NmdbProcessor
 
 from app.pipeline.space_weather_pipeline import SpaceWeatherPaths, _retrieve_omni
@@ -582,13 +581,9 @@ class PlotConstructorDataLoader:
         start_date = target_date - timedelta(days=15)
         end_date = target_date + timedelta(days=15)
 
-        NmdbDownloader(out_dir=out_dir).download(
-            start=start_date,
-            end=end_date,
-            stations=None,
+        return NmdbProcessor(folder_path=out_dir).load_range(
+            self.paths.processed_file("nmdb"), start_date, end_date,
         )
-
-        return NmdbProcessor(folder_path=out_dir).load(self.primary_date_str)
 
     def _load_omni(self):
         return _retrieve_omni(

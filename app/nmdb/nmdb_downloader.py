@@ -220,7 +220,7 @@ class NmdbDownloader(BaseDownloader):
 
         existing_file = self._get_existing_file(filename)
         if existing_file:
-            self._ensure_station_metadata_file()
+            logger.info("Using cached NMDB file: %s", existing_file, extra={"event": "cache_hit"})
             return existing_file
 
         try:

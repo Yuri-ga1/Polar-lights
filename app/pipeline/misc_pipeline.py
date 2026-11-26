@@ -8,7 +8,6 @@ from typing import Sequence
 from app.gfz.gfz_processor import GfzProcessor
 from app.ionosonde.ionosonde_downloader import IonosondeDownloader
 from app.ionosonde.ionosonde_processor import IonosondeProcessor
-from app.nmdb.nmdb_downloader import NmdbDownloader
 from app.nmdb.nmdb_processor import NmdbProcessor
 from app.pipeline.space_weather_pipeline import prepare_space_weather_data
 from app.simurg.gim_downloader import GimDownloader
@@ -125,19 +124,9 @@ def run_misc_pipeline(
     target_date = datetime.strptime(date_str, "%Y-%m-%d")
     start_date = target_date - timedelta(days=15)
     end_date = target_date + timedelta(days=15)
-    with raw_operation(nmdb_dir) as operation:
-        NmdbDownloader(out_dir=nmdb_dir).download(
-            start=start_date,
-            end=end_date,
-            stations=cosmic_stations,
-        )
-
-        cr_df = NmdbProcessor(folder_path=nmdb_dir).load(date_str)
-        if cr_df is not None and not cr_df.empty:
-            NmdbProcessor(folder_path=nmdb_dir).update_processed(
-                paths.processed_file("nmdb"), cr_df
-            )
-            operation.verify_frame(paths.processed_file("nmdb"), cr_df)
+    cr_df = NmdbProcessor(folder_path=nmdb_dir).load_range(
+        paths.processed_file("nmdb"), start_date, end_date, cosmic_stations,
+    )
     kp_df = sw_data.kp
     if cr_df is not None and not cr_df.empty and kp_df is not None and not kp_df.empty:
         stations_for_plot = _resolve_cosmic_stations(cr_df, cosmic_stations)

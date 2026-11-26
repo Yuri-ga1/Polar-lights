@@ -3,15 +3,17 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Optional, Tuple
 
-import pandas as pd
 import numpy as np
-from app.base_classes.base_processor import BaseProcessor
-from app.storage.data_paths import DataPaths
+import pandas as pd
 
-from app.logging_config import logged_stage
+from app.base_classes.base_processor import BaseProcessor
+from app.logging_config import get_logger, logged_stage
+from app.storage.data_paths import DataPaths
 from app.storage.raw_retention import raw_locked
+from app.storage.timeseries import TimeSeriesStorage
 
 
 class NmdbProcessor(BaseProcessor):
@@ -310,6 +312,90 @@ class NmdbProcessor(BaseProcessor):
         }
 
     # ---------- public ----------
+
+    def _attach_metadata(self, frame: pd.DataFrame) -> pd.DataFrame:
+        metadata = self._load_station_metadata()
+        frame.attrs["station_metadata"] = {
+            station: metadata[station] for station in frame.columns if station in metadata
+        }
+        return frame
+
+    @raw_locked
+    def load_file(self, path) -> pd.DataFrame:
+        """Parse a specific response instead of guessing from its start date."""
+        raw = Path(path).read_text(encoding="utf-8", errors="ignore")
+        text = self._strip_html_tags(self._extract_ascii_block(raw))
+        return self._to_amplitude(self._parse_table(self._keep_only_table(text)))
+
+    @staticmethod
+    def _covers_range(frame, start, end, stations) -> bool:
+        if frame.empty or not {"datetime", *stations}.issubset(frame.columns):
+            return False
+        times = frame["datetime"].drop_duplicates().sort_values()
+        steps = times.diff().dropna()
+        step = steps.median() if not steps.empty else pd.Timedelta(minutes=1)
+        # Do not treat a few rows somewhere in a day as full interval coverage.
+        if times.iloc[0] > start or times.iloc[-1] < end - step:
+            return False
+        if not steps.empty and (steps > step).any():
+            return False
+        return all(frame[station].notna().any() for station in stations)
+
+    @raw_locked
+    def load_range(self, processed_path, start, end, stations=None) -> pd.DataFrame:
+        """Read processed data first, then a covering raw response, then NMDB.
+
+        NMDB may average large requests automatically. Infer the stored cadence
+        rather than requiring one-minute data, and retain source null values.
+        """
+        from app.nmdb.nmdb_downloader import NmdbDownloader
+
+        start, end = self._as_utc_naive(start), self._as_utc_naive(end)
+        if end < start:
+            raise ValueError("end must be greater than or equal to start")
+        stations = list(dict.fromkeys(station.upper() for station in stations or []))
+        store = TimeSeriesStorage(processed_path)
+        cached = store.read()
+        cached.index = cached.index.tz_localize(None)
+        cached = cached.reset_index()
+        selected = cached.loc[cached["datetime"].between(start, end)]
+        if self._covers_range(selected, start, end, stations or list(cached.columns[1:])):
+            get_logger(__name__).info("Using processed NMDB cache", extra={"event": "cache_hit"})
+            columns = ["datetime", *(stations or list(cached.columns[1:]))]
+            return self._attach_metadata(selected.loc[:, columns].reset_index(drop=True))
+
+        candidates = []
+        for path in self.folder_path.glob("nmdb_*.txt"):
+            match = re.fullmatch(r"nmdb_(.+)_(\d{12})-(\d{12})\.txt", path.name)
+            if not match or not self._is_non_empty_file(path):
+                continue
+            station_part, first, last = match.groups()
+            if not stations and station_part != "all":
+                continue
+            if (pd.to_datetime(first, format="%Y%m%d%H%M") <= start
+                    and pd.to_datetime(last, format="%Y%m%d%H%M") >= end):
+                candidates.append((station_part == "all", path))
+        frame = None
+        for _, path in sorted(candidates):
+            try:
+                candidate = self.load_file(path)
+            except (OSError, ValueError):
+                continue
+            if self._covers_range(candidate, start, end, stations):
+                frame = candidate
+                get_logger(__name__).info("Using raw NMDB cache: %s", path, extra={"event": "cache_hit"})
+                break
+        if frame is None:
+            path = NmdbDownloader(str(self.folder_path)).download(
+                start=start.to_pydatetime(), end=end.to_pydatetime(), stations=stations,
+            )
+            frame = self.load_file(Path(path))
+        if frame.empty:
+            return frame
+        store.merge(frame)
+        result = frame.loc[frame["datetime"].between(start, end)].reset_index(drop=True)
+        columns = ["datetime", *(station for station in stations if station in result)] if stations else list(result.columns)
+        return self._attach_metadata(result.loc[:, columns])
 
     @logged_stage("processing", entry=False)
     @raw_locked
