@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, Optional
 
 from app.base_classes.base_downloader import BaseDownloader
@@ -56,7 +56,7 @@ class _SimurgDownloader(BaseDownloader):
             start_date
         ), _SimurgDownloader._to_simurg_date(end_dt)
 
-    def _find_existing_hdf5_result(self, start_iso: str) -> str | None:
+    def _find_existing_hdf5_result(self, start_iso: str, end_iso: str | None = None) -> str | None:
         options = self._args.get("options", {})
 
         if options.get("format") != "hdf5":
@@ -65,6 +65,31 @@ class _SimurgDownloader(BaseDownloader):
         product_type = options.get("product_type")
         if not product_type:
             return None
+
+        if end_iso is not None:
+            from app.simurg.simurg_processor import SimurgProcessor
+
+            processor = SimurgProcessor(self.out_dir)
+            start, end = processor._range_bounds(start_iso, end_iso)
+            sources = processor._range_slice_sources(start, end, product_type)
+            # Check every requested sampling instant, including interior gaps.
+            step = timedelta(seconds=options["timestep"])
+            offset = timedelta(
+                seconds=start.replace(tzinfo=UTC).timestamp() % step.total_seconds()
+            )
+            timestamp = start if not offset else start + step - offset
+            if timestamp > end:
+                return None
+            while timestamp <= end:
+                if timestamp not in sources:
+                    return None
+                timestamp += step
+            existing_file = str(sources[min(sources)][0])
+            logger.info(
+                "Using local SIMuRG data covering %s — %s", start_iso, end_iso,
+                extra={"event": "cache_hit"},
+            )
+            return existing_file
 
         file_date = datetime.strptime(start_iso, "%Y-%m-%d %H:%M").date()
         year = file_date.year
@@ -102,6 +127,20 @@ class _SimurgDownloader(BaseDownloader):
         except (OSError, ValueError):
             return False
 
+    def download_range(self, start_datetime: str | datetime, end_datetime: str | datetime) -> str:
+        """Reuse local/remote coverage or request exactly the supplied UTC interval.
+
+        The returned path identifies one source; range readers merge all local
+        source files when the cached interval spans more than one file.
+        """
+        from app.simurg.simurg_processor import SimurgProcessor
+
+        start, end = SimurgProcessor._range_bounds(start_datetime, end_datetime)
+        return self.download(
+            start.date().isoformat(),
+            window=(start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")),
+        )
+
     @logged_stage("download", entry=False)
     @raw_locked
     def download(
@@ -120,7 +159,7 @@ class _SimurgDownloader(BaseDownloader):
         :returns: путь к результату
         """
         start_iso, end_iso = window or self._make_time_range(date_str, end_date)
-        existing_file = self._find_existing_hdf5_result(start_iso)
+        existing_file = self._find_existing_hdf5_result(start_iso, end_iso if window else None)
         if (
             existing_file
             and target_timestamp is not None

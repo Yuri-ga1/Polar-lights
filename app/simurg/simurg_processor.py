@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 from enum import Enum
 from collections.abc import Iterator
@@ -339,6 +339,39 @@ class SimurgProcessor(BaseProcessor):
         except Exception:
             return
 
+    @classmethod
+    def _range_bounds(cls, start_datetime, end_datetime) -> tuple[datetime, datetime]:
+        def parse(value):
+            if isinstance(value, str):
+                value = datetime.fromisoformat(value)
+            return cls._normalize_time(value).astimezone(UTC).replace(tzinfo=None)
+
+        start, end = parse(start_datetime), parse(end_datetime)
+        if end < start:
+            raise ValueError("end_datetime must be greater than or equal to start_datetime")
+        return start, end
+
+    def _range_slice_sources(self, start_datetime, end_datetime, product_type):
+        """Index timestamps without reading arrays; overlapping files are merged."""
+        start, end = self._range_bounds(start_datetime, end_datetime)
+        sources = {}
+        for path in self.local_files(product_type):
+            for key in sorted(self._file_time_keys(path)):
+                timestamp = self._parse_time(key).replace(tzinfo=None)
+                if start <= timestamp <= end:
+                    sources.setdefault(timestamp, (path, key))
+        return sources
+
+    @raw_locked
+    def available_times_range(
+        self,
+        start_datetime: str | datetime,
+        end_datetime: str | datetime,
+        product_type: str | DataProduct = DataProduct.ROTI,
+    ) -> list[datetime]:
+        """Return unique UTC timestamps in an inclusive interval across local files."""
+        return sorted(self._range_slice_sources(start_datetime, end_datetime, product_type))
+
     @raw_locked
     def iter_slices_range(
         self,
@@ -346,42 +379,22 @@ class SimurgProcessor(BaseProcessor):
         end_datetime: str | datetime,
         product_type: str | DataProduct = DataProduct.ROTI,
     ) -> Iterator[tuple[datetime, NDArray]]:
-        """Iterate only slices whose timestamps fall in a datetime range.
-
-        Unlike ``iter_slices``, this method discovers all matching HDF5 files
-        in the processor directory.  This is important for SIMuRG files whose
-        filename contains the first day while the file covers several days.
-        Arrays are loaded one at a time, so the whole interval is not held in
-        memory.
-        """
-        if isinstance(start_datetime, str):
-            start_datetime = datetime.strptime(start_datetime, "%Y-%m-%d %H:%M:%S")
-        if isinstance(end_datetime, str):
-            end_datetime = datetime.strptime(end_datetime, "%Y-%m-%d %H:%M:%S")
-        if end_datetime < start_datetime:
-            raise ValueError("end_datetime must be greater than or equal to start_datetime")
-
-        normalized_product = self._normalize_product(product_type)
-        prefix = f"{normalized_product.value}_"
-        seen: set[Path] = set()
-
-        aggregate = self.folder_path / f"{normalized_product.value}.h5"
-        paths = [aggregate] if self._is_non_empty_file(aggregate) else sorted(self.folder_path.glob(f"{prefix}*.h5"))
-        for file_path in paths:
-            if file_path in seen or not self._is_non_empty_file(file_path):
-                continue
-            seen.add(file_path)
-
-            try:
-                with h5py.File(file_path, "r") as handle:
-                    if "data" not in handle:
-                        continue
-                    for str_time in sorted(handle["data"].keys()):
-                        parsed_time = self._parse_time(str_time).replace(tzinfo=None)
-                        if start_datetime <= parsed_time <= end_datetime:
-                            yield parsed_time, handle["data"][str_time][:]
-            except Exception:
-                continue
+        """Stream an inclusive UTC interval in order, with each timestamp once."""
+        sources = self._range_slice_sources(start_datetime, end_datetime, product_type)
+        handle = None
+        current_path = None
+        try:
+            for timestamp in sorted(sources):
+                path, key = sources[timestamp]
+                if path != current_path:
+                    if handle is not None:
+                        handle.close()
+                    handle = h5py.File(path, "r")
+                    current_path = path
+                yield timestamp, handle["data"][key][:]
+        finally:
+            if handle is not None:
+                handle.close()
 
     def local_files(
         self,
